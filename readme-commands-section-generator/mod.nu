@@ -18,6 +18,12 @@ use std/math
 #
 #   readme-commands-section-generator generate semver | save --force commands.md
 #
+# Or keep a README fresh with `override`, which regenerates the section
+# between its two marker comments in place, appending a marked section at the
+# end of the file when none exists yet:
+#
+#   readme-commands-section-generator override semver README.md
+#
 # ---------------------------------------------------------------------------
 # Sanitizing cell text for `to md`
 #
@@ -326,4 +332,65 @@ export def generate [
     ]
     | str join $blank
     | $"($in)(char newline)"
+}
+
+# The marker pair `override` scans for in a target file. Each belongs on its
+# own line; place them by hand to pin the section anywhere in the file.
+const start_marker = '<!-- commands-section:start -->'
+const end_marker = '<!-- commands-section:end -->'
+
+# Regenerate the `## Commands` section of a file in place. The section lives
+# between two HTML-comment markers: when the target already carries the pair,
+# everything between them is replaced and the rest of the file is untouched;
+# when it carries neither, a freshly marked section is appended at the end of
+# the file (created if missing). A file with only half of the pair is refused
+# rather than guessed at.
+#
+#   <!-- commands-section:start -->
+#   ## Commands
+#   …regenerated on every run…
+#   <!-- commands-section:end -->
+#
+# The span runs from the first start marker to the last end marker, so
+# marker-lookalike text inside the generated section cannot derail it.
+#
+# As with `generate`, the module being documented must already be in scope:
+#
+#   use semver
+#   use readme-commands-section-generator
+#   readme-commands-section-generator override semver README.md
+export def override [
+    module: string   # module whose commands to document (must already be `use`d)
+    target: path     # file to update in place (e.g. README.md)
+]: nothing -> nothing {
+    let section = generate $module | str trim --right
+    let block = [$start_marker $section $end_marker] | str join (char newline)
+    let current = if ($target | path exists) { open --raw $target | decode } else { '' }
+
+    let start = $current | str index-of $start_marker
+    let updated = if $start == -1 {
+        if ($current | str index-of $end_marker) != -1 {
+            error make { msg: $"($target) has '($end_marker)' but no '($start_marker)' — restore the pair or delete the stray marker" }
+        }
+        # no marked section yet: append one, a blank line after any content
+        [($current | str trim --right) $block]
+        | compact --empty
+        | str join $"(char newline)(char newline)"
+        | $"($in)(char newline)"
+    } else {
+        # The marked span runs from the FIRST start marker to the LAST end
+        # marker: generated content can itself contain the marker strings
+        # (this very help text, rendered by `generate`, does), so an inner
+        # match cannot be trusted — the outermost pair can.
+        let content_from = $start + ($start_marker | str length)
+        let end = $current | str index-of --end $end_marker
+        if $end < $content_from {
+            error make { msg: $"($target) has '($start_marker)' but no '($end_marker)' after it — restore the pair or delete the stray marker" }
+        }
+        let head = $current | str substring 0..<$start
+        let tail = $current | str substring ($end + ($end_marker | str length))..
+        $"($head)($block)($tail)"
+    }
+
+    $updated | save --force --raw $target
 }
