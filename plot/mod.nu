@@ -3,7 +3,7 @@
 # Each data subcommand consumes a table (`list<record>`) on stdin, builds a
 # Vega-Lite spec, and renders it to an image via the native `vl-convert` CLI
 # (see `vega.nu`). There is no interactive window: output is always written to a
-# file (a temp PNG by default, or `--out <path>` whose format follows the
+# file (a temp PDF by default, or `--out <path>` whose format follows the
 # extension) and opened with `start`.
 #
 # Public surface:
@@ -16,8 +16,13 @@
 #
 # Common conventions:
 #   • `--x-axis`/`-x` selects the x column; `--y` is a list of y columns.
+#   • Wide input by default (each `--y` column is a series). Pass `--series <col>`
+#     for long/tidy input instead: one `--y` value column plus a column whose values
+#     name the series — so grouped data pipes in without a manual pivot.
 #   • Output format follows the `--out` extension (png, jpg, svg, pdf, html);
-#     with no `--out` a temp PNG is written. `--no-open` skips the viewer.
+#     with no `--out` a temp PDF is written — vector (zooms losslessly) and opens
+#     in a native viewer (Preview), not the browser. Pass `--out x.png` for a
+#     raster or `--out x.svg` for SVG. `--no-open` skips the viewer.
 #   • `--xformat`/`--yformat` take d3-format specs (e.g. ".2f", "$,.0f", "%").
 #   • Set `$env.PLOT_DEBUG = "/tmp/plot.vl.json"` to dump the generated
 #     Vega-Lite spec for inspection.
@@ -33,10 +38,19 @@ use ./vega.nu
 # The x column may be numeric, datetime, or categorical (string). Multiple y
 # columns are drawn as overlaid series sharing the same x axis. `--smooth`
 # interpolates the curve through the points (e.g. monotone, basis, cardinal).
+#
+# `--series <col>` takes LONG/tidy input instead of wide: each distinct value of
+# that column is drawn as its own line, with the single `--y` column as the value —
+# no manual pivot. So `hits --field level` (rows of {time, level, hits}) plots as
+# `plot line -x time --series level --y [hits]`.
 @category plot
-@search-terms plot line chart timeseries
-@example "Sine wave to a temp PNG" {
+@search-terms plot line chart timeseries series long tidy
+@example "Sine wave to a temp PDF (the default)" {
     seq 0 60 | each {|i| {x: $i, y: ($i * 0.1 | math sin)}} | plot line -x x --y [y]
+}
+@example "Long/tidy input: one line per series value, no pivot" {
+    [[t, sensor, v]; [0, a, 1], [0, b, 4], [1, a, 2], [1, b, 3], [2, a, 5], [2, b, 2]]
+    | plot line -x t --series sensor --y [v] --title "two sensors" --grid --out /tmp/plot-series.png --no-open
 }
 @example "Two series, headless to a temp PNG" {
     seq 1 20
@@ -50,7 +64,8 @@ use ./vega.nu
 }
 export def line [
     --x-axis (-x): string,                          # x column (required)
-    --y: list<string>,                              # y columns (required, one or more)
+    --y: list<string>,                              # y columns (wide); with --series, the single value column
+    --series: string,                               # long input: column whose values name each series
     --smooth: string@"complete smooth" = "none",    # curve interpolation (see `complete smooth`)
     --title (-t): string,                           # plot title
     --xlabel: string,                               # x-axis label
@@ -71,9 +86,7 @@ export def line [
 ]: list -> any {
     let data = $in | validate assert table
     require-flag "plot line" "--x-axis" $x_axis
-    require-non-empty "plot line" "--y" $y
-    $data | validate assert columns ([$x_axis] | append $y) | ignore
-    for col in $y { $data | validate assert numeric $col | ignore }
+    let s = (series-shape "plot line" $data $x_axis $y $series)
 
     let interp = smooth-interp $smooth
     let mark = if ($interp == null) { "line" } else { {type: "line", interpolate: $interp} }
@@ -81,15 +94,15 @@ export def line [
     vega {
         data: $data
         mark: $mark
-        transform: [{fold: $y, as: ["series" "value"]}]
+        transform: $s.transform
         encoding: {
             x: {field: $x_axis, type: (x-type $data $x_axis)}
-            y: {field: "value", type: "quantitative"}
-            color: {field: "series", type: "nominal", title: null}
+            y: {field: $s.value_field, type: "quantitative"}
+            color: {field: $s.series_field, type: "nominal", title: null}
         }
         x_channel: "x"
         y_channel: "y"
-        appearance: (appearance $title $xlabel ($ylabel | default-ylabel $y) $xrange $yrange $width $height $grid $no_legend $logx $logy $legend_pos $xformat $yformat ($y | length))
+        appearance: (appearance $title $xlabel ($ylabel | default-ylabel $y) $xrange $yrange $width $height $grid $no_legend $logx $logy $legend_pos $xformat $yformat $s.n_series)
         out: $out
         open: (not $no_open)
     }
@@ -98,10 +111,11 @@ export def line [
 # Scatter plot of one or more y-series against x.
 #
 # `--shape` picks the marker (see `complete point-shape`) and `--point-size`
-# scales it.
+# scales it. `--series <col>` takes long/tidy input (one point-series per distinct
+# value of that column, the single `--y` as the value) instead of wide `--y` columns.
 @category plot
-@search-terms plot scatter points marker
-@example "Random cloud to a temp PNG" {
+@search-terms plot scatter points marker series long tidy
+@example "Random cloud to a temp PDF (the default)" {
     seq 1 200 | each {|_| {x: (random float (-5)..5), y: (random float (-5)..5)}} | plot scatter -x x --y [y]
 }
 @example "Two series with grid, headless to PNG" {
@@ -111,7 +125,8 @@ export def line [
 }
 export def scatter [
     --x-axis (-x): string,                          # x column (required)
-    --y: list<string>,                              # y columns (required, one or more)
+    --y: list<string>,                              # y columns (wide); with --series, the single value column
+    --series: string,                               # long input: column whose values name each series
     --shape: string@"complete point-shape" = "circle",  # marker shape
     --point-size: float = 1.0,                      # point size multiplier
     --title (-t): string,                           # plot title
@@ -133,22 +148,20 @@ export def scatter [
 ]: list -> any {
     let data = $in | validate assert table
     require-flag "plot scatter" "--x-axis" $x_axis
-    require-non-empty "plot scatter" "--y" $y
-    $data | validate assert columns ([$x_axis] | append $y) | ignore
-    for col in $y { $data | validate assert numeric $col | ignore }
+    let s = (series-shape "plot scatter" $data $x_axis $y $series)
 
     vega {
         data: $data
         mark: {type: "point", shape: $shape, size: ($point_size * 40 | math round), filled: true}
-        transform: [{fold: $y, as: ["series" "value"]}]
+        transform: $s.transform
         encoding: {
             x: {field: $x_axis, type: (x-type $data $x_axis)}
-            y: {field: "value", type: "quantitative"}
-            color: {field: "series", type: "nominal", title: null}
+            y: {field: $s.value_field, type: "quantitative"}
+            color: {field: $s.series_field, type: "nominal", title: null}
         }
         x_channel: "x"
         y_channel: "y"
-        appearance: (appearance $title $xlabel ($ylabel | default-ylabel $y) $xrange $yrange $width $height $grid $no_legend $logx $logy $legend_pos $xformat $yformat ($y | length))
+        appearance: (appearance $title $xlabel ($ylabel | default-ylabel $y) $xrange $yrange $width $height $grid $no_legend $logx $logy $legend_pos $xformat $yformat $s.n_series)
         out: $out
         open: (not $no_open)
     }
@@ -160,8 +173,12 @@ export def scatter [
 #   clustered  → side-by-side bars per category (default)
 #   stacked    → bars stacked by series
 #   normalized → stacked to 100% (relative share)
+#
+# `--series <col>` takes long/tidy input (one series per distinct value of that
+# column, the single `--y` as the value) instead of wide `--y` columns — so a
+# grouped `stats --long` result stacks without a manual pivot.
 @category plot
-@search-terms plot bar column clustered stacked normalized
+@search-terms plot bar column clustered stacked normalized series long tidy
 @example "Clustered bars from a small categorical table" {
     [
         {fruit: apple,  q1: 12, q2: 18}
@@ -176,7 +193,8 @@ export def scatter [
 }
 export def bar [
     --x-axis (-x): string,                          # x column (required) — used as bar label
-    --y: list<string>,                              # y columns (required, one or more)
+    --y: list<string>,                              # y columns (wide); with --series, the single value column
+    --series: string,                               # long input: column whose values name each series
     --style: string@"complete bar-style" = "clustered",  # clustered, stacked, or normalized
     --title (-t): string,                           # plot title
     --xlabel: string,                               # x-axis label
@@ -197,23 +215,21 @@ export def bar [
 ]: list -> any {
     let data = $in | validate assert table
     require-flag "plot bar" "--x-axis" $x_axis
-    require-non-empty "plot bar" "--y" $y
-    $data | validate assert columns ([$x_axis] | append $y) | ignore
-    for col in $y { $data | validate assert numeric $col | ignore }
+    let s = (series-shape "plot bar" $data $x_axis $y $series)
 
     let y_ch = match $style {
-        "clustered" => {field: "value", type: "quantitative", stack: null}
-        "stacked" => {field: "value", type: "quantitative", stack: true}
-        "normalized" => {field: "value", type: "quantitative", stack: "normalize"}
+        "clustered" => {field: $s.value_field, type: "quantitative", stack: null}
+        "stacked" => {field: $s.value_field, type: "quantitative", stack: true}
+        "normalized" => {field: $s.value_field, type: "quantitative", stack: "normalize"}
         _ => { error make {msg: $"plot bar: unknown --style '($style)'; use one of: (complete bar-style | str join ', ')"} }
     }
     let enc_base = {
         x: {field: $x_axis, type: "nominal"}
         y: $y_ch
-        color: {field: "series", type: "nominal", title: null}
+        color: {field: $s.series_field, type: "nominal", title: null}
     }
     let enc = if $style == "clustered" {
-        $enc_base | insert xOffset {field: "series", type: "nominal"}
+        $enc_base | insert xOffset {field: $s.series_field, type: "nominal"}
     } else { $enc_base }
 
     # Normalized bars read as percentages unless the user forces a y format.
@@ -222,11 +238,11 @@ export def bar [
     vega {
         data: $data
         mark: "bar"
-        transform: [{fold: $y, as: ["series" "value"]}]
+        transform: $s.transform
         encoding: $enc
         x_channel: "x"
         y_channel: "y"
-        appearance: (appearance $title $xlabel ($ylabel | default-ylabel $y) $xrange $yrange $width $height $grid $no_legend $logx $logy $legend_pos $xformat $yfmt ($y | length))
+        appearance: (appearance $title $xlabel ($ylabel | default-ylabel $y) $xrange $yrange $width $height $grid $no_legend $logx $logy $legend_pos $xformat $yfmt $s.n_series)
         out: $out
         open: (not $no_open)
     }
@@ -238,7 +254,7 @@ export def bar [
 # y axis shows relative frequency (bucket count / N) instead of raw counts.
 @category plot
 @search-terms plot histogram distribution density
-@example "Normal-ish distribution to a temp PNG" {
+@example "Normal-ish distribution to a temp PDF (the default)" {
     seq 1 500
     | each {|_| {v: ((random float (-1)..1) + (random float (-1)..1) + (random float (-1)..1))}}
     | plot histogram --col v --bins 40
@@ -308,9 +324,12 @@ export def histogram [
 #   pre  → step before the point  (Vega "step-before"; default)
 #   post → step after the point   (Vega "step-after")
 #   mid  → step at the midpoint    (Vega "step")
+#
+# `--series <col>` takes long/tidy input (one step per distinct value of that
+# column, the single `--y` as the value) instead of wide `--y` columns.
 @category plot
-@search-terms plot step staircase piecewise
-@example "Staircase signal to a temp PNG" {
+@search-terms plot step staircase piecewise series long tidy
+@example "Staircase signal to a temp PDF (the default)" {
     [
         {t: 0, level: 0}
         {t: 1, level: 1}
@@ -327,7 +346,8 @@ export def histogram [
 }
 export def step [
     --x-axis (-x): string,                          # x column (required)
-    --y: list<string>,                              # y columns (required, one or more)
+    --y: list<string>,                              # y columns (wide); with --series, the single value column
+    --series: string,                               # long input: column whose values name each series
     --where: string@"complete step-where" = "pre",  # step placement: pre, post, or mid
     --title (-t): string,                           # plot title
     --xlabel: string,                               # x-axis label
@@ -348,22 +368,20 @@ export def step [
 ]: list -> any {
     let data = $in | validate assert table
     require-flag "plot step" "--x-axis" $x_axis
-    require-non-empty "plot step" "--y" $y
-    $data | validate assert columns ([$x_axis] | append $y) | ignore
-    for col in $y { $data | validate assert numeric $col | ignore }
+    let s = (series-shape "plot step" $data $x_axis $y $series)
 
     vega {
         data: $data
         mark: {type: "line", interpolate: (step-interp $where)}
-        transform: [{fold: $y, as: ["series" "value"]}]
+        transform: $s.transform
         encoding: {
             x: {field: $x_axis, type: (x-type $data $x_axis)}
-            y: {field: "value", type: "quantitative"}
-            color: {field: "series", type: "nominal", title: null}
+            y: {field: $s.value_field, type: "quantitative"}
+            color: {field: $s.series_field, type: "nominal", title: null}
         }
         x_channel: "x"
         y_channel: "y"
-        appearance: (appearance $title $xlabel ($ylabel | default-ylabel $y) $xrange $yrange $width $height $grid $no_legend $logx $logy $legend_pos $xformat $yformat ($y | length))
+        appearance: (appearance $title $xlabel ($ylabel | default-ylabel $y) $xrange $yrange $width $height $grid $no_legend $logx $logy $legend_pos $xformat $yformat $s.n_series)
         out: $out
         open: (not $no_open)
     }
@@ -372,10 +390,12 @@ export def step [
 # Impulse plot: vertical sticks from y=0 to each y value.
 #
 # Good for sparse spikes (counts, deltas) where lines or bars would be noisy.
-# `--linewidth` controls stick thickness.
+# `--linewidth` controls stick thickness. `--series <col>` takes long/tidy input
+# (one stick-series per distinct value of that column, the single `--y` as the
+# value) instead of wide `--y` columns.
 @category plot
-@search-terms plot impulses sticks spikes lollipop
-@example "Sparse spikes to a temp PNG" {
+@search-terms plot impulses sticks spikes lollipop series long tidy
+@example "Sparse spikes to a temp PDF (the default)" {
     seq 1 25
     | each {|i| {x: $i, hits: (if (random int 0..4) == 0 { random int 1..10 } else { 0 })}}
     | plot impulses -x x --y [hits] --grid
@@ -387,7 +407,8 @@ export def step [
 }
 export def impulses [
     --x-axis (-x): string,                          # x column (required)
-    --y: list<string>,                              # y columns (required, one or more)
+    --y: list<string>,                              # y columns (wide); with --series, the single value column
+    --series: string,                               # long input: column whose values name each series
     --linewidth (-w): float = 2.0,                  # stick thickness
     --title (-t): string,                           # plot title
     --xlabel: string,                               # x-axis label
@@ -408,23 +429,21 @@ export def impulses [
 ]: list -> any {
     let data = $in | validate assert table
     require-flag "plot impulses" "--x-axis" $x_axis
-    require-non-empty "plot impulses" "--y" $y
-    $data | validate assert columns ([$x_axis] | append $y) | ignore
-    for col in $y { $data | validate assert numeric $col | ignore }
+    let s = (series-shape "plot impulses" $data $x_axis $y $series)
 
     vega {
         data: $data
         mark: {type: "rule", size: $linewidth}
-        transform: [{fold: $y, as: ["series" "value"]}]
+        transform: $s.transform
         encoding: {
             x: {field: $x_axis, type: (x-type $data $x_axis)}
-            y: {field: "value", type: "quantitative"}
+            y: {field: $s.value_field, type: "quantitative"}
             y2: {datum: 0}
-            color: {field: "series", type: "nominal", title: null}
+            color: {field: $s.series_field, type: "nominal", title: null}
         }
         x_channel: "x"
         y_channel: "y"
-        appearance: (appearance $title $xlabel ($ylabel | default-ylabel $y) $xrange $yrange $width $height $grid $no_legend $logx $logy $legend_pos $xformat $yformat ($y | length))
+        appearance: (appearance $title $xlabel ($ylabel | default-ylabel $y) $xrange $yrange $width $height $grid $no_legend $logx $logy $legend_pos $xformat $yformat $s.n_series)
         out: $out
         open: (not $no_open)
     }
@@ -443,6 +462,35 @@ def require-flag [cmd: string, flag: string, value: any] {
 def require-non-empty [cmd: string, flag: string, value: any] {
     if ($value == null) or ($value | is-empty) {
         error make {msg: $"($cmd): ($flag) is required and must be non-empty"}
+    }
+}
+
+# Resolve the two input layouts the folded-series marks (line/scatter/bar/step/
+# impulses) accept into one common shape, and validate it.
+#
+# WIDE (default): `--y` lists one column per series; a `fold` transform melts those
+# columns into synthetic `series`/`value` fields that the encoding reads.
+# LONG (`--series <col>` given): the table is ALREADY tidy — one value column (the
+# single `--y`) plus a column whose VALUES name the lines — so no fold is needed and
+# the encoding reads those real fields directly. This is what lets a grouped source
+# (a pivot-free `mole-victorialogs hits --field level`, a VM range query, …) pipe
+# straight in. Returns {transform, series_field, value_field, n_series}: the caller
+# drops the fields into its x/y/color channels, the transform into the spec, and
+# n_series into the legend heuristic (distinct series count in long mode).
+def series-shape [cmd: string, data: list, x_axis: string, y: list<string>, series: any]: nothing -> record {
+    if ($series | is-not-empty) {
+        if (($y | default [] | length) != 1) {
+            error make {msg: $"($cmd): with --series, pass a single --y column as the value to measure; got (($y | default [] | length))"}
+        }
+        let value = ($y | first)
+        $data | validate assert columns [$x_axis $series $value] | ignore
+        $data | validate assert numeric $value | ignore
+        {transform: [], series_field: $series, value_field: $value, n_series: ($data | get $series | uniq | length)}
+    } else {
+        require-non-empty $cmd "--y" $y
+        $data | validate assert columns ([$x_axis] | append $y) | ignore
+        for col in $y { $data | validate assert numeric $col | ignore }
+        {transform: [{fold: $y, as: ["series" "value"]}], series_field: "series", value_field: "value", n_series: ($y | length)}
     }
 }
 

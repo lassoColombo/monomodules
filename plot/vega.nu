@@ -73,9 +73,13 @@ export def main [spec: record]: nothing -> any {
     $out_path
 }
 
-# Resolve the output format from the --out extension, defaulting to png.
+# Resolve the output format from the --out extension. With no --out (a temp file),
+# default to PDF: it's vector (zooms losslessly) AND opens in a native viewer
+# (macOS Preview) instead of the browser, which makes it the better "just show me"
+# default. An explicit --out extension always wins (use `--out x.png` for a raster,
+# `--out x.svg` for SVG).
 def vega-ext [out: any]: nothing -> string {
-    if ($out == null) { return "png" }
+    if ($out == null) { return "pdf" }
     let e = $out | path parse | get extension | str lowercase
     if ($e | is-empty) {
         error make {msg: $"plot: --out '($out)' has no extension; use one of: (vega-formats | str join ', ')"}
