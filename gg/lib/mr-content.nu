@@ -1,8 +1,5 @@
 use ai.nu
 
-def source-branch-completer [] {[quality]}
-def target-branch-completer [] {[main master quality]}
-
 const mr_prompt_pattern = "Generate a merge request title and description from this diff.
 - title: a synthetic one-line summary. Under 72 chars, imperative mood, no trailing period. It should read like a good commit subject — what a reviewer sees in a list of MRs and immediately understands.
 - description: a descriptive explanation aimed at a reviewer. Cover *what* changed (grouped by area or theme, not file by file), *why* it changed (motivation, context, any issue or ticket referenced in the commits), and any implementation detail, trade-off, or follow-up worth flagging. Use short paragraphs separated by blank lines, and a bulleted list when enumerating several distinct points. Be substantive but not padded — match the depth to the size of the change.

@@ -1,5 +1,5 @@
-# AI-powered content generation helpers for GitLab workflows.
-# Shared between merge-request and commit commands.
+# AI-powered content generation helpers.
+# Shared by `commit` and the provider `mr` / `pr` commands.
 
 # Generate structured content from a prompt using Claude.
 const max_prompt_len = 40_000
