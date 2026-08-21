@@ -1,4 +1,4 @@
-use lib/ai.nu
+use ../../ai
 
 const commit_prompt_pattern = "Generate a Conventional Commits message from this diff. Produce two fields:
 - subject: a one-line summary in the form `type(scope): description`. Under 72 chars, imperative mood, no trailing period. The scope is optional — include it only when a single well-defined area of the codebase is affected.

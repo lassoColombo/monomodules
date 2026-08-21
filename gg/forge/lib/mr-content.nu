@@ -1,4 +1,4 @@
-use ai.nu
+use ../../../ai
 
 const mr_prompt_pattern = "Generate a merge request title and description from this diff.
 - title: a synthetic one-line summary. Under 72 chars, imperative mood, no trailing period. It should read like a good commit subject — what a reviewer sees in a list of MRs and immediately understands.

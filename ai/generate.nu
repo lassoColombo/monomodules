@@ -1,10 +1,7 @@
-# AI-powered content generation helpers.
-# Shared by `commit` and the provider `mr` / `pr` commands.
-
 # Generate structured content from a prompt using Claude.
 const max_prompt_len = 40_000
 
-export def generate [
+export def main [
   prompt: string   # The full prompt to send
   schema: record   # JSON schema for structured output
   --think          # Use extended thinking (slower, better for complex diffs)
@@ -40,30 +37,4 @@ export def generate [
       --json-schema $schema_json)
   }
   $result | from json | get structured_output
-}
-
-# Interactive review loop: generate, show, let user accept/edit/regenerate/quit.
-# Returns null if user quits.
-export def review-loop [
-  generate_fn: closure       # Closure that returns a record
-  user_prompt_pattern: string # Pattern with field placeholders for display
-]: nothing -> record {
-  mut user_choice = 'n'
-  mut result = {}
-  while $user_choice != y {
-    $result = do $generate_fn
-    let user_prompt = $result | format pattern $user_prompt_pattern
-    $user_choice = input --numchar 1 --default r $user_prompt
-    if $user_choice == q {
-      print $"(ansi light_yellow)aborting(ansi reset)"
-      return null
-    } else if $user_choice == e {
-      let t = mktemp --suffix .yaml
-      $result | to yaml | save -f $t
-      ^$env.EDITOR $t
-      $result = open $t -r | from yaml
-      $user_choice = 'y'
-    }
-  }
-  $result
 }

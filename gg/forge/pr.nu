@@ -1,9 +1,9 @@
-use ../../lib/mr-content.nu generate-mr-content
+use lib/mr-content.nu generate-mr-content
 
 def source-branch-completer [] {[main]}
 def target-branch-completer [] {[main master]}
 
-# Opens a pull request for the current repo (launch in project root)
+# Opens a GitHub pull request for the current repo (launch in project root)
 export def main [
   source_branch: string@source-branch-completer
   target_branch: string@target-branch-completer
