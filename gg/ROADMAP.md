@@ -84,14 +84,16 @@ Deep one-command-per-file layout; extracted `forge` (authoring) and `ai`
 
 ## Phase 1 — The power tools
 
-### [ ] Step B — `gg each`
-- **Goal:** run a closure in every repo, in parallel, with a result summary.
-- **Deliverable:** the `fleet/` submodule + `lib/report.nu` wired up; `each`
-  flattened to top level. Subsumes update / checkout / maintenance as recipes.
-- **Decisions to resolve:** parallelism cap; closure signature / per-repo context;
-  progress rendering; error policy (collect vs fail-fast).
-- **Done when:** `gg each { git pull --ff-only }` updates the fleet and reports
-  updated / skipped / failed.
+### [x] Step B — `gg each`  *(done)*
+- **Shipped `fleet/each.nu`:** `gg each [-s source] {closure}` runs the closure in
+  every repo (from `discover`) via `par-each`, cwd = repo, repo record piped as
+  `$in`. Per-repo `try`/`catch` isolates failures — one never aborts the run.
+  Returns `{source, repo, status, output}`; `lib/report.nu` prints a colored
+  ok/skip/fail tally to **stderr** (stdout stays pipeable).
+- Turns update/checkout/maintenance into one-liners:
+  `gg each { git pull --ff-only }`, `gg each -s elmec { git switch main }`.
+- **Rough edge:** a failing external command's stderr streams to the terminal and
+  `output` holds nushell's generic exit-code message, not the captured stderr.
 
 ### [ ] Step C — `gg status`
 - **Goal:** read-only fleet overview — the command you run most.
@@ -114,8 +116,8 @@ These are thin wrappers / `each` recipes — build on demand, not upfront.
 ## Critical path
 
 ```
-structure/split ✓ → A discover → B each → C status
-                                     └→ Phase 2 (each-recipes / thin wrappers, optional)
+structure/split ✓ → A discover ✓ → B each ✓ → C status
+                                        └→ Phase 2 (each-recipes / thin wrappers, optional)
 ```
 
 Foundation is one step from done (discovery). After that, `each` + `status` are
