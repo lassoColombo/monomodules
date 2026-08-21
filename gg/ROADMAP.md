@@ -73,9 +73,13 @@ Deep one-command-per-file layout; extracted `forge` (authoring) and `ai`
 (generation) into their own modules. `gg` is now pure fleet management.
 
 ### [x] Step A — Local repo discovery  *(done)* + config-driven interface
-- **Shipped `lib/discover.nu`:** walks each configured source's `dir` for `.git`,
-  returns `{source, provider, name, path, remote, default_branch}` — pure-local,
-  no API; provider comes from config, missing dirs skip.
+- **Shipped `lib/discover.nu`:** a *pruning* walk of each source's `dir` — records
+  a repo at the first `.git` **directory** and stops descending. Excludes
+  worktrees & submodules (`.git` is a *file*), bare repos (`*.git`), and
+  repos-nested-in-repos; never crawls a repo's working tree (fast). Returns
+  `{source, provider, name, path, remote, default_branch}` — pure-local, no API;
+  provider from config, missing dirs skip. Verified: 391 repos across your 3
+  sources, 0 worktree/junk leakage.
 - **Shipped the config-driven interface it rides on:** `lib/config.nu`
   (resolve/normalize `$env.gg_config`), `providers/{gitlab,github}.nu` `enumerate`
   adapters + `providers/mod.nu` dispatch, and unified `gg list` / `gg clone`.
