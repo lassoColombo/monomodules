@@ -7,17 +7,21 @@ standalone `ai` module.
 
 ## Structure (done)
 
-Split by concern into small submodules; generation extracted to a sibling module:
+Split by concern; the fleet is **config-driven** — `$env.gg_config` declares each
+source (provider, host, group/org, local `dir`; see README).
 
-| unit            | commands                           | operates on           | needs            |
-|-----------------|------------------------------------|-----------------------|------------------|
-| `ai` (sibling)  | `generate`, `review-loop`          | a prompt → text       | Claude           |
-| `gg/forge/`     | `gg commit`, `gg mr`, `gg pr`      | the **current** repo  | git, glab/gh, ai |
-| `gg/providers/` | `gg gitlab/github list` / `clone`  | a whole **group/org** | git, glab/gh     |
-| `gg/fleet/`     | `gg each`, `gg status` (later)     | the **local fleet**   | git              |
+| unit            | commands                                     | operates on          | needs        |
+|-----------------|----------------------------------------------|----------------------|--------------|
+| `ai` (sibling)  | `generate`, `review-loop`                    | a prompt → text      | Claude       |
+| `gg/forge/`     | `gg commit`, `gg mr`, `gg pr`                | the **current** repo | git, glab/gh, ai |
+| `gg/fleet/`     | `gg list`, `gg clone` (`status`/`each` next) | the **fleet**        | git, glab/gh |
+| `gg/providers/` | *(internal)* `enumerate` adapters            | one source's remote  | glab / gh    |
+| `gg/lib/`       | *(internal)* `config`, `discover`, `report`  | config + local repos | git          |
 
-`forge`'s commands are flattened to the gg top level (`export use forge *`) and
-import `ai` via `use ../../ai`. `ai` stays standalone (not git-specific).
+`forge` and `fleet` commands are flattened to the gg top level (`export use … *`);
+`forge` imports the standalone `ai` via `use ../../ai`. `providers/` and `lib/`
+are internal (imported by path, not re-exported). **Only `enumerate` is
+provider-specific** — clone / discover / status / each are pure git.
 
 ## Philosophy — few powerful functions
 
@@ -39,9 +43,13 @@ optional conveniences.
 
 ## Spine (settled)
 
-1. **Split surface.** Provider-agnostic verbs top-level (`gg status`, `gg each`);
-   API verbs namespaced (`gg gitlab …` / `gg github …`).
-2. **Workspace root.** `lib/root.nu`: `--root` > `$env.gg_root` > cwd. (planted)
+1. **Unified, config-driven surface.** Fleet verbs (`gg list` / `clone` /
+   `status` / `each`) take a source handle from `$env.gg_config` — no provider
+   namespaces. Provider differences live only in internal `enumerate` adapters.
+2. **Declared desired state.** `$env.gg_config` (record keyed by handle) is the
+   source of truth — provider / host / group|org / local `dir`. `lib/config.nu`
+   reads + normalizes + resolves it (kube-bridge-style). Supersedes the
+   single-root idea (`root.nu` removed).
 3. **Fleet-exec primitive.** One internal "run in every repo, in parallel,
    isolate errors, collect results" helper; `each` / `status` wrap it.
 4. **Structured result contract.** `lib/report.nu`: every bulk verb returns a
@@ -51,9 +59,10 @@ optional conveniences.
    nested submodules; `lib/` = internal helpers imported by path. (durable pref)
 
 **Verified (nu 0.114):** deep dirs don't leak into the command path; leaf
-commands use `export def main`; `export use fleet *` flattens to top level;
+commands use `export def main`; `export use … *` flattens to top level;
 `use ../../lib/x.nu` and sibling `use ../ai` both resolve; `lib/` is a plain
-folder (no `mod.nu`, not re-exported).
+folder (no `mod.nu`, not re-exported). Config resolve, provider dispatch, and
+`discover` verified against a throwaway fleet.
 
 ---
 
@@ -63,15 +72,15 @@ folder (no `mod.nu`, not re-exported).
 Deep one-command-per-file layout; extracted `forge` (authoring) and `ai`
 (generation) into their own modules. `gg` is now pure fleet management.
 
-### [ ] Step A — Local repo discovery  *(the only foundation left)*
-- **Goal:** enumerate the cloned fleet so `each` / `status` have something to
-  iterate.
-- **Deliverable:** `lib/discover.nu` → `list<record<name, path, remote, default_branch>>`
-  for every cloned repo under the root (`root.nu` feeds it).
-- **Decisions to resolve:** walk for `.git` vs. reconcile against the API listing;
-  how to handle the nested `path_with_namespace` tree; symlinks / bare repos /
-  non-git dirs; pure-local vs. API-backed.
-- **Done when:** returns a clean table for a real group tree.
+### [x] Step A — Local repo discovery  *(done)* + config-driven interface
+- **Shipped `lib/discover.nu`:** walks each configured source's `dir` for `.git`,
+  returns `{source, provider, name, path, remote, default_branch}` — pure-local,
+  no API; provider comes from config, missing dirs skip.
+- **Shipped the config-driven interface it rides on:** `lib/config.nu`
+  (resolve/normalize `$env.gg_config`), `providers/{gitlab,github}.nu` `enumerate`
+  adapters + `providers/mod.nu` dispatch, and unified `gg list` / `gg clone`.
+- **Internal for now:** `discover` isn't a command yet — it feeds `status`/`each`
+  (Steps B/C), which will surface the fleet.
 
 ## Phase 1 — The power tools
 
@@ -97,8 +106,8 @@ These are thin wrappers / `each` recipes — build on demand, not upfront.
 - **`clone --update` (sync)** — fold update into clone: clone missing + pull existing.
 - **`prune`** — report local repos gone from the remote listing; guarded `--remove`.
 - **filters** — `--archived` / `--no-forks` / name glob on `list` / `clone`.
-- **MR/PR dashboard** — `gg gitlab mrs` / `gg github prs`: open requests across the
-  whole group/org (API-only; reuses existing auth).
+- **MR/PR dashboard** — `gg mrs` / `gg prs`: open requests across a source
+  (API-only; reuses existing auth).
 
 ---
 
