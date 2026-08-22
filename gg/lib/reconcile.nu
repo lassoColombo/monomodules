@@ -32,6 +32,25 @@ export def classify [repo: record, index: table]: nothing -> record {
   }
 }
 
+# The sensible default action per drift case, applied by `gg sync --force`.
+# `orphan` defaults to `skip` — never trash a repo with no configured upstream
+# unless explicitly asked; the others take the obvious corrective action.
+const FORCE_DEFAULTS = { misplaced: "move", "wrong-source": "move", orphan: "skip", missing: "clone" }
+
+# Actions that make sense per case — guards config typos (quit / prompt-only aside).
+const FORCE_VALID = { misplaced: ["move" "trash" "skip"], "wrong-source": ["move" "trash" "skip"], orphan: ["trash" "skip"], missing: ["clone" "skip"] }
+
+# Resolve the forced action for one drift `case` under `source`: the source's
+# per-case `sync` override ($env.gg_config.<source>.sync.<case>) if set, else the
+# global sensible default. Validated against the case's allowed actions.
+export def force-action [case: string, source: record]: nothing -> string {
+  let action = ($source.sync? | default {} | get -o $case | default ($FORCE_DEFAULTS | get $case))
+  if ($action not-in ($FORCE_VALID | get $case)) {
+    error make --unspanned {msg: $"gg: source '($source.name)' sync policy for '($case)' is '($action)' — must be one of (($FORCE_VALID | get $case) | str join ', ')"}
+  }
+  $action
+}
+
 # Move a repo dir (a non-destructive rename — all git state travels with it).
 # Skips if the target is occupied.
 export def act-move [from: path, to: path]: nothing -> record {

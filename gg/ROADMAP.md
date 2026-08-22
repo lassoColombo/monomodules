@@ -129,6 +129,13 @@ stash). `--dry-run` audits without touching anything. Subsumes the earlier
 prune/migrate ideas. Logic in `lib/reconcile.nu` (unit-tested), shared git-state in
 `lib/gitstate.nu`; live enumerate + interactive flow need VPN + a TTY.
 
+**`--force`** skips all prompts and applies one sensible default action per case
+(misplaced→move, wrong-source→move, orphan→skip, missing→clone). Each source can
+override these per case via a `sync` record in `$env.gg_config` (e.g. a
+hand-organized `personal` sets `misplaced: skip` so force never flattens it).
+`reconcile force-action` resolves + validates the policy; `--dry-run --force`
+previews it as a `would` column.
+
 ## Phase 2 — Optional conveniences (only if wanted)
 
 These are thin wrappers / `each` recipes — build on demand, not upfront.

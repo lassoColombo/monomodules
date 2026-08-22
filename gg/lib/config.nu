@@ -5,10 +5,11 @@
 #
 #   $env.gg_config = {
 #     elmec:    { provider: gitlab, host: "git.elmec.com", group: "platform", dir: "~/work/elmec" }
-#     personal: { provider: github, org: "lasso", dir: "~/projects/personal" }
+#     personal: { provider: github, org: "lasso", dir: "~/projects/personal"
+#                 sync: { misplaced: skip, orphan: skip } }   # optional `gg sync --force` policy
 #   }
 #
-# See gg/README.md for the full field reference.
+# See gg/README.md for the full field reference (incl. the `sync` policy).
 
 # provider -> default API host
 const HOST_DEFAULT = { gitlab: "git.elmec.com", github: "github.com" }

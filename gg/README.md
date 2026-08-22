@@ -24,6 +24,9 @@ $env.gg_config = {
     provider: github
     org:  "lasso"
     dir:  "~/projects/personal"
+    # optional: what `gg sync --force` does per drift case for this source.
+    # here — a hand-organized layout — never move; only clone what's missing.
+    sync: { misplaced: skip, wrong-source: skip, orphan: skip }
   }
 }
 ```
@@ -36,14 +39,37 @@ $env.gg_config = {
 | `group_id` | gitlab (alt) | numeric id; takes precedence over `group` |
 | `org` | github | organization (or user) login |
 | `host` | no | API host; defaults `git.elmec.com` (gitlab) / `github.com` (github) |
+| `sync` | no | per-case `gg sync --force` policy (see below); overrides the defaults |
 | `url` | no | reserved (reference / open in browser) |
+
+### `gg sync --force` policy
+
+`gg sync` is interactive by default. With `--force` it skips every prompt and
+applies one sensible default action per drift case. A source's `sync` record
+overrides those defaults per case (unset cases fall through to the default).
+
+| case | meaning | actions | default |
+|---|---|---|---|
+| `misplaced` | right source, wrong path | move / trash / skip | `move` |
+| `wrong-source` | belongs to another source | move / trash / skip | `move` |
+| `orphan` | no matching configured upstream | trash / skip | `skip` |
+| `missing` | in the remote listing, not on disk | clone / skip | `clone` |
+
+`move` is a non-destructive rename; `trash` relocates to `<dir>/.gg-trash` and is
+**refused if the repo has unsaved work**; `clone` fetches it. Preview exactly what
+`--force` would do with `gg sync --dry-run --force` (adds a `would` column).
 
 ## Commands
 
-Fleet — omit `[source]` to act on **every** configured source:
+Fleet — act on **every** configured source by default; `--source`/`-s <handle>`
+scopes to one:
 
-- `gg list [source]` — list a source's repos (remote enumeration; no disk writes)
-- `gg clone [source]` — clone missing repos into the source's `dir` (idempotent)
+- `gg list [-s src]` — list a source's repos (remote enumeration; no disk writes)
+- `gg clone [-s src]` — clone missing repos into the source's `dir` (idempotent)
+- `gg status [-s src] [--dirty]` — branch / ahead-behind / dirty / stash, per repo
+- `gg each [-s src] {closure}` — run a closure in every repo, in parallel
+- `gg sync [-s src] [--force] [--dry-run]` — reconcile drift between remotes and
+  disk (interactive; `--force` applies the configured per-source defaults)
 
 Authoring — current repo:
 
@@ -51,4 +77,4 @@ Authoring — current repo:
 - `gg mr <src> <tgt>` — open a GitLab merge request (AI description)
 - `gg pr <src> <tgt>` — open a GitHub pull request (AI description)
 
-See `ROADMAP.md` for what's planned (`status`, `each`).
+See `ROADMAP.md` for optional Phase 2 conveniences.
