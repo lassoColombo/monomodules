@@ -2,9 +2,9 @@
 # notification popup. "Notifications" = agents currently in an attention state
 # (● awaiting / ▲ needs-attention), across all live sessions.
 #
-#   agent-notify sketchybar          rebuild the popup + anchor label (on event)
-#   agent-notify sketchybar toggle   show/hide the drawer (bound to a keybind)
-#   agent-notify sketchybar close    hide the drawer (after a jump)
+#   ai agent-notify sketchybar   rebuild the popup + anchor label (on event)
+#   ai agent-notify toggle       show/hide the drawer (bound to a keybind)
+#   ai agent-notify close        hide the drawer (after a jump)
 #
 # The anchor item `notify` and the bar itself are defined in sketchybarrc; this
 # module only (re)populates them. Uses absolute paths so it works from the

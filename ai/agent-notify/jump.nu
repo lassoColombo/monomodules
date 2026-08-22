@@ -1,4 +1,4 @@
-# `agent-notify jump <session> <pane_id>` — bring the terminal forward and
+# `ai agent-notify jump <session> <pane_id>` — bring the terminal forward and
 # switch its client to <session>, focusing the exact agent PANE (not just the
 # tab). Safe to call from outside zellij (e.g. a SketchyBar notification click),
 # since it derives the currently-attached session from the window title rather

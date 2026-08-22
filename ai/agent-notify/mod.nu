@@ -1,4 +1,5 @@
 # Reflects AI-agent state in the zellij pane/tab titles and an on-disk store.
+# Submodule of `ai`; commands are exposed as `ai agent-notify <cmd>`.
 #
 #  - Pane: "(<agent> <sym>) - <base>" for THIS pane's agent (agent name kept
 #          here, since a pane is one agent).
