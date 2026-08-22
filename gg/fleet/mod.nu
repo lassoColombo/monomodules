@@ -3,4 +3,4 @@
 export use list.nu
 export use clone.nu
 export use each.nu
-# later steps: export use status.nu
+export use status.nu

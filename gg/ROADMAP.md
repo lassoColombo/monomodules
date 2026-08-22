@@ -99,11 +99,24 @@ Deep one-command-per-file layout; extracted `forge` (authoring) and `ai`
 - **Rough edge:** a failing external command's stderr streams to the terminal and
   `output` holds nushell's generic exit-code message, not the captured stderr.
 
-### [ ] Step C — `gg status`
-- **Goal:** read-only fleet overview — the command you run most.
-- **Deliverable:** one table across all repos: branch, dirty?, ahead/behind, stash?.
-- **Decisions to resolve:** columns; ahead/behind with no upstream; `--dirty-only`.
-- **Done when:** one glanceable table across the fleet.
+### [x] Step C — `gg status`  *(done)*
+- **Shipped `fleet/status.nu`:** `gg status [source] [--dirty]` — one row per repo
+  `{source, repo, branch, ahead, behind, dirty, stash}` from a single
+  `git status --porcelain=2 --branch` + a stash count, `par-each` over `discover`.
+  Colored summary (`N repos · dirty · ahead · behind · stashed`) to stderr;
+  `--dirty` filters to repos needing attention. Verified: cybergon 91 repos ~1.6s.
+- Note: source is a positional (like `list`/`clone`); only `each` uses `-s` (its
+  positional is the closure).
+
+### [x] Clone layout — group-relative  *(done)*
+`enumerate` returns each project's path **relative to the source group** (group/
+owner prefix stripped, subgroups preserved); `clone` joins it under `dir`, so a
+repo lands at `<dir>/<path-within-group>` — matching the ghorg-style on-disk
+layout, not a doubled/nested tree. GitLab strips the group's canonical `full_path`
+(one `glab api groups/<id>` lookup, so `group` or numeric `group_id` both work);
+GitHub strips the owner. Strip logic unit-tested (9/9) against real-shaped paths;
+live `glab`/`gh` plumbing unchanged. Audit: security 286/286, cybergon 87/91,
+cybergon-public 17/18 already sit at the correct path (rest is upstream drift).
 
 ## Phase 2 — Optional conveniences (only if wanted)
 
@@ -120,7 +133,7 @@ These are thin wrappers / `each` recipes — build on demand, not upfront.
 ## Critical path
 
 ```
-structure/split ✓ → A discover ✓ → B each ✓ → C status
+structure/split ✓ → A discover ✓ → B each ✓ → C status ✓   ← core complete
                                         └→ Phase 2 (each-recipes / thin wrappers, optional)
 ```
 

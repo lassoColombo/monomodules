@@ -42,16 +42,15 @@ def normalize [name: string, entry: record]: nothing -> record {
 # Resolve a source by handle — or every source when omitted — to normalized records.
 export def resolve [name?: string]: nothing -> list<record> {
   let cfg = read
-  if ($name != null) {
-    let entry = ($cfg | get -o $name)
-    if ($entry == null) {
-      error make --unspanned {msg: $"gg: no source named '($name)' \(configured: ($cfg | columns | str join ', ')\)"}
-    }
-    [(normalize $name $entry)]
-  } else {
-    if ($cfg | is-empty) {
-      error make --unspanned {msg: "gg: $env.gg_config is empty — declare at least one source (see gg/README.md)"}
-    }
-    $cfg | items {|name, entry| normalize $name $entry }
+  if ($cfg | is-empty) {
+    error make --unspanned {msg: "gg: $env.gg_config is empty — declare at least one source (see gg/README.md)"}
   }
+  if ($name | is-empty) {
+    return $cfg | items {|name, entry| normalize $name $entry }
+  } 
+  let entry = ($cfg | get -o $name)
+  if ($entry == null) {
+    error make --unspanned {msg: $"gg: no source named '($name)' \(configured: ($cfg | columns | str join ', ')\)"}
+  }
+  [(normalize $name $entry)]
 }
