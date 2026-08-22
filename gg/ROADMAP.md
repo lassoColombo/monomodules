@@ -118,6 +118,17 @@ GitHub strips the owner. Strip logic unit-tested (9/9) against real-shaped paths
 live `glab`/`gh` plumbing unchanged. Audit: security 286/286, cybergon 87/91,
 cybergon-public 17/18 already sit at the correct path (rest is upstream drift).
 
+### [x] `gg sync` — interactive drift reconciliation  *(done)*
+Matches each on-disk repo's remote URL against every configured source's
+`enumerate` and classifies: **misplaced** (wrong path in-source), **wrong-source**
+(belongs to another group), **orphan** (no configured match), **missing** (in the
+remote, not on disk). Walks repo-by-repo — you choose per repo → it builds a plan →
+you confirm once → it applies. Moves are non-destructive; deletes go to
+`<dir>/.gg-trash` and are **refused if the repo has unsaved work** (dirty/unpushed/
+stash). `--dry-run` audits without touching anything. Subsumes the earlier
+prune/migrate ideas. Logic in `lib/reconcile.nu` (unit-tested), shared git-state in
+`lib/gitstate.nu`; live enumerate + interactive flow need VPN + a TTY.
+
 ## Phase 2 — Optional conveniences (only if wanted)
 
 These are thin wrappers / `each` recipes — build on demand, not upfront.
