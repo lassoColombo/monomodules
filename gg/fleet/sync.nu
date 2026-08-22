@@ -25,9 +25,10 @@ def fmt-state [s: record]: nothing -> string {
 # Diagnoses each repo (misplaced / wrong-source / orphan / missing), lets you choose
 # per repo, collects a plan, and applies it only after you confirm. Moves are
 # non-destructive; deletes go to <dir>/.gg-trash and are guarded against unsaved work.
+# Acts on the whole fleet by default; pass --source to limit to one source.
 # `--dry-run` prints the drift and stops (no prompts, no changes).
 export def main [
-  source?: string@source-completer
+  --source (-s): string@source-completer
   --dry-run
 ]: nothing -> any {
   let all_sources = (config resolve)
