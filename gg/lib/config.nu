@@ -46,7 +46,7 @@ export def resolve [name?: string]: nothing -> list<record> {
     error make --unspanned {msg: "gg: $env.gg_config is empty — declare at least one source (see gg/README.md)"}
   }
   if ($name | is-empty) {
-    return $cfg | items {|name, entry| normalize $name $entry }
+    return ($cfg | items {|name, entry| normalize $name $entry })
   } 
   let entry = ($cfg | get -o $name)
   if ($entry == null) {
