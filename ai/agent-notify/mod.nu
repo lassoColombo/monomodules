@@ -1,86 +1,24 @@
-# Reflects AI-agent state in the zellij pane/tab titles and an on-disk store.
-# Submodule of `ai`; commands are exposed as `ai agent-notify <cmd>`.
+# Reflects AI-agent state in the zellij pane/tab titles, and projects those
+# titles onto a cross-session SketchyBar popup. Submodule of `ai`; commands are
+# `ai agent-notify <cmd>`.
 #
-#  - Pane: "(<agent> <sym>) - <base>" for THIS pane's agent (agent name kept
-#          here, since a pane is one agent).
-#  - Tab:  a bare AGGREGATE over every agent pane in the tab — just the symbols,
-#          no agent name, no parens: "▲ ●2 - <base>" -> "▲ ●2 <base>". Because
-#          the tab name is a pure function of all panes' states, concurrent
-#          agents sharing a tab converge instead of clobbering each other.
+#  - Pane: "<sym> <base>" — a SMALL state indicator prefixed to the pane name
+#          (only while an agent is in a state; idle panes are just their name).
+#  - Tab:  a bare AGGREGATE over every agent pane in the tab ("▴ •2 <base>").
 #
-# Base names are recovered by stripping any leading tag first (both the pane's
-# "(...) - base" form and the tab's bare "<symbols> base" form).
-# Targets the pane the caller runs in via $ZELLIJ_PANE_ID. No-op outside zellij.
-#
-# Every state change is also persisted to an on-disk store (see lib/store.nu),
-# which backs the cross-session notifier (SketchyBar) and the session switcher.
+# There is ONE source of truth: the live pane titles (see lib/zellij.nu `scan`).
+# They die with the pane, so a killed agent leaves nothing stale behind — no
+# separate state store. The tab title and the SketchyBar popup are both
+# projections of that scan, recomputed by `reap` (run on a heartbeat so an
+# abruptly-closed pane self-heals). No-op outside zellij ($ZELLIJ_PANE_ID).
 
 use lib/const.nu *
-use lib/store.nu *
+use lib/title.nu *
+use lib/zellij.nu *
 export use jump.nu *
 export use sketchybar.nu *
 
-const markers = [$S_NEED $S_WAIT $S_WORK]   # priority order: most urgent first
-
-# Split a title into {agent, symbol, base}. Handles the pane form
-# "(<agent> <sym>) - <base>" and the tab form "<syms> <base>"; untagged titles
-# (plain shells, Claude Code's own title) yield empty agent/symbol + clean base.
-def parse-title [name: string] {
-    let s = $name | str trim
-    let p = $s | parse --regex '^\((?<head>[^)]*)\)\s*-\s*(?<base>.*)$'
-    if not ($p | is-empty) {
-        let head = $p | get head.0
-        return {
-            agent: ($head | str trim | split row ' ' | get -o 0 | default "")
-            symbol: ($markers | where {|m| $head | str contains $m} | get -o 0 | default "")
-            base: ($p | get base.0 | str trim)
-        }
-    }
-    # Bare "<symbols> <base>": drop a leading run of marker tokens ("●", "●2").
-    let toks = $s | split row ' '
-    mut i = 0
-    while $i < ($toks | length) {
-        let t = $toks | get $i
-        let hit = $markers | where {|m|
-            ($t == $m) or (($t | str starts-with $m) and (($t | str substring ($m | str length)..) =~ '^[0-9]+$'))
-        }
-        if ($hit | is-empty) { break }
-        $i += 1
-    }
-    {agent: "", symbol: "", base: ($toks | skip $i | str join " " | str trim)}
-}
-
 def pane-of [panes: table, id: int] { $panes | where id == $id | get -o 0 }
-
-def fmt-head [agent: string, symbol: string] {
-    if ($symbol | is-empty) { $"\(($agent)\)" } else { $"\(($agent) ($symbol)\)" }
-}
-
-def join-name [head: string, base: string] {
-    if ($head | is-empty) {
-        if ($base | is-empty) { " " } else { $base }
-    } else if ($base | is-empty) { $head } else { $"($head) - ($base)" }
-}
-
-# Bare symbol summary for a tab: fold every agent pane's marker into one string
-# ("▲ ●2"), substituting my own (possibly not-yet-rendered) symbol for my pane.
-def tab-symbols [panes: table, tab_id: int, my_pane: int, my_symbol: string] {
-    let syms = $panes
-        | where tab_id == $tab_id
-        | each {|p| if $p.id == $my_pane { $my_symbol } else { (parse-title $p.title).symbol } }
-        | where {|s| $s != "" }
-    if ($syms | is-empty) { return "" }
-    $markers
-        | each {|m| {sym: $m, n: ($syms | where {|s| $s == $m} | length)} }
-        | where n > 0
-        | each {|c| if $c.n > 1 { $"($c.sym)($c.n)" } else { $c.sym } }
-        | str join " "
-}
-
-# Map a state glyph to the store's state name.
-def state-name [symbol: string] {
-    if $symbol == $S_NEED { "needs-attention" } else if $symbol == $S_WAIT { "awaiting" } else if $symbol == $S_WORK { "working" } else { "idle" }
-}
 
 def my-pane-id [] {
     if ($env.ZELLIJ? | is-empty) { return null }
@@ -89,63 +27,75 @@ def my-pane-id [] {
     $s | into int
 }
 
-# Core: render this pane's marker, recompute the tab aggregate, and persist to
-# the store. `name` overrides the pane base; `drop_prefix` removes this pane's
-# tag entirely (for `clear`).
+# Recompute one tab's bare aggregate from its live panes and rename it — only if
+# it changed, so idle reaps cause no churn. No agents → bare base name.
+export def reconcile-tab [session: string, tab_id: int, panes: table] {
+    let tp = $panes | where session == $session and tab_id == $tab_id
+    if ($tp | is-empty) { return }
+    let current = $tp | first | get tab_name
+    let base = (parse-title $current).base
+    let folded = fold-symbols ($tp | each {|p| (parse-title $p.title).symbol })
+    let desired = bare-title $folded $base
+    if $desired != $current { rename-tab $session $tab_id $desired }
+}
+
+# Reconcile every tab that currently holds panes, across all sessions.
+export def reconcile-tabs [panes: table] {
+    $panes | select session tab_id | uniq | each {|st|
+        reconcile-tab $st.session $st.tab_id $panes
+    } | ignore
+}
+
+# The heartbeat: re-derive both surfaces from one live scan, self-healing staleness.
+export def reap [] {
+    let panes = scan
+    reconcile-tabs $panes
+    render-popup $panes
+}
+
+# Core: set this pane's small indicator + name, recompute the tab aggregate.
+# `name` overrides the pane base; `drop_prefix` removes the indicator (for `clear`).
 def render [agent: string, symbol: string, name?: any, drop_prefix = false] {
     let pane_id = my-pane-id
     if $pane_id == null { return }
-    let panes = ^zellij action list-panes -t -j | from json
+    let session = $env.ZELLIJ_SESSION_NAME? | default ""
+    if ($session | is-empty) { return }
+    let panes = session-panes $session
     let me = pane-of $panes $pane_id
     if $me == null { return }
 
-    let cur = parse-title $me.title
-    let pane_base = if ($name | is-empty) { $cur.base } else { $name }
+    # Pane: "<sym> base" — small indicator prefixed to the name.
+    let pane_base = if ($name | is-empty) { (parse-title $me.title).base } else { $name }
+    let pane_sym = if $drop_prefix { "" } else { $symbol }
+    let pane_title = bare-title $pane_sym $pane_base
 
-    # Pane: "(agent sym) - base" (agent kept — a pane is a single agent).
-    let pane_head = if $drop_prefix { "" } else { fmt-head $agent $symbol }
-    ^zellij action rename-pane --pane-id ($pane_id | into string) (join-name $pane_head $pane_base)
+    # Idempotent: unchanged title → my tab contribution is unchanged too, so skip
+    # the rename/reconcile/poke. Keeps the per-tool PostToolUse hook near-free; the
+    # heartbeat still self-heals cross-pane staleness.
+    if $pane_title == $me.title { return }
+    rename-pane $session $pane_id $pane_title
 
-    # Tab: bare "<symbols> <base>" aggregate — no agent, no parens.
-    let tab_base = (parse-title $me.tab_name).base
-    let my_sym = if $drop_prefix { "" } else { $symbol }
-    let syms = tab-symbols $panes $me.tab_id $pane_id $my_sym
-    let tab_name = [$syms $tab_base] | where {|x| not ($x | is-empty) } | str join " "
-    ^zellij action rename-tab --tab-id $me.tab_id (if ($tab_name | is-empty) { " " } else { $tab_name })
+    # Tab: reconcile from the live panes, with my just-set title patched in (a
+    # fresh list-panes might not reflect the rename yet).
+    let panes = $panes | each {|p| if $p.id == $pane_id { $p | update title $pane_title } else { $p } }
+    reconcile-tab $session $me.tab_id $panes
 
-    # Persist to the on-disk store (backs the cross-session notifier + switcher).
-    let session = $env.ZELLIJ_SESSION_NAME? | default ""
-    if ($session | is-not-empty) {
-        if $drop_prefix {
-            store-drop $session $pane_id
-        } else {
-            store-put {
-                session: $session
-                pane_id: $pane_id
-                tab_position: ($me.tab_position? | default 0)
-                tab_name: (parse-title $me.tab_name).base
-                agent: $agent
-                state: (state-name $symbol)
-                base: $pane_base
-                updated_at: (date now | format date "%+")
-            }
-        }
-    }
+    poke   # nudge the popup; the heartbeat is the safety net.
 }
 
-# SessionStart: tag pane with "(<agent>)". Optional `name` sets the pane base.
+# SessionStart: set the pane's name (no indicator yet — nothing pending).
 export def session-start [agent: string, name?: string] {
     render $agent "" $name
 }
 
-# "(<agent> ▲)" — agent is blocked, needs user attention.
+# "▴ base" — agent is blocked, needs user attention.
 export def needs-attention [agent: string] { render $agent $S_NEED }
 
-# "(<agent> ○)" — agent is actively working.
+# "◦ base" — agent is actively working.
 export def working [agent: string] { render $agent $S_WORK }
 
-# "(<agent> ●)" — agent returned control, your turn.
+# "• base" — agent returned control, your turn.
 export def awaiting [agent: string] { render $agent $S_WAIT }
 
-# Remove this pane's tag; recompute the tab aggregate over the remaining agents.
+# Remove this pane's indicator; recompute the tab aggregate over the rest.
 export def clear [] { render "" "" null true }

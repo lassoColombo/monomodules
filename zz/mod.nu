@@ -78,6 +78,7 @@ export def --env main [query?: string] {
   let dir = (pick "cd to" $query)
   if ($dir | is-empty) { return }
   cd $dir
+  zellij action rename-pane ($dir | path basename)
 }
 
 # Open a zellij tab using a chosen layout, in a zoxide-picked dir.

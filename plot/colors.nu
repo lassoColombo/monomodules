@@ -12,7 +12,7 @@ export const PLOT_STYLE = {
   grid:       '#26233a'  # swirl shadow — subtle gridlines
   border:     '#6e6a86'  # swirl mid — axes / borders one step brighter than grid
   muted:      '#8c88a6'  # swirl bright — minor ticks / hints
-  font:       'MesloLGL Nerd Font,10'  # matches terminal (alacritty)
+  font:       'MesloLGL Nerd Font,10'  # matches terminal (ghostty)
   size:       [1400, 800]
   # 12-color series cycle. Hue/luminance steps chosen so neighbors don't blend.
   series: [

@@ -7,7 +7,11 @@
 use lib/zellij.nu *
 
 export def main [session: string, pane_id: int] {
-    ^open -a Ghostty
+    # Bring Ghostty forward from ANY aerospace workspace (open -a is unreliable
+    # from an empty one). Fall back to launching it if it isn't running.
+    let gid = ghostty-window-id
+    if ($gid | is-empty) { ^open -a Ghostty } else { ^aerospace focus --window-id $gid }
+
     let attached = attached-session
     let pid = $"terminal_($pane_id)"
     if $attached == null {
