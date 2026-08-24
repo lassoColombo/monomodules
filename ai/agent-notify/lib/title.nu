@@ -17,21 +17,21 @@ export def parse-title [name: string] {
     | str join " " | str trim
 }
 
-# Bare title: join a glyph string ("◦", or a tab aggregate "▴ •2") with a base.
+# Bare title: join a glyph string ("◦", or a tab aggregate "▴ • •") with a base.
 # Either part may be empty; both empty gives "" — the signal to DROP our name
 # (see rename-pane/rename-tab), never a blank " " label written over a real one.
 export def bare-title [syms: string, base: string] {
     [$syms $base] | where {|x| not ($x | is-empty) } | str join " "
 }
 
-# Fold a list of per-pane glyphs into a bare tab aggregate: "▴ •2" (count > 1
-# suffixed). Empty in → empty out. Ordered by marker priority.
+# Fold a list of per-pane glyphs into a bare tab aggregate: one glyph per agent,
+# e.g. "▴ • •" for a blocked agent and two awaiting ones. Empty in → empty out.
+# Ordered by marker priority.
 export def fold-symbols [syms: list<string>] {
     let present = $syms | where {|s| $s != "" }
     if ($present | is-empty) { return "" }
     $markers
-        | each {|m| {sym: $m, n: ($present | where {|s| $s == $m} | length)} }
-        | where n > 0
-        | each {|c| if $c.n > 1 { $"($c.sym)($c.n)" } else { $c.sym } }
+        | each {|m| $present | where {|s| $s == $m } }
+        | flatten
         | str join " "
 }
