@@ -38,8 +38,7 @@ def pick [prompt: string, query?: string] {
 # The tab is renamed to the dir's basename.
 def apply-layout [layout: string, prompt: string, query?: string] {
   if ($env.ZELLIJ? | is-empty) {
-    print "not inside a zellij session"
-    return
+    error make "not inside a zellij session"
   }
   let dir = (pick $prompt $query)
   if ($dir | is-empty) { return }
@@ -141,6 +140,7 @@ export def editor [
   }
   if ($file | is-not-empty) {
     ^nvim ($file | path expand)
+    zellij action rename-pane $"nvim ($file)"
     return
   }
   if $tab {
@@ -150,7 +150,9 @@ export def editor [
   if $fuzzy {
     let dir = (pick "nvim in")
     commandline edit --replace $"cd ($dir); nvim ."
+    zellij action rename-pane ($dir | path basename)
     return
   }
+  zellij action rename-pane "editor"
   ^nvim .
 }
