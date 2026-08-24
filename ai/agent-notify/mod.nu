@@ -1,9 +1,10 @@
 # Reflects AI-agent state in an event-driven on-disk store, and projects that
 # store onto the zellij pane/tab titles. Submodule of `ai`; commands are
-# `ai agent-notify <cmd>`. The macOS SketchyBar reads this store from its own
-# plugin (sketchybar → ai, never the reverse); the frontend poke lives in the
-# hook glue, not here — this module never calls sketchybar. `browse` is the
-# terminal-side twin of those drawers: pick a live agent, land in its pane.
+# `ai agent-notify <cmd>`. The macOS SketchyBar surface is the `render/`
+# submodule (`ai agent-notify render ...`), driven by thin glue scripts in the
+# bar's config; the frontend poke lives in the hook glue, not here. `browse` is
+# the terminal-side twin of those drawers: pick a live agent, land in its pane —
+# both surfaces derive their rows from lib/view.nu, so they cannot drift.
 #
 #  - Pane title: "<glyph> <base>" — a small state indicator on the pane name.
 #  - Tab title:  a bare AGGREGATE over every agent pane in the tab ("▴ •2 base").
@@ -23,10 +24,12 @@ use lib/state.nu *
 use lib/title.nu *
 use lib/zellij.nu *
 use lib/store.nu
-use lib/live.nu
+use lib/project.nu *
+use lib/janitor.nu *
 use lib/transcript.nu
 use lib/picker.nu *
 export use jump.nu *
+export use render/
 
 # Notification types that are genuinely "the agent needs YOU" (others — idle
 # nudges, auth success, elicitation acks — must NOT escalate to needs-attention).
@@ -37,30 +40,6 @@ def my-ids [] {
     let s = $env.ZELLIJ_SESSION_NAME? | default ""
     let p = $env.ZELLIJ_PANE_ID? | default ""
     if ($s | is-empty) or ($p | is-empty) { null } else { {session: $s, pane_id: ($p | into int)} }
-}
-
-# A tab's base name: its live title with our markers stripped, else what the
-# store still mirrors. A glyph-only or blank live title parses to "" — that is
-# our own leftover, not a name, so it must never erase a base we still know.
-def tab-base [live: any, stored: any] {
-    let l = parse-title ($live | default "")
-    if ($l | is-not-empty) { $l } else { $stored | default "" | str trim }
-}
-
-# Recompute one tab's aggregate title from `recs` (the caller's already-loaded
-# store list) and rename it — skipping the write when it already equals the live
-# title. `current` is that live title when the caller already holds it (the hook
-# path); otherwise we look it up, because the tab's BASE NAME lives there and has
-# to survive the last agent leaving the tab (`clear`/`reconcile` pass null).
-def project-tab [session: string, tab_id: int, recs: table, current?: any] {
-    let live = if ($current != null) { $current } else { tab-name $session $tab_id }
-    if ($live == null) { return }  # tab (or zellij) gone — nothing to project onto
-    let tab_recs = $recs | where {|r| ($r.session? == $session) and ($r.tab_id? == $tab_id) }
-    let stored = $tab_recs | where {|r| ($r.tab_name? | is-not-empty) } | get -o 0.tab_name
-    let glyphs = $tab_recs | each {|r| glyph-of ($r.state? | default "idle") } | where {|g| $g != "" }
-    let desired = bare-title (fold-symbols $glyphs) (tab-base $live $stored)
-    if ($desired == $live) { return }
-    rename-tab $session $tab_id $desired
 }
 
 # A pane base is usable iff it's non-empty and NOT Claude Code's own OSC title
@@ -182,21 +161,8 @@ export def preview [session: string, pane_id: int] {
 }
 
 # Liveness janitor (slow bar timer): GC records whose pane died abruptly, fixing
-# their tabs, then return the survivors. No-op prune if zellij is unavailable.
-export def reconcile [] {
-    let recs = store list
-    let live = live live-keys
-    if ($live == null) { return $recs }
-    let dead = $recs | where {|r| ($"($r.session)|($r.pane_id)") not-in $live }
-    if ($dead | is-empty) { return $recs }
-    for d in $dead { store drop $d.session $d.pane_id }
-    let survivors = $recs | where {|r| ($"($r.session)|($r.pane_id)") in $live }
-    # Recompute every tab that lost an agent (from the survivors that remain).
-    $dead | where {|d| $d.tab_id? != null } | select session tab_id | uniq | each {|t|
-        project-tab $t.session $t.tab_id $survivors null
-    } | ignore
-    $survivors
-}
+# their tabs, then return the survivors.
+export def reconcile [] { gc }
 
 # ── Interactive ──────────────────────────────────────────────────────────────
 
@@ -204,7 +170,7 @@ export def reconcile [] {
 # the same effect as clicking its row in a SketchyBar drawer. `query` prefilters
 # the list. Reconciles first, so a pane that died abruptly is never offered.
 export def browse [query?: string] {
-    let chosen = pick (reconcile) $query
+    let chosen = pick (gc) $query
     if ($chosen == null) { return }
     jump $chosen.session $chosen.pane_id
 }
