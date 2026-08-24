@@ -1,101 +1,190 @@
-# Reflects AI-agent state in the zellij pane/tab titles, and projects those
-# titles onto a cross-session SketchyBar popup. Submodule of `ai`; commands are
-# `ai agent-notify <cmd>`.
+# Reflects AI-agent state in an event-driven on-disk store, and projects that
+# store onto the zellij pane/tab titles. Submodule of `ai`; commands are
+# `ai agent-notify <cmd>`. The macOS SketchyBar reads this store from its own
+# plugin (sketchybar → ai, never the reverse); the frontend poke lives in the
+# hook glue, not here — this module never calls sketchybar.
 #
-#  - Pane: "<sym> <base>" — a SMALL state indicator prefixed to the pane name
-#          (only while an agent is in a state; idle panes are just their name).
-#  - Tab:  a bare AGGREGATE over every agent pane in the tab ("▴ •2 <base>").
+#  - Pane title: "<glyph> <base>" — a small state indicator on the pane name.
+#  - Tab title:  a bare AGGREGATE over every agent pane in the tab ("▴ •2 base").
 #
-# There is ONE source of truth: the live pane titles (see lib/zellij.nu `scan`).
-# They die with the pane, so a killed agent leaves nothing stale behind — no
-# separate state store. The tab title and the SketchyBar popup are both
-# projections of that scan, recomputed by `reap` (run on a heartbeat so an
-# abruptly-closed pane self-heals). No-op outside zellij ($ZELLIJ_PANE_ID).
+# A tab's BASE name belongs to the user, not to us: every projection reads it back
+# from the LIVE tab title (markers stripped), so neither a rename we write nor the
+# last agent leaving can erase it — and a manual rename is picked up for free.
+#
+# STATE flows from Claude Code hooks → verbs below → per-pane store records
+# (see lib/store.nu). Surfaces are pure projections. There is NO periodic scan:
+# a normal exit drops its record (SessionEnd → clear); an abruptly-killed pane is
+# GC'd by `reconcile` (a slow liveness janitor run from the bar), which is the
+# only place zellij is scanned. Each verb reads its Claude Code hook payload from
+# the pipeline ($in), and is a no-op outside zellij ($ZELLIJ_PANE_ID).
 
-use lib/const.nu *
+use lib/state.nu *
 use lib/title.nu *
 use lib/zellij.nu *
+use lib/store.nu
+use lib/live.nu
+use lib/transcript.nu
 export use jump.nu *
-export use sketchybar.nu *
 
-def pane-of [panes: table, id: int] { $panes | where id == $id | get -o 0 }
+# Notification types that are genuinely "the agent needs YOU" (others — idle
+# nudges, auth success, elicitation acks — must NOT escalate to needs-attention).
+const ATTN_NOTIFS = ["permission_prompt" "elicitation_dialog" "elicitation_url_dialog" "agent_needs_input"]
 
-def my-pane-id [] {
-    if ($env.ZELLIJ? | is-empty) { return null }
-    let s = $env.ZELLIJ_PANE_ID? | default ""
-    if ($s | is-empty) { return null }
-    $s | into int
+# This pane's identity, from the env a hook inherits from Claude. null off-zellij.
+def my-ids [] {
+    let s = $env.ZELLIJ_SESSION_NAME? | default ""
+    let p = $env.ZELLIJ_PANE_ID? | default ""
+    if ($s | is-empty) or ($p | is-empty) { null } else { {session: $s, pane_id: ($p | into int)} }
 }
 
-# Recompute one tab's bare aggregate from its live panes and rename it — only if
-# it changed, so idle reaps cause no churn. No agents → bare base name.
-export def reconcile-tab [session: string, tab_id: int, panes: table] {
-    let tp = $panes | where session == $session and tab_id == $tab_id
-    if ($tp | is-empty) { return }
-    let current = $tp | first | get tab_name
-    let base = (parse-title $current).base
-    let folded = fold-symbols ($tp | each {|p| (parse-title $p.title).symbol })
-    let desired = bare-title $folded $base
-    if $desired != $current { rename-tab $session $tab_id $desired }
+# A tab's base name: its live title with our markers stripped, else what the
+# store still mirrors. A glyph-only or blank live title parses to "" — that is
+# our own leftover, not a name, so it must never erase a base we still know.
+def tab-base [live: any, stored: any] {
+    let l = parse-title ($live | default "")
+    if ($l | is-not-empty) { $l } else { $stored | default "" | str trim }
 }
 
-# Reconcile every tab that currently holds panes, across all sessions.
-export def reconcile-tabs [panes: table] {
-    $panes | select session tab_id | uniq | each {|st|
-        reconcile-tab $st.session $st.tab_id $panes
-    } | ignore
+# Recompute one tab's aggregate title from `recs` (the caller's already-loaded
+# store list) and rename it — skipping the write when it already equals the live
+# title. `current` is that live title when the caller already holds it (the hook
+# path); otherwise we look it up, because the tab's BASE NAME lives there and has
+# to survive the last agent leaving the tab (`clear`/`reconcile` pass null).
+def project-tab [session: string, tab_id: int, recs: table, current?: any] {
+    let live = if ($current != null) { $current } else { tab-name $session $tab_id }
+    if ($live == null) { return }  # tab (or zellij) gone — nothing to project onto
+    let tab_recs = $recs | where {|r| ($r.session? == $session) and ($r.tab_id? == $tab_id) }
+    let stored = $tab_recs | where {|r| ($r.tab_name? | is-not-empty) } | get -o 0.tab_name
+    let glyphs = $tab_recs | each {|r| glyph-of ($r.state? | default "idle") } | where {|g| $g != "" }
+    let desired = bare-title (fold-symbols $glyphs) (tab-base $live $stored)
+    if ($desired == $live) { return }
+    rename-tab $session $tab_id $desired
 }
 
-# The heartbeat: re-derive both surfaces from one live scan, self-healing staleness.
-export def reap [] {
-    let panes = scan
-    reconcile-tabs $panes
-    render-popup $panes
+# A pane base is usable iff it's non-empty and NOT Claude Code's own OSC title
+# ("✳ Claude Code"): that self-title is not a real name. `str contains` (not
+# `==`) so status-suffixed variants and already-stored junk both self-heal.
+def usable-base [name: any] {
+    let t = ($name | default "" | str trim)
+    ($t != "") and (not ($t | str contains "Claude Code"))
 }
 
-# Core: set this pane's small indicator + name, recompute the tab aggregate.
-# `name` overrides the pane base; `drop_prefix` removes the indicator (for `clear`).
-def render [agent: string, symbol: string, name?: any, drop_prefix = false] {
-    let pane_id = my-pane-id
-    if $pane_id == null { return }
-    let session = $env.ZELLIJ_SESSION_NAME? | default ""
-    if ($session | is-empty) { return }
-    let panes = session-panes $session
-    let me = pane-of $panes $pane_id
-    if $me == null { return }
-
-    # Pane: "<sym> base" — small indicator prefixed to the name.
-    let pane_base = if ($name | is-empty) { (parse-title $me.title).base } else { $name }
-    let pane_sym = if $drop_prefix { "" } else { $symbol }
-    let pane_title = bare-title $pane_sym $pane_base
-
-    # Idempotent: unchanged title → my tab contribution is unchanged too, so skip
-    # the rename/reconcile/poke. Keeps the per-tool PostToolUse hook near-free; the
-    # heartbeat still self-heals cross-pane staleness.
-    if $pane_title == $me.title { return }
-    rename-pane $session $pane_id $pane_title
-
-    # Tab: reconcile from the live panes, with my just-set title patched in (a
-    # fresh list-panes might not reflect the rename yet).
-    let panes = $panes | each {|p| if $p.id == $pane_id { $p | update title $pane_title } else { $p } }
-    reconcile-tab $session $me.tab_id $panes
-
-    poke   # nudge the popup; the heartbeat is the safety net.
+# The autogenerated pane name = the agent's cwd basename (from the hook payload).
+def cwd-base [p: record] {
+    let c = ($p.cwd? | default "")
+    if ($c | is-empty) { "" } else { $c | path basename }
 }
 
-# SessionStart: set the pane's name (no indicator yet — nothing pending).
+# Upsert this pane's record with `changes`, then project pane + tab titles.
+# Pane base priority: an explicit `name` (the CLAUDE.md session naming) > the
+# stored name if it's clean > `auto` (the cwd basename). We never read the live
+# pane title — for a Claude pane that's just "✳ Claude Code".
+def apply [agent: string, changes: record, name?: any, auto?: any] {
+    let ids = my-ids
+    if ($ids == null) { return }
+    let existing = store get $ids.session $ids.pane_id
+    let info = pane-tab-info $ids.session $ids.pane_id
+
+    let base = if (usable-base $name) { $name | str trim
+        } else if (usable-base ($existing.pane_name?)) { $existing.pane_name | str trim
+        } else if (usable-base $auto) { $auto | str trim
+        } else { "" }
+
+    let rec = ($existing | default {})
+        | merge {session: $ids.session, pane_id: $ids.pane_id, agent: $agent, pane_name: $base}
+        | merge (if ($info != null) { {tab_id: $info.tab_id, tab_name: (tab-base $info.tab_name ($existing.tab_name?)), tab_position: $info.tab_position} } else { {} })
+        | merge $changes
+    store put $rec
+
+    rename-pane $ids.session $ids.pane_id (bare-title (glyph-of ($rec.state? | default "idle")) $base)
+    if ($rec.tab_id? != null) { project-tab $ids.session $rec.tab_id (store list) (if ($info != null) { $info.tab_name } else { null }) }
+}
+
+# ── Hook-facing verbs (payload piped in via $in; empty when called manually) ──
+
+# SessionStart: capture identity. Don't clobber a live state on compact/resume.
 export def session-start [agent: string, name?: string] {
-    render $agent "" $name
+    let p = $in | default {}
+    let ids = my-ids
+    if ($ids == null) { return }
+    let existing = store get $ids.session $ids.pane_id
+    let keep = (($p.source? | default "startup") in ["compact" "resume"]) and ($existing != null)
+    apply $agent {
+        state: (if $keep { $existing.state? | default "idle" } else { "idle" })
+        transcript: ($p.transcript_path? | default (($existing.transcript?) | default ""))
+        preview: (if $keep { $existing.preview? | default "" } else { "" })
+    } $name (cwd-base $p)
 }
 
-# "▴ base" — agent is blocked, needs user attention.
-export def needs-attention [agent: string] { render $agent $S_NEED }
+# "◦" working — busy. Idempotent: skip the zellij/title work if already working.
+export def working [agent: string] {
+    let p = $in | default {}
+    let ids = my-ids
+    if ($ids == null) { return }
+    let existing = store get $ids.session $ids.pane_id
+    if ($existing != null) and (($existing.state?) == "working") { return }
+    apply $agent {state: "working", preview: ""} null (cwd-base $p)
+}
 
-# "◦ base" — agent is actively working.
-export def working [agent: string] { render $agent $S_WORK }
+# "•" awaiting — your turn. Preview = the agent's last message.
+export def awaiting [agent: string] {
+    let p = $in | default {}
+    let ids = my-ids
+    if ($ids == null) { return }
+    let existing = store get $ids.session $ids.pane_id
+    let msg = $p.last_assistant_message? | default ""
+    let preview = if (($msg | str trim) != "") {
+        $msg
+    } else {
+        transcript last-message (($p.transcript_path?) | default (($existing.transcript?) | default ""))
+    }
+    apply $agent {state: "awaiting", preview: ($preview | str trim)} null (cwd-base $p)
+}
 
-# "• base" — agent returned control, your turn.
-export def awaiting [agent: string] { render $agent $S_WAIT }
+# "▴" needs-attention — blocked on YOU. Only genuine input-needed notifications
+# escalate; the message is the preview ("what does it need from me?").
+export def needs-attention [agent: string] {
+    let p = $in | default {}
+    let nt = $p.notification_type? | default ""
+    if ($nt != "") and ($nt not-in $ATTN_NOTIFS) { return }
+    apply $agent {state: "needs-attention", preview: (($p.message? | default "") | str trim)} null (cwd-base $p)
+}
 
-# Remove this pane's indicator; recompute the tab aggregate over the rest.
-export def clear [] { render "" "" null true }
+# SessionEnd / manual: drop this pane's record and recompute its tab, which
+# leaves both surfaces bare — the pane's own name, the tab's own name, no glyph.
+export def clear [agent?: string] {
+    let ids = my-ids
+    if ($ids == null) { return }
+    let rec = store get $ids.session $ids.pane_id
+    store drop $ids.session $ids.pane_id
+    try { rename-pane $ids.session $ids.pane_id (bare-title "" (($rec.pane_name?) | default "")) }
+    if ($rec != null) and ($rec.tab_id? != null) { project-tab $ids.session $rec.tab_id (store list) null }
+}
+
+# ── Query verbs (read by the SketchyBar plugin: sketchybar → ai) ──
+
+# All agent records (store-only; no scan). The bar's instant-refresh path.
+export def list [] { store list }
+
+# The preview text ("what does it need from me?") for one agent. "" if unknown.
+export def preview [session: string, pane_id: int] {
+    let r = store get $session $pane_id
+    if ($r == null) { "" } else { $r.preview? | default "" }
+}
+
+# Liveness janitor (slow bar timer): GC records whose pane died abruptly, fixing
+# their tabs, then return the survivors. No-op prune if zellij is unavailable.
+export def reconcile [] {
+    let recs = store list
+    let live = live live-keys
+    if ($live == null) { return $recs }
+    let dead = $recs | where {|r| ($"($r.session)|($r.pane_id)") not-in $live }
+    if ($dead | is-empty) { return $recs }
+    for d in $dead { store drop $d.session $d.pane_id }
+    let survivors = $recs | where {|r| ($"($r.session)|($r.pane_id)") in $live }
+    # Recompute every tab that lost an agent (from the survivors that remain).
+    $dead | where {|d| $d.tab_id? != null } | select session tab_id | uniq | each {|t|
+        project-tab $t.session $t.tab_id $survivors null
+    } | ignore
+    $survivors
+}
