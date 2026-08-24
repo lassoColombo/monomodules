@@ -153,6 +153,6 @@ export def editor [
     zellij action rename-pane ($dir | path basename)
     return
   }
-  zellij action rename-pane "editor"
+  zellij action rename-pane (pwd | path basename)
   ^nvim .
 }
