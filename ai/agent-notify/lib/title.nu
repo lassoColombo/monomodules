@@ -12,7 +12,7 @@ use state.nu *
 export def parse-title [name: string] {
     $name | str trim | split row ' '
     | skip while {|t|
-        $markers | any {|m| ($t == $m) or (($t | str starts-with $m) and (($t | str substring ($m | str length)..) =~ '^[0-9]+$')) }
+        ($markers ++ $legacy_markers) | any {|m| ($t == $m) or (($t | str starts-with $m) and (($t | str substring ($m | str length)..) =~ '^[0-9]+$')) }
       }
     | str join " " | str trim
 }

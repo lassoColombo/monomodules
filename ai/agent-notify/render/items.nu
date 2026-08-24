@@ -8,9 +8,13 @@
 
 use theme.nu *
 
+# The counter chip keeps its state hue at all times — dimmed, not greyed, when
+# the drawer is empty — so the three icons stay recognisable at a glance the way
+# the wifi / volume / battery widgets do. Only the count goes subtle at zero.
 export def counter-args [item: string, state: string, n: int] {
-    let tint = if $n > 0 { color $state } else { $C_SUBTLE }
-    [ "--set" $item $"icon.color=($tint)" $"label=($n)" $"label.color=($tint)" ]
+    let icon = if $n > 0 { color $state } else { tint $state "66" }
+    let label = if $n > 0 { color $state } else { $C_SUBTLE }
+    [ "--set" $item $"icon.color=($icon)" $"label=($n)" $"label.color=($label)" ]
 }
 
 export def header-args [item: string, n: int] {
