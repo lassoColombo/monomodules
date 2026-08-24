@@ -3,7 +3,7 @@
 # shared file — each hook writes only its own. Readers glob + merge.
 #
 # Record schema:
-#   { session, pane_id, tab_id, tab_position, tab_name, pane_name, agent,
+#   { session, pane_id, tab_id, tab_position, tab_name, pane_name, pane_locked, agent,
 #     transcript, state, preview }
 # state ∈ working | awaiting | needs-attention | idle.
 #

@@ -2,7 +2,8 @@
 # store onto the zellij pane/tab titles. Submodule of `ai`; commands are
 # `ai agent-notify <cmd>`. The macOS SketchyBar reads this store from its own
 # plugin (sketchybar → ai, never the reverse); the frontend poke lives in the
-# hook glue, not here — this module never calls sketchybar.
+# hook glue, not here — this module never calls sketchybar. `browse` is the
+# terminal-side twin of those drawers: pick a live agent, land in its pane.
 #
 #  - Pane title: "<glyph> <base>" — a small state indicator on the pane name.
 #  - Tab title:  a bare AGGREGATE over every agent pane in the tab ("▴ •2 base").
@@ -24,6 +25,7 @@ use lib/zellij.nu *
 use lib/store.nu
 use lib/live.nu
 use lib/transcript.nu
+use lib/picker.nu *
 export use jump.nu *
 
 # Notification types that are genuinely "the agent needs YOU" (others — idle
@@ -76,22 +78,29 @@ def cwd-base [p: record] {
 }
 
 # Upsert this pane's record with `changes`, then project pane + tab titles.
-# Pane base priority: an explicit `name` (the CLAUDE.md session naming) > the
-# stored name if it's clean > `auto` (the cwd basename). We never read the live
-# pane title — for a Claude pane that's just "✳ Claude Code".
+#
+# A pane's base name is chosen ONCE and then frozen. `auto` (the cwd basename) is
+# only ever provisional: it labels the pane until the agent names itself. The
+# first explicit `name` (the CLAUDE.md session naming) replaces it and LOCKS the
+# base — every later name, provisional or explicit, is ignored from then on, so
+# the pane never renames itself out from under you. We never read the live pane
+# title back: for a Claude pane that's its own OSC title, not a name.
 def apply [agent: string, changes: record, name?: any, auto?: any] {
     let ids = my-ids
     if ($ids == null) { return }
     let existing = store get $ids.session $ids.pane_id
     let info = pane-tab-info $ids.session $ids.pane_id
 
-    let base = if (usable-base $name) { $name | str trim
+    let locked = ($existing.pane_locked? | default false)
+    let naming = (not $locked) and (usable-base $name)
+    let base = if $locked { $existing.pane_name | str trim
+        } else if $naming { $name | str trim
         } else if (usable-base ($existing.pane_name?)) { $existing.pane_name | str trim
         } else if (usable-base $auto) { $auto | str trim
         } else { "" }
 
     let rec = ($existing | default {})
-        | merge {session: $ids.session, pane_id: $ids.pane_id, agent: $agent, pane_name: $base}
+        | merge {session: $ids.session, pane_id: $ids.pane_id, agent: $agent, pane_name: $base, pane_locked: ($locked or $naming)}
         | merge (if ($info != null) { {tab_id: $info.tab_id, tab_name: (tab-base $info.tab_name ($existing.tab_name?)), tab_position: $info.tab_position} } else { {} })
         | merge $changes
     store put $rec
@@ -187,4 +196,15 @@ export def reconcile [] {
         project-tab $t.session $t.tab_id $survivors null
     } | ignore
     $survivors
+}
+
+# ── Interactive ──────────────────────────────────────────────────────────────
+
+# Browse the live agents (state, name, message) and jump to the one you pick —
+# the same effect as clicking its row in a SketchyBar drawer. `query` prefilters
+# the list. Reconciles first, so a pane that died abruptly is never offered.
+export def browse [query?: string] {
+    let chosen = pick (reconcile) $query
+    if ($chosen == null) { return }
+    jump $chosen.session $chosen.pane_id
 }
