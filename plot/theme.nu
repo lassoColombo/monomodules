@@ -12,6 +12,12 @@ export def main []: nothing -> record {
     {
         bg: $PLOT_STYLE.background
         fg: $PLOT_STYLE.foreground
+        # Everything drawn as TEXT, taken all the way to white: inline charts are
+        # downscaled by the terminal, which thins light glyphs on a dark ground
+        # and costs them contrast they cannot spare. A floor of 1.0 is the
+        # brightest a label can be — past this, contrast has to come from the
+        # halo behind the glyphs rather than from their colour.
+        text: (legible $PLOT_STYLE.foreground 1.0)
         grid: $PLOT_STYLE.grid
         border: $PLOT_STYLE.border
         muted: $PLOT_STYLE.muted
@@ -20,27 +26,126 @@ export def main []: nothing -> record {
     }
 }
 
+# Lift a colour toward white until it clears `floor` relative luminance.
+#
+# Marks can be any luminance — a bar is a solid block of it — but a glyph a
+# couple of pixels wide needs the contrast, and the darker palette entries do
+# not have it: #31748f reads as text at 3.1:1 against this background, under the
+# 4.5:1 normal text wants.
+export def legible [hex: string, floor: float]: nothing -> string {
+    let c = hex-rgb $hex
+    let l = luminance $c
+    if ($l >= $floor) { return $hex }
+    # Luminance is linear in a blend toward white, so the amount needed is
+    # closed-form rather than a search.
+    let t = ($floor - $l) / (1.0 - $l)
+    rgb-hex {
+        r: ($c.r + ((255 - $c.r) * $t))
+        g: ($c.g + ((255 - $c.g) * $t))
+        b: ($c.b + ((255 - $c.b) * $t))
+    }
+}
+
+# Relative luminance, 0..1. The sRGB gamma step is skipped on purpose: the only
+# question it feeds is "is this bright enough to read", where the ordering
+# matters and a few percent of absolute error does not.
+def luminance [c: record]: nothing -> float {
+    ((0.2126 * $c.r) + (0.7152 * $c.g) + (0.0722 * $c.b)) / 255
+}
+
+def hex-rgb [hex: string]: nothing -> record {
+    let d = $hex | str replace --all '#' '' | str trim | split chars
+    if ($d | length) < 6 {
+        error make {msg: $"plot theme: '($hex)' is not a 6-digit hex colour"}
+    }
+    {
+        r: ([($d | get 0) ($d | get 1)] | str join | into int --radix 16)
+        g: ([($d | get 2) ($d | get 3)] | str join | into int --radix 16)
+        b: ([($d | get 4) ($d | get 5)] | str join | into int --radix 16)
+    }
+}
+
+def rgb-hex [c: record]: nothing -> string {
+    $"#(hex2 $c.r)(hex2 $c.g)(hex2 $c.b)"
+}
+
+def hex2 [n: float]: nothing -> string {
+    let digits = ['0' '1' '2' '3' '4' '5' '6' '7' '8' '9' 'a' 'b' 'c' 'd' 'e' 'f']
+    let v = [([($n | math round) 0] | math max) 255] | math min
+    $"($digits | get ($v // 16))($digits | get ($v mod 16))"
+}
+
+# Sequential ramp for continuous color (heatmap cells, magnitude-coloured points).
+# Dark → light so magnitude reads as brightness, drawn from the same palette as
+# the series cycle so a heatmap sits next to a line chart without clashing.
+export def "sequential" []: nothing -> list<string> {
+    let s = $PLOT_STYLE.series
+    [$PLOT_STYLE.grid ($s | get 2) ($s | get 0) ($s | get 4) ($s | get 10)]
+}
+
+# How much to enlarge every text size, from the terminal's measured cell.
+#
+# Chart text is specified in PIXELS, and inline drawing renders at the pane's
+# DEVICE pixels — so on a HiDPI pane an 11px label is displayed at half that and
+# reads as roughly 5pt. A plain 1x cell is ~8px wide, so a 20px retina cell asks
+# for 2.5x. A large terminal font lands here too, which is what you want: bigger
+# terminal text, bigger chart text.
+export def "font scale" [cell: record]: nothing -> float {
+    let s = $cell.w / 8.0
+    [([$s 1.0] | math max) 4.0] | math min
+}
+
 # Vega-Lite `config` block: applies the starry-cat palette to every chart the
 # backend renders. Per-encoding settings (axis titles, grid toggle, legend
 # position) are layered on top of this by `vega.nu`.
-export def "vega-config" []: nothing -> record {
+#
+# `--font-scale` multiplies every pixel size that has to stay legible. The
+# numbers it multiplies are Vega-Lite's own defaults, restated here so they can
+# be scaled at all.
+export def "vega-config" [--font-scale: float = 1.0]: nothing -> record {
     let t = main
     {
         background: $t.bg
         view: { stroke: null }
-        title: { color: $t.fg, fontSize: 14, anchor: "start" }
+        title: { color: $t.text, fontSize: (14 * $font_scale), anchor: "start" }
         axis: {
             domainColor: $t.border
             tickColor: $t.border
             gridColor: $t.grid
             gridOpacity: 0.5
-            labelColor: $t.fg
-            titleColor: $t.fg
+            labelColor: $t.text
+            titleColor: $t.text
+            labelFontSize: (10 * $font_scale)
+            titleFontSize: (11 * $font_scale)
         }
-        legend: { labelColor: $t.fg, titleColor: $t.fg }
-        range: { category: $t.series }
+        legend: {
+            labelColor: $t.text
+            titleColor: $t.text
+            labelFontSize: (10 * $font_scale)
+            titleFontSize: (11 * $font_scale)
+            # An AREA, so it takes the scale squared to grow in step with the text.
+            symbolSize: (100 * $font_scale * $font_scale)
+            # Wider text needs a wider budget before it is elided, or scaling up
+            # simply trades small labels for truncated ones.
+            labelLimit: (160 * $font_scale)
+            titleLimit: (180 * $font_scale)
+        }
+        # `heatmap`/`ramp` are the defaults Vega-Lite reaches for on a
+        # continuous color scale, the way `category` is for a discrete one.
+        range: { category: $t.series, heatmap: (sequential), ramp: (sequential) }
         mark: { color: ($t.series | first) }
-        line: { strokeWidth: 2 }
+        line: { strokeWidth: (2 * $font_scale) }
         point: { filled: true }
+        # Composite marks build their own sub-marks, which default to black —
+        # invisible on this background unless they are coloured here too.
+        # No `ticks` entry: configuring it at all switches the whisker CAPS on,
+        # and they are then drawn the full width of the category band.
+        boxplot: {
+            rule: { color: $t.muted }
+            median: { color: $t.bg }
+            outliers: { stroke: $t.muted, fill: null, strokeWidth: 1 }
+        }
+        errorbar: { rule: { color: $t.muted } }
+        errorband: { band: { opacity: 0.3 }, borders: { color: $t.muted } }
     }
 }

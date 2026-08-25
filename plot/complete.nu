@@ -12,6 +12,25 @@ export def bar-style []: nothing -> list<string> {
     ["clustered" "stacked" "normalized"]
 }
 
+# Area band layout.
+export def area-style []: nothing -> list<string> {
+    ["stacked" "overlay" "normalized" "stream"]
+}
+
+# Box-plot whisker reach: multiples of the IQR, or the data extremes.
+export def box-extent []: nothing -> list<string> {
+    ["1.5" "3" "min-max"]
+}
+
+# What an error bar's interval measures.
+export def error-extent []: nothing -> list<string> {
+    ["ci" "stderr" "stdev" "iqr"]
+}
+
+export def error-style []: nothing -> list<string> {
+    ["bar" "band"]
+}
+
 export def step-where []: nothing -> list<string> {
     ["pre" "post" "mid"]
 }
@@ -32,5 +51,24 @@ export def legend-pos []: nothing -> list<string> {
         "top" "bottom" "left" "right"
         "top-left" "top-right" "bottom-left" "bottom-right"
         "none"
+    ]
+}
+
+# Vega-Lite aggregate operations usable for combining rows into one cell/bar.
+export def agg []: nothing -> list<string> {
+    [
+        "sum" "mean" "median" "min" "max" "count" "distinct"
+        "stdev" "stderr" "variance" "q1" "q3"
+    ]
+}
+
+# Vega color schemes for continuous scales. Sequential first, then diverging.
+# https://vega.github.io/vega/docs/schemes/
+export def color-scheme []: nothing -> list<string> {
+    [
+        "viridis" "magma" "inferno" "plasma" "turbo" "cividis"
+        "blues" "greens" "greys" "oranges" "purples" "reds"
+        "bluepurple" "purplered" "yellowgreenblue" "warmgreys" "browns"
+        "blueorange" "redblue" "redyellowblue" "spectral" "pinkyellowgreen"
     ]
 }

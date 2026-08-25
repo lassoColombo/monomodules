@@ -11,14 +11,20 @@
 # Spec shape (built by mod.nu):
 #   {
 #     data: list<record>   # validated table, projected as needed
-#     mark: any            # vega-lite mark (string or record)
+#     mark: any            # vega-lite mark (string or record); omit when `layers`
+#                          # is given. May be a closure taking `appearance`.
+#     layers: list         # optional; [{mark, encoding?}, ...] sharing the
+#                          # top-level encoding/data/transform. May be a closure
+#                          # taking `appearance` (for size-dependent geometry).
 #     encoding: record     # vega-lite encoding; the x/y channels carry just
 #                          # {field,type} (+ bin/stack/etc). axis/scale/legend
 #                          # are layered on here from `appearance`.
 #     transform: list      # optional vega-lite transforms (default [])
 #     x_channel: string    # encoding channel to receive xlabel/grid/logx/xrange
 #     y_channel: string    # encoding channel to receive ylabel/grid/logy/yrange
-#     appearance: record   # common flags (built by `plot appearance`)
+#     appearance: record   # common flags (built by `plot appearance`); inline
+#                          # drawing also stamps in the final width/height and
+#                          # `font_scale`, so closures can size text to the pane.
 #     out: path            # null → draw in the terminal; else write this file
 #   }
 
@@ -67,8 +73,15 @@ def draw-inline [spec: record]: nothing -> nothing {
     }
 
     let box = term pane box
-    let px = term plot px $box (term cell px)
-    let sized = $spec | update appearance ($spec.appearance | merge {width: $px.width, height: $px.height})
+    let cell = term cell px
+    let px = term plot px $box $cell
+    # Text rides along in `appearance`: it is sized in the same device pixels the
+    # chart is rendered at, so it has to be scaled from the cell too.
+    let sized = $spec | update appearance ($spec.appearance | merge {
+        width: $px.width
+        height: $px.height
+        font_scale: (theme font scale $cell)
+    })
 
     prune-scratch
     let png = mktemp --tmpdir "plot-XXXXXXXX" --suffix ".png"
@@ -122,7 +135,9 @@ def vega-ext [out: path]: nothing -> string {
 
 # Assemble the full Vega-Lite spec from the subcommand's pieces + appearance.
 def build-spec [spec: record]: nothing -> record {
-    let a = $spec.appearance
+    # Resolve the text scale once, up front: the config below AND every closure
+    # that sizes its own text read it off `appearance`.
+    let a = $spec.appearance | merge {font_scale: (resolve-font-scale $spec.appearance)}
     let enc = layer-appearance $spec.encoding ($spec.x_channel? | default null) ($spec.y_channel? | default null) $a
 
     mut vl = {
@@ -130,14 +145,41 @@ def build-spec [spec: record]: nothing -> record {
         width: $a.width
         height: $a.height
         data: { values: $spec.data }
-        mark: $spec.mark
         encoding: $enc
-        config: (theme vega-config)
+        config: (theme vega-config --font-scale $a.font_scale)
+    }
+    # A spec carries EITHER one `mark` or a list of `layers` (each {mark, encoding?})
+    # that share the top-level encoding, data and transforms.
+    let layers = eval-frag ($spec.layers? | default null) $a
+    if ($layers != null) {
+        $vl = ($vl | insert layer $layers)
+    } else {
+        $vl = ($vl | insert mark (eval-frag ($spec.mark? | default null) $a))
     }
     if (($a.title? | default null) != null) { $vl = ($vl | insert title $a.title) }
     let tf = $spec.transform? | default []
     if ($tf | is-not-empty) { $vl = ($vl | insert transform $tf) }
     $vl
+}
+
+# Text scale: measured from the terminal cell by `draw-inline`, 1.0 for a file.
+# `$env.PLOT_FONT_SCALE` overrides both, for a setup where the cell-width
+# heuristic guesses wrong or simply for taste.
+def resolve-font-scale [a: record]: nothing -> float {
+    let override = $env.PLOT_FONT_SCALE? | default ""
+    if ($override | is-not-empty) {
+        let v = try { $override | into float } catch { null }
+        if ($v != null) and ($v > 0) { return $v }
+    }
+    $a.font_scale? | default 1.0
+}
+
+# Mark/layer fragments may be given as a CLOSURE taking the resolved appearance,
+# for geometry that depends on the final pixel size (arc radii, offsets): inline
+# drawing rewrites width/height after the subcommand has built its spec, so the
+# subcommand cannot compute those itself. Anything else passes straight through.
+def eval-frag [frag: any, a: record]: nothing -> any {
+    if (($frag | describe) == "closure") { do $frag $a } else { $frag }
 }
 
 # Inject axis/scale (from appearance) into the x/y channels and legend into the
@@ -150,14 +192,14 @@ def layer-appearance [encoding: record, x_channel: any, y_channel: any, a: recor
     if ($x_channel != null) and ($x_channel in $cols) {
         let ch = $enc | get $x_channel
         let ty = $ch.type? | default ""
-        let axis = build-axis ($a.xlabel? | default null) $a.grid ($a.xformat? | default null) $ty
+        let axis = build-axis ($a.xlabel? | default null) $a.grid ($a.xformat? | default null) $ty true
         let scale = build-scale $a.logx ($a.xrange? | default null) $ty
         $enc = ($enc | update $x_channel (merge-channel $ch $axis $scale))
     }
     if ($y_channel != null) and ($y_channel in $cols) {
         let ch = $enc | get $y_channel
         let ty = $ch.type? | default ""
-        let axis = build-axis ($a.ylabel? | default null) $a.grid ($a.yformat? | default null) $ty
+        let axis = build-axis ($a.ylabel? | default null) $a.grid ($a.yformat? | default null) $ty false
         let scale = build-scale $a.logy ($a.yrange? | default null) $ty
         $enc = ($enc | update $y_channel (merge-channel $ch $axis $scale))
     }
@@ -174,11 +216,13 @@ def layer-appearance [encoding: record, x_channel: any, y_channel: any, a: recor
     $enc
 }
 
-def build-axis [title: any, grid: bool, format: any, type: string]: nothing -> record {
+# `rotate` tilts crowded category labels — worth it along the x axis, never on
+# the y axis, where the labels already sit one per row.
+def build-axis [title: any, grid: bool, format: any, type: string, rotate: bool]: nothing -> record {
     mut ax = { grid: $grid }
     if ($title != null) { $ax = ($ax | insert title $title) }
     if ($format != null) { $ax = ($ax | insert format $format) }
-    if ($type == "nominal") { $ax = ($ax | insert labelAngle (-30)) }
+    if $rotate and ($type == "nominal") { $ax = ($ax | insert labelAngle (-30)) }
     $ax
 }
 
@@ -203,6 +247,8 @@ def apply-legend [ch: record, legend: any]: nothing -> record {
     } else if ($legend | is-empty) {
         $ch
     } else {
-        $ch | merge {legend: $legend}
+        # Merge, so a channel that already carries legend settings of its own
+        # (a value format, say) keeps them alongside the placement.
+        $ch | merge {legend: (($ch.legend? | default {}) | merge $legend)}
     }
 }

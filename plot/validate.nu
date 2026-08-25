@@ -32,18 +32,21 @@ export def "assert columns" [cols: list<string>]: list -> list {
     $input
 }
 
-# Classify the x-axis column type. Returns "numeric" | "datetime" | "categorical".
-# Errors on unsupported types (lists, records, durations, etc.).
+# Classify a column's type — used for any positional channel, not just x. Returns "numeric" | "datetime" | "categorical".
+# Errors on unsupported types (lists, records, etc.).
+#
+# `filesize` and `duration` count as numeric: they serialize to JSON as plain
+# numbers (bytes and nanoseconds), so `ls | plot ...` plots without a conversion.
 export def "detect axis type" [col: string]: list -> string {
     let input = $in
     let sample = $input | first | get $col
     let kind = $sample | describe
     match $kind {
-        "int" | "float" => "numeric"
+        "int" | "float" | "filesize" | "duration" => "numeric"
         "datetime" => "datetime"
         "string" => "categorical"
         _ => {
-            error make {msg: $"plot: unsupported x-axis type '($kind)' for column '($col)'"}
+            error make {msg: $"plot: unsupported type '($kind)' for column '($col)'"}
         }
     }
 }
@@ -54,7 +57,7 @@ export def "assert numeric" [col: string]: list -> list {
     let bad = $input | enumerate | where {|e|
         let v = $e.item | get $col
         let k = $v | describe
-        not ($k in ["int" "float" "nothing"])
+        not ($k in ["int" "float" "filesize" "duration" "nothing"])
     }
     if ($bad | is-not-empty) {
         let row = $bad | first

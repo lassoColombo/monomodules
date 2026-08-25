@@ -89,11 +89,26 @@ export def "plot px" [box: record, cell: record]: nothing -> record {
 }
 
 # Draw a PNG at the cursor, scaled into a cols x rows cell box.
-export def show [png: path, --cols: int, --rows: int, --id: int = 1]: nothing -> nothing {
+#
+# Every chart gets a FRESH image id. Reusing an id is NOT replace-in-place: the
+# terminal destroys the image it already holds under that id and draws the new
+# one at the cursor — so a fixed id wipes the previous chart out of the
+# scrollback each time another is drawn. Pass `--id` only to deliberately
+# replace a specific image (an in-place refresh, which also needs the cursor
+# parked back over it).
+export def show [png: path, --cols: int, --rows: int, --id: int]: nothing -> nothing {
     let esc = char --integer 27
     let backslash = char --integer 92
     let payload = $png | path expand | encode base64
+    let image_id = $id | default (next-id)
 
-    print -n $"($esc)_Ga=T,f=100,t=f,i=($id),c=($cols),r=($rows),q=2;($payload)($esc)($backslash)"
+    print -n $"($esc)_Ga=T,f=100,t=f,i=($image_id),c=($cols),r=($rows),q=2;($payload)($esc)($backslash)"
     print ""
+}
+
+# A distinct image id per chart, kept inside the protocol's 32-bit range (and
+# away from 0, which is not a valid id). Millisecond resolution is plenty: two
+# charts drawn in the same millisecond could not be told apart on screen anyway.
+def next-id []: nothing -> int {
+    (((date now | into int) // 1_000_000) mod 4_000_000_000) + 1
 }
