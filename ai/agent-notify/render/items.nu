@@ -17,6 +17,17 @@ export def counter-args [item: string, state: string, n: int] {
     [ "--set" $item $"icon.color=($icon)" $"label=($n)" $"label.color=($label)" ]
 }
 
+# Arm / disarm the counter animations. One timer serves all three, so it runs
+# while ANY of them is animating and stops only when none is. Turning the
+# working counter off also restores its static glyph, since the tick left
+# whatever clock face it stopped on behind. Colour needs no such restore:
+# `counter-args` owns the hue and is in the very same message.
+export def anim-args [on: record<run: bool, stale: bool, attn: bool>] {
+    let any = $on.run or $on.stale or $on.attn
+    let args = ["--set" $W_ANIM $"update_freq=(if $any { 1 } else { 0 })"]
+    if $on.run { $args } else { $args ++ ["--set" $W_RUN $"icon=($S_WORK)"] }
+}
+
 export def header-args [item: string, n: int] {
     let label = if $n == 0 { "  All clear"
         } else if $n > $ROWS { $"  ($n) active · ($ROWS) shown"
@@ -37,8 +48,17 @@ export def row-args [item: string, i: int, r: record] {
 
 export def row-off-args [item: string, i: int] { ["--set" $"($item).item.($i)" "drawing=off"] }
 
+# A preview line. Leading INDENT becomes padding rather than characters:
+# SketchyBar sizes a label's box from the text with its leading whitespace
+# ignored, then draws the whole string anyway, so an indented line loses exactly
+# as many characters off its right edge as it has spaces on its left (and
+# substituting a non-breaking space does not fool it). Padding is measured, so
+# code blocks and nested lists line up without costing the line any width.
 export def pv-line-args [item: string, i: int, line: string] {
-    ["--set" $"($item).item._pv.($i)" $"label=($line)" "drawing=on"]
+    let body = $line | str trim --left
+    let n = ($line | str length) - ($body | str length)
+    [ "--set" $"($item).item._pv.($i)" $"label=($body)"
+      $"label.padding_left=($PV_PAD + ($n * $PV_INDENT))" "drawing=on" ]
 }
 
 export def pv-off-args [item: string] {
@@ -74,7 +94,8 @@ export def pool-args [d: record] {
             "label.padding_left=0" "label.padding_right=18"
             $"label.color=($C_FG)" $"label.font=($FONT):Semibold:13.0"
             $"icon=($g)" $"icon.color=($c)" $"icon.font=($FONT):Bold:14.0"
-            "--subscribe" $n "mouse.entered" "mouse.exited"
+            # entered only: leaving a row is how you reach the footer it filled.
+            "--subscribe" $n "mouse.entered"
         ]
     }
     # Preview footer pool — hidden until a row is hovered (hover.sh) or an alert
@@ -85,7 +106,7 @@ export def pool-args [d: record] {
             "--add" "item" $n $"popup.($d.item)"
             "--set" $n "drawing=off"
             $"label.color=($C_SUBTLE)" $"label.font=($FONT):Italic:12.0"
-            "label.max_chars=80" "label.padding_left=14" "label.padding_right=14"
+            "label.max_chars=80" $"label.padding_left=($PV_PAD)" "label.padding_right=14"
             # Row height = background.height (default 26 from the bar); the text is
             # ~16px, so shrink it to hug the line and kill the inter-line gap.
             "icon.drawing=off" "background.drawing=off" "background.height=16"

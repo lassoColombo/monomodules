@@ -4,7 +4,8 @@
 # submodule (`ai agent-notify render ...`), driven by thin glue scripts in the
 # bar's config; the frontend poke lives in the hook glue, not here. `browse` is
 # the terminal-side twin of those drawers: pick a live agent, land in its pane —
-# both surfaces derive their rows from lib/view.nu, so they cannot drift.
+# both surfaces derive their rows from lib/view.nu, so they cannot drift. It
+# opens in a scratch floating pane, the terminal's answer to a drawer.
 #
 #  - Pane title: "<glyph> <base>" — a small state indicator on the pane name.
 #  - Tab title:  a bare AGGREGATE over every agent pane in the tab ("▴ •2 base").
@@ -27,6 +28,7 @@ use lib/store.nu
 use lib/project.nu *
 use lib/janitor.nu *
 use lib/transcript.nu
+use lib/markdown.nu
 use lib/picker.nu *
 export use jump.nu *
 export use render/
@@ -114,7 +116,10 @@ export def working [agent: string] {
     apply $agent {state: "working", preview: ""} null (cwd-base $p)
 }
 
-# "•" awaiting — your turn. Preview = the agent's last message.
+# "•" awaiting — your turn. Preview = the agent's last message, flattened out of
+# markdown on the way in (lib/markdown.nu): no surface can render the styling, so
+# the syntax is only noise — but the LINE STRUCTURE is kept, and every surface
+# lays it out with `preview-lines`.
 export def awaiting [agent: string] {
     let p = $in | default {}
     let ids = my-ids
@@ -126,7 +131,7 @@ export def awaiting [agent: string] {
     } else {
         transcript last-message (($p.transcript_path?) | default (($existing.transcript?) | default ""))
     }
-    apply $agent {state: "awaiting", preview: ($preview | str trim)} null (cwd-base $p)
+    apply $agent {state: "awaiting", preview: (markdown to-plain $preview)} null (cwd-base $p)
 }
 
 # "▴" needs-attention — blocked on YOU. Only genuine input-needed notifications
@@ -135,7 +140,7 @@ export def needs-attention [agent: string] {
     let p = $in | default {}
     let nt = $p.notification_type? | default ""
     if ($nt != "") and ($nt not-in $ATTN_NOTIFS) { return }
-    apply $agent {state: "needs-attention", preview: (($p.message? | default "") | str trim)} null (cwd-base $p)
+    apply $agent {state: "needs-attention", preview: (markdown to-plain ($p.message?))} null (cwd-base $p)
 }
 
 # SessionEnd / manual: drop this pane's record and recompute its tab, which
@@ -166,11 +171,34 @@ export def reconcile [] { gc }
 
 # ── Interactive ──────────────────────────────────────────────────────────────
 
+# Where `use ai` resolves from, baked in at parse time: the scratch pane's nu is
+# started with `-n` (no config, so no $env.NU_LIB_DIRS to inherit) and has to be
+# pointed back at this repo explicitly.
+const LIB_DIR = path self ../..
+
 # Browse the live agents (state, name, message) and jump to the one you pick —
 # the same effect as clicking its row in a SketchyBar drawer. `query` prefilters
 # the list. Reconciles first, so a pane that died abruptly is never offered.
-export def browse [query?: string] {
-    let chosen = pick (gc) $query
-    if ($chosen == null) { return }
-    jump $chosen.session $chosen.pane_id
+#
+# The picker is fired into a SCRATCH FLOATING pane rather than drawn over the
+# pane you called it from: the frame redraws on every keystroke (see picker.nu),
+# and a floating pane gives it a surface of its own to own — your shell keeps its
+# scrollback, and the pane closes itself on the jump. The launcher returns at
+# once; `--here` is the other half, the in-pane run (and the escape hatch when
+# there is no zellij to float in, where it simply runs inline).
+export def browse [query?: string, --here] {
+    if $here or ((my-ids) == null) {
+        let chosen = pick (gc) $query
+        if ($chosen == null) { return }
+        jump $chosen.session $chosen.pane_id
+        return
+    }
+    # Store-only pre-check (no gc — that is the pane's job): an empty store is
+    # the one case a floating pane would just flash, so answer it in place.
+    if (store list | is-empty) { print $"(ansi dark_gray)no agents(ansi reset)"; return }
+    # `to nuon` quotes the query back into the inner source — a name with a
+    # space (or a quote) survives the round trip intact.
+    let q = $query | default "" | to nuon
+    let inner = $"use ai; ai agent-notify browse --here ($q)"
+    float-run "agents" [$nu.current-exe "-n" "-I" $LIB_DIR "-c" $inner]
 }

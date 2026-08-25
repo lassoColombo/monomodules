@@ -21,6 +21,16 @@ export def one-line [text?: string] {
     $text | default "" | str replace --all "\n" " " | str replace --all "\t" " " | str trim
 }
 
+# `str substring` and `str length` both count BYTES, so slicing a string at a
+# width can land in the middle of a codepoint and turn an em dash into a
+# replacement glyph. These two cut and measure by CHARACTER instead — which is
+# also what a terminal column and a bar label actually count.
+def take-chars [text: string, n: int] {
+    let cs = $text | split chars
+    if ($cs | length) <= $n { $text } else { $cs | first ([0 $n] | math max) | str join }
+}
+def char-len [text: string] { $text | split chars | length }
+
 # Greedy word-wrap `text` into ≤ max_lines lines of ≤ width chars; the last line
 # gets an ellipsis when there was more. max_lines = 1 is therefore also the
 # single-line truncator. Empty in → empty list out.
@@ -30,14 +40,14 @@ export def wrap-text [text: string, width: int, max_lines: int] {
     for w0 in ($text | split row " " | where {|w| $w != "" }) {
         mut word = $w0
         # hard-split a word longer than the whole width
-        while ($word | str length) > $width {
+        while (char-len $word) > $width {
             if ($cur | is-not-empty) { $lines = $lines ++ [$cur]; $cur = "" }
-            $lines = $lines ++ [($word | str substring 0..<$width)]
-            $word = ($word | str substring $width..)
+            $lines = $lines ++ [(take-chars $word $width)]
+            $word = ($word | split chars | skip $width | str join)
         }
         if ($cur | is-empty) {
             $cur = $word
-        } else if ((($cur | str length) + 1 + ($word | str length)) <= $width) {
+        } else if (((char-len $cur) + 1 + (char-len $word)) <= $width) {
             $cur = $"($cur) ($word)"
         } else {
             $lines = $lines ++ [$cur]; $cur = $word
@@ -45,8 +55,40 @@ export def wrap-text [text: string, width: int, max_lines: int] {
     }
     if ($cur | is-not-empty) { $lines = $lines ++ [$cur] }
     if ($lines | length) > $max_lines {
-        ($lines | first ($max_lines - 1)) ++ [ (($lines | get ($max_lines - 1) | str substring 0..<($width - 1)) + "…") ]
+        ($lines | first ($max_lines - 1)) ++ [ ((take-chars ($lines | get ($max_lines - 1)) ($width - 1)) + "…") ]
     } else { $lines }
+}
+
+# A whole preview as display lines: every source line wrapped on its OWN, so the
+# block structure a stored preview still carries (see markdown.nu) survives to
+# the screen — a code block stays a stack of lines, a list stays a list, blank
+# lines keep paragraphs apart. Capped at `max_lines`, ellipsised when there was
+# more. A line that already fits is passed through untouched, which is what
+# keeps indentation: `wrap-text` splits on spaces and so cannot preserve it.
+export def preview-lines [text: string, width: int, max_lines: int] {
+    mut out = []
+    mut cut = false
+    for src0 in ($text | str replace --all "\t" "    " | lines) {
+        let src = $src0 | str trim --right
+        if ($out | length) >= $max_lines { $cut = true; break }
+        # Never open on a blank, and never stack two: pandoc separates every
+        # block with one, and empty rows are the scarcest thing on a 12-row chip.
+        if ($src | is-empty) {
+            if ($out | is-not-empty) and (($out | last) != "") { $out = $out ++ [""] }
+            continue
+        }
+        $out = $out ++ (if (char-len $src) <= $width { [$src] } else {
+            wrap-text $src $width ($max_lines - ($out | length))
+        })
+    }
+    let trimmed = $out | reverse | skip while {|l| $l == "" } | reverse
+    if not $cut { return $trimmed }
+    # Mark the truncation on the last line we kept, in the space it already has.
+    let last = $trimmed | last | default ""
+    # `wrap-text` marks its own overflow, so a line that ran out of budget inside
+    # a block already ends in an ellipsis — don't stack a second one on it.
+    if ($last | str ends-with "…") { return $trimmed }
+    ($trimmed | drop 1) ++ [ $"(take-chars $last ($width - 2) | str trim --right) …" ]
 }
 
 # Urgency of a state, most urgent first — read off `markers` (state.nu already

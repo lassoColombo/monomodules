@@ -46,7 +46,10 @@ def cells-of [recs: list<any>] {
         let s = $r.state? | default "idle"
         # `bare-title` joins the non-empty halves, so an idle agent (no glyph)
         # still lines up with the rest of the column.
-        { kind: $s, state: (bare-title (glyph-of $s) $s), agent: (label $r), msg: (one-line ($r.preview? | default "")), rec: $r }
+        # `msg` is the flattened copy the filter matches against; `text` is the
+        # message as stored, line structure intact, for the preview pane below.
+        let text = $r.preview? | default ""
+        { kind: $s, state: (bare-title (glyph-of $s) $s), agent: (label $r), msg: (one-line $text), text: $text, rec: $r }
     }
 }
 
@@ -76,10 +79,10 @@ def frame [cells: list<any>, sel: int, query: string, off: int, list_h: int, pv_
     }
 
     let cur = $cells | get -o $sel
-    let text = if ($cur == null) { "" } else if ($cur.msg | is-empty) { "— no message —" } else { $cur.msg }
+    let text = if ($cur == null) { "" } else if ($cur.msg | is-empty) { "— no message —" } else { $cur.text }
     # Plain foreground: this is the text you opened the picker to read. The dim
     # ink is for chrome (rules, counter), not for content.
-    let pv = wrap-text $text ($cols - 4) $pv_h | each {|l| $"  ($l)" }
+    let pv = preview-lines $text ($cols - 4) $pv_h | each {|l| $"  ($l)" }
 
     # Both blocks are padded to their full height: a fixed frame means the eye
     # (and the redraw arithmetic) never has to chase a moving layout.
@@ -150,7 +153,7 @@ export def pick [recs: list<any>, query?: string] {
         let list_h = [([($all | length) $LIST_MIN] | math max) ([($spare - 3) $LIST_MIN] | math max)] | math min
         # Preview height: what the longest message needs (over the WHOLE set, so
         # filtering never moves it), capped by PV_MAX and by what is left.
-        let want_pv = $all | each {|c| wrap-text $c.msg ($cols - 4) $PV_MAX | length } | append 1 | math max
+        let want_pv = $all | each {|c| preview-lines $c.text ($cols - 4) $PV_MAX | length } | append 1 | math max
         let pv_h = [$PV_MAX $want_pv ([($spare - $list_h) 1] | math max)] | math min
 
         let view = $all | where {|c| matches $c $q }

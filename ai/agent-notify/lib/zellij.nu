@@ -82,3 +82,13 @@ export def rename-tab [session: string, tab_id: int, name: string] {
         ^zellij --session $session action rename-tab --tab-id $t $name | complete | ignore
     }
 }
+
+# Open a scratch FLOATING pane running `cmd` (argv, no shell) and hand it the
+# focus. Transient by construction: `--close-on-exit` means the pane vanishes the
+# instant the command returns, so there is never a dead frame to dismiss. The
+# target session is the caller's own, via ambient $ZELLIJ — a no-op elsewhere.
+export def float-run [name: string, cmd: list<string>] {
+    (^zellij action new-pane --floating --close-on-exit --name $name
+        --width "90%" --height "90%" --x "5%" --y 1
+        -- ...$cmd) | complete | ignore
+}

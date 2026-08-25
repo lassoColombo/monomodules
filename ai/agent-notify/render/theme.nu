@@ -20,6 +20,22 @@ export const W_RUN   = "agents_run"
 export const W_STALE = "agents_stale"
 export const W_ATTN  = "agents_attn"
 
+# Hidden timer item driving every animation on the three counters, so the bar
+# has exactly ONE moving part to pay for. While a counter has something to say:
+#
+#   working          its glyph turns — a solid disc whose arrow sweeps
+#                    clockwise, one turn a second (fa-circle_arrow_*)
+#   awaiting / attn  their hue breathes, a slow four-second fade out and back
+#
+# Nothing here changes size or shape: every frame is a Nerd Font icon with the
+# same advance as the static one, and a hue pulse is not geometry at all, so an
+# animation can never reflow the bar. The frames live in the bar's icons.sh and
+# are cycled by plugins/anim.sh — pure bash, four `--set`s a second over one
+# message, never a nu spawn — because SketchyBar's own tick floors at 1s, far
+# too slow to read as motion. This side only arms and disarms (`anim-args`, and
+# render/anim.nu for the abort flags).
+export const W_ANIM = "agents_anim"
+
 # Row slots per drawer. A hard cap by design: agents past it are counted in the
 # header rather than rendered (an endless drawer is unusable anyway).
 export const ROWS = 10
@@ -29,6 +45,10 @@ export const ROWS = 10
 # PV_WIDTH cols, capped at PV_LINES rows (last row gets an ellipsis if longer).
 export const PV_LINES = 12
 export const PV_WIDTH = 62
+# The footer's own left inset, and the width of one character of its face
+# (12pt x Meslo's 0.602em advance) — what a level of indent is worth in padding.
+export const PV_PAD = 14
+export const PV_INDENT = 7
 
 # The three drawers, in bar order: which state each one collects.
 export def drawer-specs [] {

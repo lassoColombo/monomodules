@@ -6,7 +6,7 @@
 #   scaffold      create the fixed item pool — ONCE, from sketchybarrc
 #   (main)        repaint from the store; a NO-OP when the model is unchanged
 #   reconcile     GC dead panes, then repaint
-#   preview-*     fill / clear a drawer's hover footer
+#   preview-show  fill a drawer's hover footer
 #   alert*        nudge the counter chip on a state change, and drop the nudge
 #
 # Colours, fonts and layout live in theme.nu / items.nu; the row text, glyphs and
@@ -20,6 +20,11 @@
 # daemon near 40% CPU — which is what made bar clicks lag, and made a click that
 # opened a drawer get eaten by the rebuild landing right behind it.
 #
+# The counter animations are built to the same rule: ONE hidden timer item
+# (agents_anim) runs a pure-bash tick for all three — six `--set`s a second in a
+# single message, no relayout, no nu — and render arms it only while a counter
+# actually has something to say (see anim-args / anim.nu).
+#
 # So: items are created once and NEVER added/removed again; a paint is pure
 # `--set` over a fixed pool of slots (rows past the last agent are drawing=off);
 # and a paint whose model matches the last one sends NOTHING at all — the common
@@ -28,6 +33,7 @@
 use theme.nu *
 use items.nu *
 use cache.nu
+use anim.nu
 use ../lib/store.nu
 use ../lib/janitor.nu *
 
@@ -81,6 +87,13 @@ def paint [recs: list<any>] {
     }
 
     if ($args | is-empty) { cache put $now_json; return }
+    # A counter animates exactly while it is non-empty. The timer is global, so
+    # this rides along with whichever drawer changed rather than living in the
+    # loop above; arm/disarm BEFORE the message, since the flags are what abort
+    # a tick already mid-animation (see anim.nu).
+    let on = { run: (($now | get 0.n) > 0), stale: (($now | get 1.n) > 0), attn: (($now | get 2.n) > 0) }
+    anim set $on
+    $args = $args ++ (anim-args $on)
     # Cache only what the bar actually took, so a dead daemon self-heals.
     if (^$SB ...$args | complete | get exit_code) == 0 { cache put $now_json }
 }
@@ -93,29 +106,28 @@ export def main [] { paint (store list) }
 # Build the item pool. Run once per bar load, from sketchybarrc. Idempotent.
 export def scaffold [] {
     for d in (drawer-specs) { ^$SB ...(pool-args $d) | complete | ignore }
-    cache clear   # the pool is blank — force the next paint to write everything
+    anim set {run: false, stale: false, attn: false}   # a fresh bar is still
+    cache clear      # the pool is blank — force the next paint to write everything
 }
 
 # Slow janitor — GC abruptly-killed panes, then repaint.
 export def reconcile [] { paint (gc) }
 
-# Fill a drawer's preview footer with one agent's message, wrapped over the
+# Fill a drawer's preview footer with one agent's message, laid out over the
 # line-item pool (used ones shown, the rest hidden). "—" when there's no message.
+# `preview-lines` keeps the message's own line structure — the store already
+# holds it as plain text (lib/markdown.nu), so a code block arrives here as a
+# stack of lines and stays one, rather than being welded into a paragraph.
 export def preview-show [item: string, session: string, pane: string] {
     let rec = store get $session ($pane | into int)
-    let text = one-line (if ($rec == null) { "" } else { $rec.preview? | default "" })
-    let lines = if ($text | is-empty) { ["—"] } else { wrap-text $text $PV_WIDTH $PV_LINES }
+    let text = (if ($rec == null) { "" } else { $rec.preview? | default "" })
+    let lines = if (($text | str trim) | is-empty) { ["—"] } else { preview-lines $text $PV_WIDTH $PV_LINES }
     mut args = []
     for i in 0..<$PV_LINES {
         let line = $lines | get -o $i
         $args = $args ++ (if ($line == null) { ["--set" $"($item).item._pv.($i)" "drawing=off"] } else { pv-line-args $item $i $line })
     }
     ^$SB ...$args | complete | ignore
-}
-
-# Hide a drawer's whole preview footer.
-export def preview-hide [item: string] {
-    ^$SB ...(pv-off-args $item) | complete | ignore
 }
 
 # Proactive nudge on a state change: repaint, then — if the agent's stored state
