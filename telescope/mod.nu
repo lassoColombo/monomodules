@@ -1,4 +1,4 @@
-# Interactively inspect complex data structures using sk fuzzy finder
+# Interactively inspect complex data structures with a fuzzy picker.
 #
 # Drill into records, tables, and lists with fuzzy search.
 # Enter drills into the selected item. Esc returns the current value.
@@ -7,9 +7,28 @@
 # Record: fuzzy-find over keys, preview shows the value.
 # Table: prompts for a display column, fuzzy-find over rows, preview shows the row.
 # List: fuzzy-find over items directly.
+#
+# The previews are the whole point of this module, and they are the one thing
+# Nushell's built-in picker cannot draw — so telescope still WORKS on the default
+# picker (you drill in blind, by key or by column value) and comes alive on one
+# that has a preview pane. Which one it uses is `$env.telescope_config.picker`;
+# see `choose` below and ~/.config/nushell/pickers.nu.
 
 const PREVIEW_PERCENT = 80
 const PREVIEW_WIN = $"right:($PREVIEW_PERCENT)%"
+
+# Choosing goes through ONE hook: `$env.telescope_config.picker`, a closure that
+# takes the items as pipeline input and an options record {prompt, display,
+# preview, window}, both closures reading the item from `$in`. Nothing configured
+# means the built-in `input list`, which ignores what it cannot do.
+def choose [opts: record] {
+  let items = $in
+  let custom = $env.telescope_config?.picker?
+  if ($custom != null) { return ($items | do $custom $opts) }
+  # `default` would EVALUATE a closure handed to it, so spell the fallback out.
+  let display = if ($opts.display? == null) { {|| $in | to text } } else { $opts.display }
+  $items | input list --fuzzy --display $display ($opts.prompt? | default "")
+}
 
 # Render a value for the preview pane. Records are transposed to a key/value
 # table so wide rows don't get column-truncated; tables and lists render as-is.
@@ -95,7 +114,7 @@ export def find [
     return $data
   }
   let selected = try {
-    ($results | sk --format { $in.path } --preview { $in.value | preview-of } --preview-window $PREVIEW_WIN --prompt "find> ")
+    ($results | choose {prompt: "find", display: {|| $in.path }, preview: {|| $in.value | preview-of }, window: $PREVIEW_WIN})
   } catch { [] }
   if ($selected | is-empty) { return $data }
   let item = $selected | get value
@@ -131,7 +150,7 @@ export def explore [
     if ($type | str starts-with "record") {
       let pairs = ($current | transpose key value)
       let selected = try {
-        ($pairs | sk --format { $in.key } --preview { $in.value | preview-of } --preview-window $PREVIEW_WIN --prompt "record> ")
+        ($pairs | choose {prompt: "record", display: {|| $in.key }, preview: {|| $in.value | preview-of }, window: $PREVIEW_WIN})
       } catch {
         []
       }
@@ -148,9 +167,16 @@ export def explore [
       let pk = if ($primary_key != null) {
         $primary_key
       } else {
+        # A closure cannot capture a `mut` binding, and the preview needs the
+        # rows to show what a column actually holds — so pin them first.
+        let rows = $current
         let cols = ($current | columns)
         try {
-          ($cols | input list --fuzzy "Pick a display column: ")
+          ($cols | choose {
+            prompt: "display column"
+            preview: {|| let col = $in; $rows | get $col | first 20 | wrap $col | preview-of }
+            window: $PREVIEW_WIN
+          })
         } catch {
           null
         }
@@ -161,7 +187,7 @@ export def explore [
       }
 
       let selected = try {
-        ($current | sk --format { $in | get $pk | to text } --preview { $in | preview-of } --preview-window $PREVIEW_WIN --prompt $"($pk)> ")
+        ($current | choose {prompt: $pk, display: {|| $in | get $pk | to text }, preview: {|| $in | preview-of }, window: $PREVIEW_WIN})
       } catch {
         []
       }
@@ -176,7 +202,7 @@ export def explore [
     # Plain list — fuzzyfind over items
     if ($type | str starts-with "list") {
       let selected = try {
-        ($current | sk --preview-window $PREVIEW_WIN --prompt "list> ")
+        ($current | choose {prompt: "list", preview: {|| preview-of }, window: $PREVIEW_WIN})
       } catch {
         []
       }
