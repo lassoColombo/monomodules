@@ -4,7 +4,9 @@
 #
 # Record schema:
 #   { session, pane_id, tab_id, tab_position, tab_name, pane_name, pane_locked, agent,
-#     transcript, state, preview }
+#     transcript, state, preview, preview_md }
+# preview is the message flattened to plain text (the bar), preview_md the same
+# message as the agent wrote it (the picker renders it). See lib/markdown.nu.
 # state ∈ working | awaiting | needs-attention | idle.
 #
 # This module is pure state — it never touches zellij or SketchyBar. Liveness GC

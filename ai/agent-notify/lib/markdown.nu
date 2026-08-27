@@ -1,19 +1,19 @@
-# Markdown → plain text for stored previews. Agents write markdown; every
-# surface that shows a preview is plain text (a SketchyBar label takes one font
-# and one colour, so styling cannot survive the trip anyway), and the raw syntax
-# is pure noise once it can't be rendered.
+# Markdown → plain text, for the BAR. A SketchyBar label takes one font and one
+# colour, so styling cannot survive the trip and the raw syntax is pure noise.
 #
-# This runs ONCE, where the preview is stored (see mod.nu), not per render — so
-# both surfaces read clean text out of the store at no cost, and the ~30ms is
-# paid on the hook path, which already spawns nu and talks to zellij.
+# This runs ONCE, where the preview is stored (see mod.nu), not per render — the
+# ~30ms is paid on the hook path, which already spawns nu and talks to zellij.
+# The picker keeps the markdown instead and styles it at display time, through
+# the `render` hook (lib/picker.nu); the store holds both copies.
 #
-# pandoc does the work; it is optional, and anything unexpected — missing
-# binary, non-zero exit, empty output — falls back to the raw message, so a
-# machine without it behaves exactly as before.
+# pandoc does the work; it is optional, and anything unexpected — missing binary,
+# non-zero exit, empty output — falls back to the raw message, so a machine
+# without it behaves exactly as before.
 
-# Longest input worth converting. The surfaces show at most ~750 characters
-# (12 lines × 62 cols), so this is slack, not a limit anyone can feel — it just
-# stops a pathological message from being handed to a subprocess whole.
+# Longest input worth converting. The bar shows ~750 characters (12 lines × 62
+# cols) and the picker's pane a screenful it can scroll — so ~50 lines of text is
+# slack, not a limit anyone can feel; it just stops a pathological message from
+# being handed to a subprocess whole.
 const MAX_IN = 4000
 
 # Mirrors the NARROWER of the two surfaces (render/theme.nu's PV_WIDTH). Only

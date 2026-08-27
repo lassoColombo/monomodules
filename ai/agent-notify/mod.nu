@@ -4,8 +4,9 @@
 # submodule (`ai agent-notify render ...`), driven by thin glue scripts in the
 # bar's config; the frontend poke lives in the hook glue, not here. `browse` is
 # the terminal-side twin of those drawers: pick a live agent, land in its pane —
-# both surfaces derive their rows from lib/view.nu, so they cannot drift. It
-# opens in a scratch floating pane, the terminal's answer to a drawer.
+# both surfaces derive their rows from lib/view.nu, so they cannot drift. It is
+# skim (`sk`, from nu_plugin_skim) in a scratch floating pane, the terminal's
+# answer to a drawer.
 #
 #  - Pane title: "<glyph> <base>" — a small state indicator on the pane name.
 #  - Tab title:  a bare AGGREGATE over every agent pane in the tab ("▴ •2 base").
@@ -103,6 +104,7 @@ export def session-start [agent: string, name?: string] {
         state: (if $keep { $existing.state? | default "idle" } else { "idle" })
         transcript: ($p.transcript_path? | default (($existing.transcript?) | default ""))
         preview: (if $keep { $existing.preview? | default "" } else { "" })
+        preview_md: (if $keep { $existing.preview_md? | default "" } else { "" })
     } $name (cwd-base $p)
 }
 
@@ -113,13 +115,15 @@ export def working [agent: string] {
     if ($ids == null) { return }
     let existing = store get $ids.session $ids.pane_id
     if ($existing != null) and (($existing.state?) == "working") { return }
-    apply $agent {state: "working", preview: ""} null (cwd-base $p)
+    apply $agent {state: "working", preview: "", preview_md: ""} null (cwd-base $p)
 }
 
-# "•" awaiting — your turn. Preview = the agent's last message, flattened out of
-# markdown on the way in (lib/markdown.nu): no surface can render the styling, so
-# the syntax is only noise — but the LINE STRUCTURE is kept, and every surface
-# lays it out with `preview-lines`.
+# "•" awaiting — your turn. Preview = the agent's last message, stored TWICE
+# (lib/markdown.nu): `preview` flattened out of markdown for the bar, whose labels
+# take one font and one colour, and `preview_md` as written, because the picker's
+# preview pane renders ANSI and can show the styling. The flattening keeps the
+# LINE STRUCTURE, which is what the bar lays out with `preview-lines`; the picker
+# renders the markdown at the width of the pane it lands in.
 export def awaiting [agent: string] {
     let p = $in | default {}
     let ids = my-ids
@@ -131,7 +135,7 @@ export def awaiting [agent: string] {
     } else {
         transcript last-message (($p.transcript_path?) | default (($existing.transcript?) | default ""))
     }
-    apply $agent {state: "awaiting", preview: (markdown to-plain $preview)} null (cwd-base $p)
+    apply $agent {state: "awaiting", preview: (markdown to-plain $preview), preview_md: $preview} null (cwd-base $p)
 }
 
 # "▴" needs-attention — blocked on YOU. Only genuine input-needed notifications
@@ -140,7 +144,8 @@ export def needs-attention [agent: string] {
     let p = $in | default {}
     let nt = $p.notification_type? | default ""
     if ($nt != "") and ($nt not-in $ATTN_NOTIFS) { return }
-    apply $agent {state: "needs-attention", preview: (markdown to-plain ($p.message?))} null (cwd-base $p)
+    let msg = $p.message? | default ""
+    apply $agent {state: "needs-attention", preview: (markdown to-plain $msg), preview_md: $msg} null (cwd-base $p)
 }
 
 # SessionEnd / manual: drop this pane's record and recompute its tab, which
@@ -176,16 +181,44 @@ export def reconcile [] { gc }
 # pointed back at this repo explicitly.
 const LIB_DIR = path self ../..
 
-# Browse the live agents (state, name, message) and jump to the one you pick —
-# the same effect as clicking its row in a SketchyBar drawer. `query` prefilters
-# the list. Reconciles first, so a pane that died abruptly is never offered.
+# The scratch pane's nu is started with `-n`: no config, so no module hooks, no
+# skim palette — and no plugin registry either. All three live somewhere this
+# shell can reach and that one cannot, so they are handed over at launch: the
+# plugin as a binary path read out of OUR registry (no second copy to keep in
+# step), the other two as `source` lines for the files config.nu itself sources.
 #
-# The picker is fired into a SCRATCH FLOATING pane rather than drawn over the
-# pane you called it from: the frame redraws on every keystroke (see picker.nu),
-# and a floating pane gives it a surface of its own to own — your shell keeps its
-# scrollback, and the pane closes itself on the jump. The launcher returns at
-# once; `--here` is the other half, the in-pane run (and the escape hatch when
-# there is no zellij to float in, where it simply runs inline).
+# Every one of them is optional. Without the plugin the hooks have no engines and
+# the module falls back to the built-in `input list` and to unstyled text, both
+# of which need nothing — a missing piece costs a preview pane or its colours,
+# never the pane's ability to run.
+def skim-binary [] { plugin list | where name == "skim" | get -o 0.filename }
+
+def config-sources [] {
+    [module-hooks.nu skim-colors.nu]
+    | each {|f| $nu.default-config-dir | path join $f }
+    | where {|f| $f | path exists }
+    | each {|f| $"source ($f | to nuon); " }
+    | str join
+}
+
+# Browse the live agents (state, name, message) and jump to the one you pick —
+# the same effect as clicking its row in a SketchyBar drawer. `query` prefills
+# the picker's prompt. Reconciles first, so a pane that died abruptly is never
+# offered.
+#
+# The picker is fired into a SCRATCH FLOATING pane rather than run in the pane
+# you called it from: a drawer is what this is, so it gets a surface of its own —
+# and the pane closes itself on the jump. The launcher returns at once; `--here`
+# is the other half, the in-pane run (and the escape hatch when there is no
+# zellij to float in, where it simply runs inline).
+#
+# A message longer than the preview pane is never truncated, only unscrolled:
+# with a picker that HAS a preview pane (see the `picker` hook), ctrl-up and
+# ctrl-down move it a line, ctrl-u and ctrl-d a page (as in nvim), and shift-up,
+# shift-down or the mouse wheel over the pane do what skim ships. The bindings
+# live with the engine, in ~/.config/nushell/module-hooks.nu, so every preview in
+# every module scrolls the same way — and they are ctrl, not alt, because zellij
+# keeps alt-h/j/k/l for pane focus and never forwards them.
 export def browse [query?: string, --here] {
     if $here or ((my-ids) == null) {
         let chosen = pick (gc) $query
@@ -196,9 +229,11 @@ export def browse [query?: string, --here] {
     # Store-only pre-check (no gc — that is the pane's job): an empty store is
     # the one case a floating pane would just flash, so answer it in place.
     if (store list | is-empty) { print $"(ansi dark_gray)no agents(ansi reset)"; return }
-    # `to nuon` quotes the query back into the inner source — a name with a
-    # space (or a quote) survives the round trip intact.
+    # `to nuon` quotes the query back into the inner source — a name with a space
+    # (or a quote) survives the round trip intact.
     let q = $query | default "" | to nuon
-    let inner = $"use ai; ai agent-notify browse --here ($q)"
-    float-run "agents" [$nu.current-exe "-n" "-I" $LIB_DIR "-c" $inner]
+    let skim = skim-binary
+    let plugin = if ($skim == null) { [] } else { ["--plugins" $skim] }
+    let inner = (config-sources) + "use ai; ai agent-notify browse --here " + $q
+    float-run "agents" [$nu.current-exe "-n" ...$plugin "-I" $LIB_DIR "-c" $inner]
 }

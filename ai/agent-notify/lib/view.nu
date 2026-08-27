@@ -59,10 +59,13 @@ export def wrap-text [text: string, width: int, max_lines: int] {
     } else { $lines }
 }
 
-# A whole preview as display lines: every source line wrapped on its OWN, so the
-# block structure a stored preview still carries (see markdown.nu) survives to
-# the screen — a code block stays a stack of lines, a list stays a list, blank
-# lines keep paragraphs apart. Capped at `max_lines`, ellipsised when there was
+# A whole preview as display lines — the BAR's layout: SketchyBar stacks one
+# label per line, so the wrapping has to be done here. The terminal picker hands
+# its text to skim's preview window instead, which wraps and scrolls it itself.
+#
+# Every source line is wrapped on its OWN, so the block structure a stored
+# preview still carries (see markdown.nu) survives to the screen — a code block
+# stays a stack of lines, a list stays a list, blank lines keep paragraphs apart. Capped at `max_lines`, ellipsised when there was
 # more. A line that already fits is passed through untouched, which is what
 # keeps indentation: `wrap-text` splits on spaces and so cannot preserve it.
 export def preview-lines [text: string, width: int, max_lines: int] {
