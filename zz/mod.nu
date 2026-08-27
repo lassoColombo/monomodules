@@ -21,17 +21,81 @@ def layout-completer [] {
   | each { |p| $p | path basename | str replace ".kdl" "" }
 }
 
-# zoxide entries, optionally narrowed by query.
+# zoxide entries as {score, path} records, optionally narrowed by query. Records,
+# not bare paths: a picker with a preview pane has something to show, and the
+# frecency score stays available to whoever renders the row.
 def candidates [query?: string] {
   let kw = if ($query | is-empty) { [] } else { [$query] }
-  entries --all ...$kw | get path
+  entries --all ...$kw
 }
 
-# single-select picker over zoxide entries.
+# `$HOME` written as `~`: a zoxide list is mostly one user's own tree, and 15
+# columns of "/Users/colombos" on every row say nothing.
+def short [path: string] {
+  $path | str replace $env.HOME "~"
+}
+
+# What a directory IS, for pickers that can show it. `--all` keeps entries whose
+# directory is gone (that is what `remove` and `sync` are for), so this has to
+# survive a missing path.
+#
+# Returned as a TABLE, not a string: the picker renders it with `table --width
+# <the pane it actually drew>`, so the columns size themselves and nothing here
+# has to know how wide the preview is.
+def dir-preview [] {
+  let path = $in.path
+  try {
+    ls $path
+    | select name type size modified
+    | update name { path basename }   # the pane is narrow; the path is the row
+    | sort-by type name               # dirs before files, alphabetical within
+    | first 200                       # a huge directory is re-rendered per keypress
+  } catch { $"— ($path) is gone —" }
+}
+
+# The preview pane, for an engine that has one (see `choose`). It sits UNDER the
+# list and gets the bigger share of the height. Full width is what these previews
+# want: a directory listing is a table, and a table beside the rows has to fit its
+# columns into half a screen, where one under them gets the whole of it.
+#
+# The rows lose nothing by it — a row is one path, and it was never the thing you
+# were reading.
+#
+# Under MIN_ROWS there is no room for both, so the preview goes and the rows take
+# the whole pane: skim reads a zero-height pane as "no preview at all".
+const PREVIEW = "down:60%"
+const MIN_ROWS = 16
+
+def preview-window [] {
+  if (term size).rows < $MIN_ROWS { "down:0" } else { $PREVIEW }
+}
+
+# Choosing goes through ONE hook: `$env.zz_config.picker`, a closure that takes
+# the items as pipeline input and an options record {prompt, display, preview,
+# multi, window}. With nothing configured this is Nushell's built-in `input list`, which
+# is why zz needs no plugin; an engine that has a preview pane is handed a way to
+# render one, and shows you what is inside a directory before you cd into it.
+def choose [opts: record] {
+  let items = $in
+  let custom = $env.zz_config?.picker?
+  if ($custom != null) { return ($items | do $custom $opts) }
+  # `default` would EVALUATE a closure handed to it, so spell the fallback out.
+  let display = if ($opts.display? == null) { {|| $in | to text } } else { $opts.display }
+  let prompt = styled-prompt ($opts.prompt? | default "")
+  if ($opts.multi? | default false) {
+    $items | input list --fuzzy --multi --display $display $prompt
+  } else {
+    $items | input list --fuzzy --display $display $prompt
+  }
+}
+
+# single-select picker over zoxide entries. "" when nothing was chosen.
 def pick [prompt: string, query?: string] {
-  candidates $query
-  | input list --fuzzy (styled-prompt $prompt)
-  | default ""
+  let chosen = (
+    candidates $query
+    | choose {prompt: $prompt, display: {|| short $in.path }, preview: {|| dir-preview }, window: (preview-window)}
+  )
+  if ($chosen == null) { "" } else { $chosen.path }
 }
 
 # open a zellij tab using the given layout, in a zoxide-picked dir.
@@ -85,7 +149,11 @@ export def --env main [query?: string] {
 export def tab [layout?: string@layout-completer, query?: string] {
   let layout = if ($layout | is-empty) {
     layout-completer
-    | input list --fuzzy (styled-prompt "zellij layout")
+    | choose {
+      prompt: "zellij layout"
+      preview: {|| open ([$env.HOME ".config" "zellij" "layouts" $"($in).kdl"] | path join) }
+      window: (preview-window)
+    }
     | default ""
   } else {
     $layout
@@ -103,11 +171,17 @@ export def cp [query?: string] {
 export def remove [query?: string] {
   let picks = (
     candidates $query
-    | input list --fuzzy --multi (styled-prompt "zoxide remove")
+    | choose {
+      prompt: "zoxide remove"
+      display: {|| short $in.path }
+      preview: {|| dir-preview }
+      multi: true
+      window: (preview-window)
+    }
     | default []
   )
   if ($picks | is-not-empty) {
-    zoxide remove ...$picks
+    zoxide remove ...($picks | get path)
   }
 }
 
