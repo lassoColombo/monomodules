@@ -8,6 +8,10 @@
 # on a counter that has nothing to say. plugins/anim.sh re-reads the flags before
 # every frame, so a run that outlives its animation drops the counters it no
 # longer owns — and exits outright once it owns none.
+#
+# plugins/anim.sh keeps its cycle position in an `agents-anim.phase` file
+# alongside these; it is the tick's own bookkeeping, not state we set, and a
+# stale one costs nothing more than starting the next breath mid-fade.
 
 def flag-dir [] {
     let base = if ($env.XDG_CACHE_HOME? | is-not-empty) { $env.XDG_CACHE_HOME } else { [$env.HOME .cache] | path join }

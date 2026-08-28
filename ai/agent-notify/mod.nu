@@ -16,7 +16,10 @@
 # last agent leaving can erase it — and a manual rename is picked up for free.
 #
 # STATE flows from Claude Code hooks → verbs below → per-pane store records
-# (see lib/store.nu). Surfaces are pure projections. There is NO periodic scan:
+# (see lib/store.nu), through the glue in hooks/ — which also owns the poke that
+# tells the bar to repaint, and the fast path that answers the re-assert
+# PostToolUse makes on every tool call without ever starting a nu.
+# Surfaces are pure projections. There is NO periodic scan:
 # a normal exit drops its record (SessionEnd → clear); an abruptly-killed pane is
 # GC'd by `reconcile` (a slow liveness janitor run from the bar), which is the
 # only place zellij is scanned. Each verb reads its Claude Code hook payload from

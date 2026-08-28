@@ -24,16 +24,17 @@ export const W_ATTN  = "agents_attn"
 # has exactly ONE moving part to pay for. While a counter has something to say:
 #
 #   working          its glyph turns — a solid disc whose arrow sweeps
-#                    clockwise, one turn a second (fa-circle_arrow_*)
-#   awaiting / attn  their hue breathes, a slow four-second fade out and back
+#                    clockwise a quarter turn a second (fa-circle_arrow_*)
+#   awaiting / attn  their hue breathes, a slow eight-second fade out and back
 #
 # Nothing here changes size or shape: every frame is a Nerd Font icon with the
 # same advance as the static one, and a hue pulse is not geometry at all, so an
 # animation can never reflow the bar. The frames live in the bar's icons.sh and
-# are cycled by plugins/anim.sh — pure bash, four `--set`s a second over one
-# message, never a nu spawn — because SketchyBar's own tick floors at 1s, far
-# too slow to read as motion. This side only arms and disarms (`anim-args`, and
-# render/anim.nu for the abort flags).
+# are cycled by plugins/anim.sh — pure bash, ONE `--set` message per SketchyBar
+# tick, no sleeps and never a nu spawn. Sub-second frames are what a moving bar
+# actually costs: four of them a second, with the `sleep`s between, ran ~47ms of
+# CPU every second for as long as any agent was alive. This side only arms and
+# disarms (`anim-args`, and render/anim.nu for the abort flags).
 export const W_ANIM = "agents_anim"
 
 # Row slots per drawer. A hard cap by design: agents past it are counted in the

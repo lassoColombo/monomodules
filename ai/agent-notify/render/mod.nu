@@ -15,20 +15,26 @@
 #
 # WHY A FIXED POOL: every `--add`/`--remove` costs the SketchyBar daemon ~20ms of
 # main-thread relayout+redraw, so tearing the drawers down and rebuilding them
-# (~43 items) burned ~0.8 CPU-seconds per paint. Driven both by the fast timer
-# AND by the PostToolUse poke (once per tool call, per agent), that pinned the
-# daemon near 40% CPU — which is what made bar clicks lag, and made a click that
-# opened a drawer get eaten by the rebuild landing right behind it.
+# (~43 items) burned ~0.8 CPU-seconds per paint. Driven both by a timer AND by
+# the PostToolUse poke (once per tool call, per agent), that pinned the daemon
+# near 40% CPU — which is what made bar clicks lag, and made a click that opened
+# a drawer get eaten by the rebuild landing right behind it.
 #
 # The counter animations are built to the same rule: ONE hidden timer item
-# (agents_anim) runs a pure-bash tick for all three — six `--set`s a second in a
-# single message, no relayout, no nu — and render arms it only while a counter
-# actually has something to say (see anim-args / anim.nu).
+# (agents_anim) runs a pure-bash tick for all three — a single `--set` message a
+# second, no relayout, no nu — and render arms it only while a counter actually
+# has something to say (see anim-args / anim.nu).
 #
 # So: items are created once and NEVER added/removed again; a paint is pure
 # `--set` over a fixed pool of slots (rows past the last agent are drawing=off);
-# and a paint whose model matches the last one sends NOTHING at all — the common
-# case, since `working` is re-asserted on every single tool call.
+# and a paint whose model matches the last one sends NOTHING at all.
+#
+# WHAT DRIVES A PAINT: the poke, and the 30s janitor. Nothing else — the bar
+# used to also carry a 2s backstop timer, which spawned a nu that read the store
+# and found it unchanged, around the clock, for as long as the machine was on.
+# The poke is what makes a real change instant; the janitor is the backstop. And
+# the poke itself is suppressed for the tool-call re-assert that cannot have
+# changed anything (hooks/hook.sh), so the common case reaches neither.
 
 use theme.nu *
 use items.nu *
