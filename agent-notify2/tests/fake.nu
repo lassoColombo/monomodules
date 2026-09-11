@@ -10,7 +10,7 @@
 
 export const INFO = {name: "fake", title: "a line in a file, for tests"}
 
-export def settings [given: record]: nothing -> record {
+export def settings [given: record, me: any]: nothing -> record {
     let s = {glyphs: {working: "W", awaiting: "A", needs-attention: "!", idle: "."}} | merge $given
     let log = $s.log? | default ""
     if ($log | is-empty) {

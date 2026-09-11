@@ -21,11 +21,11 @@ const CFG = ($nu.temp-dir | path join "agent-notify2-tests-dispatch" "config.yam
 # down with it.
 def surfaces []: nothing -> record {
     { boom: {info: {name: "boom", title: "always fails"}
-             settings: {|given| $given }
+             settings: {|given, me| $given }
              project: {|recs, s| $recs | length }
              apply: {|desired, s| error make --unspanned {msg: "boom: no such display"} }}
       fake: {info: $fake.INFO
-             settings: {|given| fake settings $given }
+             settings: {|given, me| fake settings $given $me }
              project: {|recs, s| fake project $recs $s }
              apply: {|desired, s| fake apply $desired $s }} }
 }

@@ -463,10 +463,15 @@ impure half that puts it there. Four exports, mirroring the client contract:
 
 ```nu
 export const INFO = {name, title}
-export def settings [given: record] -> record          # strict; fills defaults
+export def settings [given: record, me: any] -> record # strict; defaults; ambient
 export def project [records, settings] -> any          # PURE — the thinking
-export def apply [desired, settings]                   # the only side effect
+export def apply [desired, settings] -> any            # side effect; returns what it learned
 ```
+
+`settings` gathers everything the surface needs to know before it thinks: its
+config namespace, `me` (the agent this event is about, handed down by dispatch,
+which knows it exactly where the environment would be a guess), and anything else
+ambient. Gathering it once is what keeps `project` pure enough to run twice.
 
 **The gate.** Dispatch runs the pure half TWICE — once against the store as it
 was, once as it is — and touches nothing when the two agree:
@@ -491,6 +496,14 @@ core ever hearing the word zellij. A daemon would have to be told.
 `use` is parse-time and nushell has no first-class modules: a name cannot become a
 module at runtime. Passing a different table is what lets the tests exercise all
 of it with nothing installed (`tests/fake.nu`).
+
+**A surface never writes the store.** It returns what it learned — where its pane
+is, which item it was given — and dispatch records that in the surface's own
+namespace. The store stays the one thing that owns writing, and the surface stays
+a LEAF of the import tree, which is not a stylistic point: nushell parses a module
+once per import path, so a store reached both directly and through a surface is
+parsed twice on every event (§10). Removing that one diamond took the machinery
+from 5.28ms to 3.87ms.
 
 **Nothing in the dispatch path may throw.** It runs after the store has committed.
 Each surface is wrapped alone, so one failing cannot stop the next, and a broken
@@ -542,6 +555,9 @@ is an error, because that is a typo.
 | D24 | Strict config validation in the CLI, never in the hook | **LOCKED** | §4.7 — a YAML typo must not be able to stop the store recording facts |
 | D25 | The readers are `surfaces/`, the writers are `clients/` | **LOCKED** | "integration" covers both halves; these two words do not |
 | D26 | Surfaces reach dispatch as a hand-written table of closures | **LOCKED** | `use` is parse-time; it is also what makes them testable with nothing installed |
+| D27 | A surface reports what it learned; dispatch writes it | **LOCKED** | §4.7 — one writer, and it keeps surfaces out of the store's import cone |
+| D28 | A pane's name comes from the store, never from parsing its old title | **LOCKED** | user decision; deletes ~60 lines of v1 and one zellij call per event. A manual rename is overwritten |
+| D29 | The import cone must be a TREE | **LOCKED** | §10 — a diamond is parsed twice, on every event, forever |
 | D15 | Replace pandoc with a nu-native flattener | **OPEN** | 25.1ms on the event path, and a dependency |
 | D16 | Where the bench harness lives | **OPEN** | ~350 lines of documented nu; §8 |
 | D17 | Final promoted name/location (top-level `agent-notify`?) | **OPEN** | v1 is `ai/agent-notify`; v2 is top-level |
@@ -680,7 +696,25 @@ its own bar item names so both can be live at once.
    installed — the same move that proved the client contract on Codex. One
    consequence for the core: `drop` now reads the record before removing it, because
    a surface cannot say whether its output changed about an agent it never saw.
-4. **zellij integration** — titles, with D13's lazy reads, on live data.
+4. **zellij integration** — ✅ done, panes only. `surfaces/zellij.nu`: glyph plus
+   name, one call to zellij per state change and **none at all** when nothing
+   visible changed. Two of v1's three calls per event are gone, for two separate
+   reasons: the pane is known from the environment (dispatch runs inside the
+   agent's process), and the NAME IS A FACT IN THE STORE rather than something
+   parsed back out of the old title — which deletes v1's `parse-title`,
+   `bare-title` and its list of legacy glyphs outright. The cost is that a manual
+   pane rename is overwritten, which is the right trade when the store is the
+   source of truth. 170/170 across five suites; the surface machinery costs 3.87ms
+   of parse per event, the hook 28ms.
+   Two findings, both in §10: a module reached by two import paths is parsed
+   TWICE (fixing that one diamond saved 1.4ms per event and produced the
+   leaf/report rules above), and Private Use Area glyphs do not survive ordinary
+   tooling — written as literals they arrived as empty strings, and the suite
+   caught it as "every state has the same title".
+4b. **zellij tab aggregates** — deferred deliberately. A tab's name belongs to the
+   user, so a tab title cannot be computed from the store alone: it has to be
+   read, stripped and put back. The real question is who owns the tab name, and
+   that deserves an answer rather than a guess.
 5. **SketchyBar integration** — model, one-message paint, install owning its own
    glue and item pool. Re-measure the `--add`/`--remove` claim here.
 6. **Picker + jump** — the terminal surface and the actions, on the shared `view/`.
@@ -752,6 +786,18 @@ is spelled the second way.
 
 **Reading stdin blocks until the writer closes it.** `open --raw /dev/stdin` in an
 entry point run by hand hangs with no clue why; `is-terminal --stdin` guards it.
+
+**A module reached by two import paths is PARSED TWICE.** There is no cache
+across `use` paths, and the cost is worse than additive. Measured: `store.nu`
+alone +1.32ms, `zellij.nu` (which imports it) alone +2.25ms, both together
++4.51ms where a re-parse alone predicts +3.57ms. Keep the import cone a tree:
+the fix was to stop a surface importing the store at all, which took the whole
+dispatch cone from +5.28ms to +3.87ms per event.
+
+**Private Use Area glyphs do not survive ordinary tooling.** Nerd Font icons
+written as literal characters arrived in the file as empty strings — silently,
+with no error anywhere. Write them as `"\u{f021}"`. The tests caught it only
+because they asserted a title's exact contents.
 
 **Some names are PARSER KEYWORDS and cannot be commands at all** — `run` among
 them. A louder failure than builtin shadowing (it names the rule and refuses to

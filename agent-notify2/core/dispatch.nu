@@ -33,12 +33,16 @@
 
 use config.nu
 use store.nu
+use ../surfaces/zellij.nu
 
 # ── the shipped surfaces ─────────────────────────────────────────────────────
-# Step 4 adds zellij here, step 5 SketchyBar. Each entry is four things: what it
-# is, how it reads its own settings, the pure projection, and the side effect.
+# Step 5 adds SketchyBar here. Each entry is four things: what it is, how it reads
+# its own settings, the pure projection, and the side effect.
 export def shipped []: nothing -> record {
-    {}
+    { zellij: {info: $zellij.INFO
+               settings: {|given, me| zellij settings $given $me }
+               project: {|recs, s| zellij project $recs $s }
+               apply: {|desired, s| zellij apply $desired $s }} }
 }
 
 export def known []: nothing -> list<string> { shipped | columns }
@@ -67,23 +71,30 @@ export def project [
     } else { [] }
     if ($on | is-empty) { return [] }
 
+    let me = ($after | default $before | get -o id)
     let now = store list | sort-by id
     let was = if $force { null } else {
-        let rec = $after | default $before
-        if $rec == null { return [] }
-        let id = $rec.id? | default ""
-        (($now | where id != $id) ++ (if $before == null { [] } else { [$before] })) | sort-by id
+        if $me == null { return [] }
+        (($now | where id != $me) ++ (if $before == null { [] } else { [$before] })) | sort-by id
     }
 
     $on | each {|name|
         let s = $surfaces | get $name
         try {
-            let settings = do $s.settings ($cfg | get -o $name | default {})
+            let settings = do $s.settings ($cfg | get -o $name | default {}) $me
             let desired = do $s.project $now $settings
             if (not $force) and ((do $s.project $was $settings) == $desired) {
                 {surface: $name, action: "skipped"}
             } else {
-                do $s.apply $desired $settings
+                # A surface never writes the store. It may REPORT what it learned
+                # about this agent — where its pane is, which item it was given —
+                # and that is recorded here, in its own namespace, by the one
+                # module that owns writing. `patch` commits nothing when the facts
+                # are unchanged, so the steady state is a read and a comparison.
+                let learned = do $s.apply $desired $settings
+                if ($me != null) and (($learned | describe) | str starts-with "record") {
+                    store patch $me $learned | ignore
+                }
                 {surface: $name, action: "applied"}
             }
         } catch {|e|
