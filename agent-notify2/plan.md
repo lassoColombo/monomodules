@@ -456,6 +456,59 @@ the block to paste. Merging into four foreign configs in three formats — with
 backups, pre-existing entries and an uninstall path — is a great deal of blast
 radius for the convenience of not pasting a block yourself.
 
+### 4.7 Surfaces — the projection gate
+
+A surface is a pure function from the store to what should be on screen, plus an
+impure half that puts it there. Four exports, mirroring the client contract:
+
+```nu
+export const INFO = {name, title}
+export def settings [given: record] -> record          # strict; fills defaults
+export def project [records, settings] -> any          # PURE — the thinking
+export def apply [desired, settings]                   # the only side effect
+```
+
+**The gate.** Dispatch runs the pure half TWICE — once against the store as it
+was, once as it is — and touches nothing when the two agree:
+
+```
+project(before) == project(after)   →  do nothing
+```
+
+That single comparison is the performance story. A `Stop` changes `message`, but
+a pane title has no message in it, so the projection is identical and zellij —
+11ms of subprocess, twice — is never called. v1 reached the same place with a
+bash fast-path gate, a separate rule for SketchyBar and a janitor to re-check;
+here every future surface inherits it for free, with no cache, no TTL and nothing
+remembered between events. It is also why `project` must be pure: an impure one
+could not be run twice.
+
+**Dispatch runs inside the agent's process**, so a surface inherits the agent's
+environment — which is how the zellij surface will learn its pane id without the
+core ever hearing the word zellij. A daemon would have to be told.
+
+**Surfaces are a table of closures**, built by hand in `core/dispatch.nu`, because
+`use` is parse-time and nushell has no first-class modules: a name cannot become a
+module at runtime. Passing a different table is what lets the tests exercise all
+of it with nothing installed (`tests/fake.nu`).
+
+**Nothing in the dispatch path may throw.** It runs after the store has committed.
+Each surface is wrapped alone, so one failing cannot stop the next, and a broken
+config degrades to "no surfaces" rather than to a broken hook.
+
+The config file has **the same shape as a store record**: a small core the module
+owns, one namespace per owner, unknown keys rejected. One idea, two files.
+
+```yaml
+surfaces: [zellij, sketchybar]     # the opt-in list; its order is dispatch order
+zellij:
+  glyphs: {working: 🧠, awaiting: 🔔}
+```
+
+A namespace for a surface that is merely switched off is fine — disabling should
+not mean deleting your colours. A namespace naming a surface that does not exist
+is an error, because that is a typo.
+
 ---
 
 ## 5. Decisions
@@ -485,6 +538,10 @@ radius for the convenience of not pasting a block yourself.
 | D20 | Wiring is printed, never applied | **LOCKED** | four foreign configs in three formats |
 | D21 | A client uses ONE transport, even when its agent offers several | **LOCKED** | §4.6 — Codex's `notify` and hooks key on different ids; running both double-counts one agent |
 | D22 | Fix an agent's transport before inferring states it does not report | **LOCKED** | §4.6 — the store must not hold a confident fact nothing supports |
+| D23 | The projection gate: compare `project(before)` with `project(after)` | **LOCKED** | §4.7 — replaces v1's bash gate, trigger dedup and janitor with one comparison, and no state |
+| D24 | Strict config validation in the CLI, never in the hook | **LOCKED** | §4.7 — a YAML typo must not be able to stop the store recording facts |
+| D25 | The readers are `surfaces/`, the writers are `clients/` | **LOCKED** | "integration" covers both halves; these two words do not |
+| D26 | Surfaces reach dispatch as a hand-written table of closures | **LOCKED** | `use` is parse-time; it is also what makes them testable with nothing installed |
 | D15 | Replace pandoc with a nu-native flattener | **OPEN** | 25.1ms on the event path, and a dependency |
 | D16 | Where the bench harness lives | **OPEN** | ~350 lines of documented nu; §8 |
 | D17 | Final promoted name/location (top-level `agent-notify`?) | **OPEN** | v1 is `ai/agent-notify`; v2 is top-level |
@@ -610,9 +667,19 @@ its own bar item names so both can be live at once.
    here), which the client's header says plainly. The suite immediately found a
    store bug no surface had reached yet: `list` on an *emptied* store errored,
    because a glob that matches nothing is an error (§10).
-3. **Config + dispatch** — strict YAML loading, the opt-in list, fan-out. Deferred
-   to here deliberately: config is almost entirely *integration* settings, and
-   until a surface exists there is nothing concrete to configure.
+3. **Config + dispatch** — ✅ done. `core/config.nu` (the YAML file, strict
+   `problems`, never-throwing `load`), `core/dispatch.nu` (the gate and the
+   fan-out), `cli/config.nu` and `cli/surfaces.nu`, and the seam in
+   `core/event.nu` is live. 139/139 across four suites. **Step 3 adds 0.76ms of
+   parse to every event** — the price of §4.4's "gate calls, not imports", which
+   parse-time `use` leaves no way around; two realistic surface modules (18KB,
+   this repo's comment-heavy style) were measured separately at 2.07ms, so the
+   budget holds through step 5. The hook is 25ms.
+   `surfaces/` ships EMPTY on purpose: the contract is exercised by `tests/fake.nu`,
+   a complete surface that writes a line to a file and therefore needs nothing
+   installed — the same move that proved the client contract on Codex. One
+   consequence for the core: `drop` now reads the record before removing it, because
+   a surface cannot say whether its output changed about an agent it never saw.
 4. **zellij integration** — titles, with D13's lazy reads, on live data.
 5. **SketchyBar integration** — model, one-message paint, install owning its own
    glue and item pool. Re-measure the `--add`/`--remove` claim here.
@@ -685,6 +752,20 @@ is spelled the second way.
 
 **Reading stdin blocks until the writer closes it.** `open --raw /dev/stdin` in an
 entry point run by hand hangs with no clue why; `is-terminal --stdin` guards it.
+
+**Some names are PARSER KEYWORDS and cannot be commands at all** — `run` among
+them. A louder failure than builtin shadowing (it names the rule and refuses to
+parse) but the same lesson: check the name before building on it. `dispatch
+project`, not `dispatch run`.
+
+**A def annotated `-> nothing` cannot END in `error make`**, because `error` is
+not `nothing`. Drop the return type on commands whose job is to fail.
+
+**A comment may not sit between an `@attribute` and its `def`.** "Attributes must
+be followed by a definition" — put the prose above the attributes.
+
+**A flag cannot start a continuation line.** `summarise (…)\n  --title "x"` is a
+parse error; bind the argument to a `let` and keep the call on one line.
 
 **`ls` on a glob that matches nothing is an ERROR**, not an empty list — and a
 directory that outlives its contents is the ordinary case for a store whose last

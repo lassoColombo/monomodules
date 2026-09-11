@@ -11,13 +11,16 @@
 # other way round. Everything, logic and graphics alike, lives in this module; no
 # glue scripts in anyone else's config directory.
 #
-# BUILD STATE — step 2 of 7 (see plan.md §9). The store, its command surface, and
-# the Claude client exist. No config file and no integrations yet, so nothing is
-# projected anywhere: records are written and can be read, and that is all.
+# BUILD STATE — step 3 of 7 (see plan.md §9). The store, its command surface, the
+# Claude and Codex clients, the config file and the dispatch gate all exist.
+# `surfaces/` is still empty, so nothing is painted anywhere yet: records are
+# written, read, and offered to a list of surfaces that is currently empty.
 #
 #   agent-notify2 store get|list|patch|set|drop     the store itself
 #   agent-notify2 report|name                       what an agent says about itself
 #   agent-notify2 clients [wiring <name>]           which agents can report, and how
+#   agent-notify2 config path|show|check            the settings file
+#   agent-notify2 surfaces [refresh]                what shows the store, and repaint
 #
 # The command surface is deliberately reachable from outside nushell (plan.md P5):
 #
@@ -27,3 +30,5 @@
 export use cli/store.nu *
 export use cli/agent.nu *
 export use cli/clients.nu
+export use cli/config.nu *
+export use cli/surfaces.nu

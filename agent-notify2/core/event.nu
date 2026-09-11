@@ -21,6 +21,7 @@
 #                                           than a silent one
 
 use store.nu
+use dispatch.nu
 
 # `defaults` is what lets an adapter say "idle, but only if this is new". Claude's
 # SessionStart fires on resume and after compaction as well as at startup, and a
@@ -41,16 +42,20 @@ export def apply [op: record]: nothing -> record {
     let result = match $kind {
         "patch" => (store patch $op.id (with-defaults $op))
         "drop" => {
-            let existed = store remove $op.id
-            {changed: $existed, before: null, after: null}
+            # Read BEFORE removing. A surface is asked whether its output changes,
+            # and it cannot answer that about an agent it never saw. One extra read
+            # on the rarest event in the system.
+            let before = store read $op.id
+            {changed: (store remove $op.id), before: $before, after: null}
         }
         _ => { {changed: false, before: null, after: null} }
     }
 
-    # ── dispatch seam (step 3) ────────────────────────────────────────────────
-    # if $result.changed { dispatch project (store list) }
+    # ── the surfaces ──────────────────────────────────────────────────────────
     # Persist first, project after: a projection that fails must never cost us a
-    # fact, and an unchanged write must never reach a surface at all.
+    # fact, and an unchanged write never reaches a surface at all. `dispatch` is
+    # written so that nothing here can throw — the store has already committed.
+    if $result.changed { dispatch project $result.before $result.after | ignore }
 
     $result
 }
