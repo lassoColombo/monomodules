@@ -35,39 +35,144 @@ def short [path: string] {
   $path | str replace $env.HOME "~"
 }
 
-# What a directory IS, for pickers that can show it. `--all` keeps entries whose
-# directory is gone (that is what `remove` and `sync` are for), so this has to
-# survive a missing path.
+# ------------
+#  preview
+# ------------
 #
-# Returned as a TABLE, not a string: the picker renders it with `table --width
-# <the pane it actually drew>`, so the columns size themselves and nothing here
-# has to know how wide the preview is.
-def dir-preview [] {
-  let path = $in.path
-  try {
-    ls $path
-    | select name type size modified
-    | update name { path basename }   # the pane is narrow; the path is the row
-    | sort-by type name               # dirs before files, alphabetical within
-    | first 200                       # a huge directory is re-rendered per keypress
-  } catch { $"— ($path) is gone —" }
+# The preview is re-rendered every time the cursor moves, so everything below it
+# has to stay cheap: two git calls that read no further than the index, and one
+# `ls`.
+
+# How many changed files the git block prints before it stops and counts the
+# rest. The listing under it is the point of the pane, and a repo mid-rebase
+# should not push it off the bottom.
+const GIT_ROWS = 8
+
+# `git`, run in `path`, handed back as lines. Not a repo, no git installed, and
+# nothing to report all come back as the same empty list, so a caller has one
+# thing to test. `--no-optional-locks` keeps a preview that re-runs as you scroll
+# from writing to the index of every repo it passes over.
+def git-lines [path: string, args: list<string>]: nothing -> list<string> {
+  let r = try { ^git -C $path --no-optional-locks ...$args | complete } catch { null }
+  if ($r == null) or ($r.exit_code != 0) { return [] }
+  $r.stdout | lines | where {|l| $l | is-not-empty }
 }
 
-# The preview pane, for an engine that has one (see `choose`). It sits UNDER the
-# list and gets the bigger share of the height. Full width is what these previews
-# want: a directory listing is a table, and a table beside the rows has to fit its
-# columns into half a screen, where one under them gets the whole of it.
+# What the repo under `path` is doing: the branch and its distance from upstream,
+# the commit it is sitting on, and everything uncommitted. "" when `path` is not
+# in a repo at all, which is what keeps this section to directories that have one.
 #
-# The rows lose nothing by it — a row is one path, and it was never the thing you
-# were reading.
+# The `-- .` earns its keep: a directory INSIDE a repo is still in the repo, and
+# unscoped `status` answers for the whole of it — a preview of ~/.config/snip
+# listing edits to ../sketchybar. The tip commit is deliberately NOT scoped; that
+# one is about the checkout, not the directory.
 #
-# Under MIN_ROWS there is no room for both, so the preview goes and the rows take
-# the whole pane: skim reads a zero-height pane as "no preview at all".
-const PREVIEW = "down:60%"
-const MIN_ROWS = 16
+# Both calls are asked for in COLOR, so nothing here has to know what a
+# modification looks like. The one line recolored here is the branch: git hands
+# it over as `## a...b [ahead 1]`, and the `##` says nothing once the line is
+# alone under a heading.
+def git-block [path: string]: nothing -> string {
+  let status = (git-lines $path ["-c" "color.status=always" "status" "--short" "--branch" "--" "."])
+  if ($status | is-empty) { return "" }
 
-def preview-window [] {
-  if (term size).rows < $MIN_ROWS { "down:0" } else { $PREVIEW }
+  let head = (git-lines $path ["log" "-1" "--color=always" "--format=%C(auto)%h%C(reset) %s %C(dim)(%cr)%C(reset)"])
+  let changes = ($status | skip 1 | first $GIT_ROWS)
+  let hidden = (($status | length) - 1 - ($changes | length))
+
+  [
+    $"(ansi magenta_bold)\u{e0a0} ($status.0 | ansi strip | str replace '## ' '')(ansi reset)"
+    ...$head
+    ...$changes
+    (if $hidden > 0 { $"(ansi dark_gray)   … ($hidden) more(ansi reset)" })
+  ] | compact | str join "\n"
+}
+
+# What a directory IS, for pickers that can show it: the line that names it, what
+# git makes of it, and what is inside — dotfiles included, since `.git`, `.env`
+# and `.claude` are half of what tells two checkouts apart.
+#
+# `candidates` keeps entries whose directory is gone (that is what `remove` and
+# `sync` are for), so this has to survive a missing path.
+#
+# Returned as a STRING, not a table: three stacked sections only fit in one, and
+# skim renders a string with its ANSI intact. It is also why `width` is a
+# parameter rather than something measured here — see `preview-width`.
+def dir-preview [width: int]: record -> string {
+  let dir = $in
+  let entries = (try { ls --all $dir.path } catch { null })
+  if ($entries == null) { return $"(ansi red)— ($dir.path) is gone —(ansi reset)" }
+
+  # `use_ansi_coloring: auto` reads as "no" wherever this closure runs — inside
+  # the plugin, with no terminal attached — and the listing would arrive grey.
+  $env.config.use_ansi_coloring = true
+
+  [
+    $"(ansi blue_bold)(short $dir.path)(ansi reset) (ansi dark_gray)· ($entries | length) entries · frecency ($dir.score | math round)(ansi reset)"
+    (git-block $dir.path)
+    ($entries
+      | select name type size modified
+      | update name { path basename }   # the pane is narrow; the path is the row
+      | sort-by type name               # dirs before files, alphabetical within
+      | first 200                       # a huge directory is re-rendered per keypress
+      | table --width $width --index false --theme none)
+  ] | where {|s| $s | is-not-empty } | str join "\n\n"
+}
+
+# Where the preview goes and how wide its table may be. One function, because the
+# width follows from the split and the two must not disagree.
+#
+# The listing is the tallest thing in the pane and ROWS are what it runs out of.
+# A `right:` pane is the FULL height of the terminal where a `down:` one is only
+# a share of it, so a wide terminal hands the preview the side; a narrow one puts
+# it back underneath, where the columns are. The rows lose nothing either way — a
+# row is one path, and it was never the thing you were reading.
+#
+# Under MIN_ROWS there is room for neither, and skim reads a zero-height pane as
+# "no preview at all".
+#
+# The width is measured HERE and captured by the closure that uses it: that
+# closure runs inside the plugin, which has no terminal to measure and would
+# answer skim's fallback 80. Two columns come off so the widest row never lands
+# on the pane's own edge.
+const MIN_ROWS = 16
+const WIDE_COLS = 120
+const SIDE = 62   # % of a wide terminal the preview takes on the right
+const UNDER = 75  # % of a narrow one it takes underneath
+
+def preview-pane []: nothing -> record<window: string, width: int, label: int> {
+  let t = (term size)
+  let beside = ($t.rows >= $MIN_ROWS and $t.columns >= $WIDE_COLS)
+  let preview_cols = if $beside { $t.columns * $SIDE // 100 } else { $t.columns }
+  let list_cols = if $beside { $t.columns - $preview_cols } else { $t.columns }
+  {
+    window: (
+      if $t.rows < $MIN_ROWS { "down:0" } else if $beside { $"right:($SIDE)%" } else { $"down:($UNDER)%" }
+    )
+    width: ([($preview_cols - 2) 40] | math max)
+    label: ([($list_cols - 2) 20] | math max)
+  }
+}
+
+# A row, trimmed from the LEFT to fit `budget` columns: a path is worth more from
+# its tail than its head, and the heading of the preview shows the whole of it
+# anyway. `…/` marks a row that lost something.
+#
+# Only rows that DO NOT fit are touched, which is the whole design. Clamping
+# every row to a fixed number of components instead — `path split | last 4` —
+# rewrites 120 of these 173 to spare the 17 that overflow, and charges every one
+# of them the `~` that says where it lives. skim matches on the row, so a
+# component dropped here is a component you can no longer type at: a fair price
+# for a row that was going to be cut regardless, and a bad one otherwise.
+def label [path: string, budget: int]: nothing -> string {
+  let parts = (short $path | path split)
+  # `1..0` counts DOWN in nushell, so a one-component path must build no tails.
+  let tails = if ($parts | length) < 2 { [] } else {
+    1..(($parts | length) - 1) | each {|n| $"…/($parts | skip $n | path join)" }
+  }
+  # the whole path first, then ever-shorter tails: the first that fits wins, and
+  # a basename too long for the pane is as short as this gets.
+  ([($parts | path join)] | append $tails | where { ($in | str length) <= $budget } | get 0?)
+  | default ($parts | last)
 }
 
 # Choosing goes through ONE hook: `$env.zz_config.picker`, a closure that takes
@@ -91,9 +196,10 @@ def choose [opts: record] {
 
 # single-select picker over zoxide entries. "" when nothing was chosen.
 def pick [prompt: string, query?: string] {
+  let pane = (preview-pane)
   let chosen = (
     candidates $query
-    | choose {prompt: $prompt, display: {|| short $in.path }, preview: {|| dir-preview }, window: (preview-window)}
+    | choose {prompt: $prompt, display: {|| label $in.path $pane.label }, preview: {|| dir-preview $pane.width }, window: $pane.window}
   )
   if ($chosen == null) { "" } else { $chosen.path }
 }
@@ -148,11 +254,12 @@ export def --env main [query?: string] {
 # If no layout is given, prompt over available layouts.
 export def tab [layout?: string@layout-completer, query?: string] {
   let layout = if ($layout | is-empty) {
+    let pane = (preview-pane)
     layout-completer
     | choose {
       prompt: "zellij layout"
       preview: {|| open ([$env.HOME ".config" "zellij" "layouts" $"($in).kdl"] | path join) }
-      window: (preview-window)
+      window: $pane.window
     }
     | default ""
   } else {
@@ -169,14 +276,15 @@ export def cp [query?: string] {
 
 # Remove zoxide entries (multi-select).
 export def remove [query?: string] {
+  let pane = (preview-pane)
   let picks = (
     candidates $query
     | choose {
       prompt: "zoxide remove"
-      display: {|| short $in.path }
-      preview: {|| dir-preview }
+      display: {|| label $in.path $pane.label }
+      preview: {|| dir-preview $pane.width }
       multi: true
-      window: (preview-window)
+      window: $pane.window
     }
     | default []
   )
