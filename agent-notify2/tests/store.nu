@@ -10,6 +10,9 @@ const TMP = ($nu.temp-dir | path join "agent-notify2-tests")
 export def main [] {
     if ($TMP | path exists) { rm --recursive --force $TMP }
     $env.XDG_DATA_HOME = $TMP
+    # Point at a config that does not exist: a real one could switch a real
+    # surface on, and a test must never paint a pane the user is looking at.
+    $env.AGENT_NOTIFY_CONFIG = ($TMP | path join "no-config.yaml")
 
     mut r = []
 

@@ -14,6 +14,7 @@
 # An operation is one of:
 #   {op: "patch", id, changes, defaults?}   merge changes; `defaults` apply only
 #                                           when the record is being created
+#   {op: "set",   id, record}               replace the record wholesale
 #   {op: "drop",  id}                       forget the agent
 #   {op: "ignore", why}                     nothing to do, and why — so a hook
 #                                           that fires for an event we do not
@@ -41,6 +42,7 @@ export def apply [op: record]: nothing -> record {
 
     let result = match $kind {
         "patch" => (store patch $op.id (with-defaults $op))
+        "set" => (store set $op.id $op.record)
         "drop" => {
             # Read BEFORE removing. A surface is asked whether its output changes,
             # and it cannot answer that about an agent it never saw. One extra read

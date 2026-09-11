@@ -24,7 +24,7 @@ def rec [extra: record = {}]: nothing -> record {
 }
 def other [extra: record = {}]: nothing -> record {
     {id: "other-1", client: "claude", state: "awaiting", name: "gg"
-     zellij: {session: "home", pane_id: "9"}} | merge $extra
+     zellij: {session: "agent-notify2-tests-no-such-session", pane_id: "9"}} | merge $extra
 }
 
 export def main [] {
@@ -34,7 +34,9 @@ export def main [] {
     $env.AGENT_NOTIFY_CONFIG = $CFG
     $env.AGENT_NOTIFY_ID = "me-1"
     $env.AGENT_NOTIFY_CLIENT = "claude"
-    $env.ZELLIJ_SESSION_NAME = "home"
+    # A session name that cannot exist: this suite turns the zellij surface ON, and
+    # a rename aimed at a real session would retitle a pane the user is using.
+    $env.ZELLIJ_SESSION_NAME = "agent-notify2-tests-no-such-session"
     $env.ZELLIJ_PANE_ID = "3"
 
     let s = zellij settings {} "me-1"
@@ -64,7 +66,8 @@ export def main [] {
     let mine = zellij project [(rec)] $s | first
     let b = [
         (check "the pane we are in comes from the environment, with nothing stored"
-               {session: $mine.session, pane_id: $mine.pane_id} {session: "home", pane_id: "3"})
+               {session: $mine.session, pane_id: $mine.pane_id}
+               {session: "agent-notify2-tests-no-such-session", pane_id: "3"})
         (check "the title is glyph then name" $mine.title $"($s.glyphs.working) monomodules")
         (check "another agent's pane comes from its own namespace"
                (zellij project [(other)] $s | first | get pane_id) "9")
@@ -135,9 +138,10 @@ export def main [] {
     dispatch project $r4.before $r4.after --table $recorder | ignore
     let stored = agent-notify2 store get "me-1"
     let e = [
-        (check "apply reports where this agent lives" $learned {zellij: {session: "home", pane_id: "3"}})
+        (check "apply reports where this agent lives" $learned
+               {zellij: {session: "agent-notify2-tests-no-such-session", pane_id: "3"}})
         (check "…and dispatch is what wrote it down" $stored.zellij.pane_id "3")
-        (check "…in which session" $stored.zellij.session "home")
+        (check "…in which session" $stored.zellij.session "agent-notify2-tests-no-such-session")
         (check "which is what lets a repaint from outside zellij find it"
                (zellij project [$stored] {glyphs: $s.glyphs, me: {id: "", session: "", pane_id: ""}}
                 | first | get pane_id) "3")
@@ -159,6 +163,20 @@ export def main [] {
                ($blind | first | get action) "applied")
     ]
 
-    let all = ($a ++ $b ++ $c ++ $d ++ $e ++ $f)
+    # ── a write from the command line reaches the surfaces ───────────────────
+    # `store patch` is the PUBLIC API a foreign agent reports through (P5). When it
+    # wrote straight to the store — as it did until this test existed — such an
+    # agent updated the store and never appeared on any surface at all. The proof
+    # is indirect and exact: the zellij namespace only lands on a record if
+    # dispatch ran and recorded what the surface reported back.
+    agent-notify2 store patch "cli-1" {client: "other", state: "working", name: "from-the-cli"} | ignore
+    let g = [
+        (check "a CLI write goes through the seam, so a foreign agent is painted too"
+               (agent-notify2 store get "cli-1" | get -o zellij | is-not-empty) true)
+        (check "…and a CLI drop still answers whether there was anything to drop"
+               (agent-notify2 store drop "cli-1") true)
+    ]
+
+    let all = ($a ++ $b ++ $c ++ $d ++ $e ++ $f ++ $g)
     summarise $all --title "zellij surface"
 }

@@ -21,6 +21,9 @@ def dead-pid []: nothing -> int { ^bash -c 'echo $$' | str trim | into int }
 export def main [] {
     if ($TMP | path exists) { rm --recursive --force $TMP }
     $env.XDG_DATA_HOME = $TMP
+    # Point at a config that does not exist: a real one could switch a real
+    # surface on, and a test must never paint a pane the user is looking at.
+    $env.AGENT_NOTIFY_CONFIG = ($TMP | path join "no-config.yaml")
     hide-env --ignore-errors AGENT_NOTIFY_PID
 
     let me = proc find "nu"

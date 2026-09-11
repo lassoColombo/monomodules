@@ -25,6 +25,7 @@
 
 use ../core/janitor.nu
 use ../core/store.nu *
+use ../core/event.nu
 
 def body [given: any, stdin: bool]: nothing -> record {
     if $stdin {
@@ -62,7 +63,11 @@ export def "store patch" [
     changes?: record    # what to merge; omit and pass --stdin to read JSON instead
     --stdin             # read the changes as a JSON object on standard input
 ]: nothing -> record {
-    patch $id (body $changes $stdin)
+    # Through `core/event.nu`, not straight at the store: a write typed here — or
+    # sent by a foreign agent, which under P5 is the SAME thing — must reach the
+    # surfaces exactly as a hook's write does, or the store and the screen start
+    # disagreeing depending on who wrote last.
+    event apply {op: "patch", id: $id, changes: (body $changes $stdin)}
 }
 
 # Replace an agent's record wholesale — the escape hatch for a client rebuilding
@@ -73,12 +78,14 @@ export def "store set" [
     record?: record
     --stdin
 ]: nothing -> record {
-    set $id (body $record $stdin)
+    event apply {op: "set", id: $id, record: (body $record $stdin)}
 }
 
 # Forget an agent. Returns whether there was anything to forget.
 @search-terms agent notify store delete forget
-export def "store drop" [id: string]: nothing -> bool { remove $id }
+export def "store drop" [id: string]: nothing -> bool {
+    event apply {op: "drop", id: $id} | get changed
+}
 
 # Forget every agent that is provably gone: its recorded process is no longer
 # running (core/proc.nu), or `/clear` left it behind in a process that has since
