@@ -60,6 +60,7 @@ export def project [
     after: any = null       # the record as it is, or null if it was dropped
     --table: record         # override the shipped surfaces (tests)
     --force                 # repaint even when the projection is unchanged
+    --me: string            # who we are, when there is no event to say so
 ]: nothing -> list<record> {
     let surfaces = $table | default (shipped)
     if ($surfaces | is-empty) { return [] }
@@ -71,7 +72,11 @@ export def project [
     } else { [] }
     if ($on | is-empty) { return [] }
 
-    let me = ($after | default $before | get -o id)
+    # Normally the event says who this is about. A forced repaint has no event, so
+    # the caller may say instead — `cli/surfaces.nu` asks `core/identity.nu`,
+    # which is a cold path and therefore free to import it.
+    let told = $me | default ""
+    let me = if ($told | is-not-empty) { $told } else { ($after | default $before | get -o id) }
     let now = store list | sort-by id
     let was = if $force { null } else {
         if $me == null { return [] }

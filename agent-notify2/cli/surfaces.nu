@@ -4,6 +4,7 @@
 
 use ../core/config.nu
 use ../core/dispatch.nu
+use ../core/identity.nu
 
 @search-terms agent notify surfaces integrations zellij sketchybar list enabled
 @example "what can show the store?" { agent-notify2 surfaces }
@@ -20,5 +21,9 @@ export def main []: nothing -> table {
 @search-terms agent notify surfaces refresh repaint redraw force
 @example "repaint after editing the config" { agent-notify2 surfaces refresh }
 export def refresh []: nothing -> table {
-    dispatch project --force
+    # Run from inside an agent's own pane, a surface can only paint that pane if
+    # it is told which agent it is — a forced repaint has no event to say so. Cold
+    # path, so importing identity here costs the hot path nothing.
+    let who = try { identity resolve } catch { null }
+    dispatch project --force --me (if ($who == null) { "" } else { $who.id? | default "" })
 }

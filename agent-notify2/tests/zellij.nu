@@ -145,5 +145,20 @@ export def main [] {
                (zellij apply [] {glyphs: $s.glyphs, me: {id: "x", session: "", pane_id: ""}}) null)
     ]
 
-    summarise ($a ++ $b ++ $c ++ $d ++ $e) --title "zellij surface"
+    # ── a forced repaint, from inside the agent's own pane ───────────────────
+    # Without being told who it is, `--force` has no event to learn from and the
+    # agent's own pane is the one pane it cannot paint.
+    let blind = dispatch project --force --table $recorder
+    let told = dispatch project --force --me "me-1" --table $recorder
+    let f = [
+        (check "a forced repaint still runs" ($told | first | get action) "applied")
+        (check "…and told who it is, it can paint its own pane"
+               (zellij project [(agent-notify2 store get "me-1")] (zellij settings {} "me-1")
+                | length) 1)
+        (check "a blind force does not fail, it just has less to say"
+               ($blind | first | get action) "applied")
+    ]
+
+    let all = ($a ++ $b ++ $c ++ $d ++ $e ++ $f)
+    summarise $all --title "zellij surface"
 }
