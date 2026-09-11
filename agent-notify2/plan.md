@@ -391,8 +391,8 @@ before committing to a shape:
 | agent | wiring | payload transport | event named by | identity | reply contract | states reachable |
 |---|---|---|---|---|---|---|
 | Claude Code | `settings.json` hooks, one per event | **stdin** JSON | our argv | `session_id` + env var | silence fine; exit 2 blocks | all four |
-| Codex `notify` | `config.toml` `notify = [argv]` | **argv** JSON | `type` *in* the payload | `thread-id` (kebab-case) | ignored | `awaiting` only |
-| Codex `hooks` | `hooks.json` / `[hooks]` | stdin | per-event | — | — | would add `working` |
+| Codex `hooks` | `hooks.json` / `[hooks]` | stdin JSON | `hook_event_name` *in* the payload | `session_id` | silence fine; exit 2 blocks | all four |
+| Codex `notify` *(superseded)* | `config.toml` `notify = [argv]` | **argv** JSON | `type` *in* the payload | `thread-id` (kebab-case) | ignored | `awaiting` only |
 | Gemini CLI | `settings.json` hooks | stdin JSON | our argv | `session_id` | **must print valid JSON** | all four |
 | Cursor CLI | `hooks.json` | stdin JSON | per-event | — | exit codes can block | `cursor-agent` emits shell events only |
 | Goose | plugin `hooks/hooks.json` | stdin JSON | event name *in* payload | in payload | — | tool-level |
@@ -422,6 +422,34 @@ are strange per agent, expressed where strange is cheap.
 directly, so a client works the moment it exists. `clients/mod.nu` lists the
 shipped ones for `agent-notify2 clients` and for nothing else; an entry point
 imports exactly the one client it is for and pays to parse no other.
+
+**A half-wired agent is worse than an unwired one.** Codex shipped here as a
+`notify` client first, and `notify` fires once, when a turn ends. That reached one
+of the four states, so a Codex record read `awaiting` from its first turn to its
+last — true only where it happened to coincide with reality, and wrong every
+second the agent was working. Nothing was malformed: a legal state, a legal
+client, validation passing. The store has no way to say *I don't know*, so a
+one-sided hook writes a confident fact that outlives its truth, and the counter a
+surface exists to show — "2 agents waiting for you" — stops being worth a glance.
+The order of preference when an agent under-reports:
+
+1. **Fix the transport.** If a state is reachable at all, carry the fact rather
+   than a guess about it. Codex's hooks reach all four, which is what the client
+   uses now.
+2. **Let the surface read `INFO.states`.** Every record names its `client`, so a
+   surface can join to that client's declared reach and decline to count what it
+   cannot know. This is what makes the field load-bearing rather than decorative,
+   and it is the only answer for an agent like Aider that supplies nothing.
+3. **Decay from `state_since`.** Catches the opposite failure — an agent stuck in
+   `working` because its end-of-turn hook never fired. Useless for this one:
+   `awaiting` is a resting state, so age says nothing against it.
+
+**One transport per agent**, even when the agent offers several. Codex has both
+`notify` and hooks, and they identify an agent differently — `thread-id` against
+`session_id`, with nothing establishing that those are the same value. Running
+both would risk two records for one agent: the same pane counted as working and
+awaiting at once. A client takes the transport that reaches the most states and
+ignores the rest.
 
 **Wiring is printed, not applied.** `agent-notify2 clients wiring codex` prints
 the block to paste. Merging into four foreign configs in three formats — with
@@ -455,6 +483,8 @@ radius for the convenience of not pasting a block yourself.
 | D18 | One client MODULE per agent, not a declarative mapping table | **LOCKED** | §4.6 — transport, reply contract and identity all vary; a map would become a worse nushell |
 | D19 | Clients are discovered by the agent's own config naming the file; no registry | **LOCKED** | adding an agent is one new file |
 | D20 | Wiring is printed, never applied | **LOCKED** | four foreign configs in three formats |
+| D21 | A client uses ONE transport, even when its agent offers several | **LOCKED** | §4.6 — Codex's `notify` and hooks key on different ids; running both double-counts one agent |
+| D22 | Fix an agent's transport before inferring states it does not report | **LOCKED** | §4.6 — the store must not hold a confident fact nothing supports |
 | D15 | Replace pandoc with a nu-native flattener | **OPEN** | 25.1ms on the event path, and a dependency |
 | D16 | Where the bench harness lives | **OPEN** | ~350 lines of documented nu; §8 |
 | D17 | Final promoted name/location (top-level `agent-notify`?) | **OPEN** | v1 is `ai/agent-notify`; v2 is top-level |
@@ -562,7 +592,24 @@ its own bar item names so both can be live at once.
    85/85 across three suites, 22.8ms per event (unchanged by the refactor). Codex
    was chosen precisely because it shares almost nothing with Claude — argv
    transport, script entry, event name inside the payload, kebab-case fields, one
-   reachable state — so the contract is proved rather than assumed.
+   reachable state — so the contract is proved rather than assumed. (The argv
+   half of that is superseded by 2c; the contract it proved is not.)
+2c. **Codex moved to the hook transport** — ✅ done. `notify` reached exactly one
+   state, so a Codex record read `awaiting` for its whole life — a confident fact
+   that outlived its truth (§4.6). Codex's hook system turns out to be
+   Claude-shaped — stdin JSON, `session_id` / `cwd` / `hook_event_name`, matcher
+   groups, exit 2 to block — so the client now subscribes to six events and reaches
+   all four states, and `notify` is gone rather than kept as a fallback (D21). The
+   one shape difference from Claude: the event name comes from the body rather than
+   our argv, which gives a single command string for all six subscriptions and no
+   way for an argument to disagree with the key it is registered under.
+   103/103 across three suites, 20.7ms per event. `core/payload.nu` lost
+   `from-args` along with its last caller — an argv agent can read its own argv in
+   one line, and untested code in the core is worse than a line rewritten later.
+   Written from documentation rather than observed traffic (Codex is not installed
+   here), which the client's header says plainly. The suite immediately found a
+   store bug no surface had reached yet: `list` on an *emptied* store errored,
+   because a glob that matches nothing is an error (§10).
 3. **Config + dispatch** — strict YAML loading, the opt-in list, fan-out. Deferred
    to here deliberately: config is almost entirely *integration* settings, and
    until a surface exists there is nothing concrete to configure.
@@ -638,6 +685,11 @@ is spelled the second way.
 
 **Reading stdin blocks until the writer closes it.** `open --raw /dev/stdin` in an
 entry point run by hand hangs with no clue why; `is-terminal --stdin` guards it.
+
+**`ls` on a glob that matches nothing is an ERROR**, not an empty list — and a
+directory that outlives its contents is the ordinary case for a store whose last
+agent has just ended. `try { ls … } catch { [] }`, or the first empty store takes
+every surface down with it.
 
 **`reject` errors on a missing column**; `reject --optional` does not.
 

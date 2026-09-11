@@ -43,7 +43,12 @@ export def read [id: string]: nothing -> any {
 export def list []: nothing -> list<any> {
     let dir = agents-dir
     if not ($dir | path exists) { return [] }
-    ls ($"($dir)/*.json" | into glob)
+    # `ls` on a glob that matches nothing is an ERROR, not an empty list, and a
+    # store whose last agent has just ended is exactly that case — the directory
+    # outlives its contents. Found by the Codex suite, which drops its only record
+    # and then reads the store; every surface would have hit it eventually.
+    let files = try { ls ($"($dir)/*.json" | into glob) } catch { [] }
+    $files
     | each {|f| try { open --raw $f.name | from json } catch { null } }
     | compact
 }

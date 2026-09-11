@@ -89,5 +89,12 @@ export def main [] {
     let tmps = ls ($"($TMP)/agent-notify2/agents/*" | into glob) | get name | where {|f| $f | str ends-with ".tmp" }
     $r = $r ++ [(check "atomic writes leave no temp files" ($tmps | length) 0)]
 
+    # ── the empty store ──────────────────────────────────────────────────────
+    # A glob that matches nothing is an ERROR in nushell, and a store whose last
+    # agent has just ended is exactly that: the directory outlives its contents.
+    agent-notify2 store list | get id | each {|id| agent-notify2 store drop $id } | ignore
+    $r = $r ++ [(check "an emptied store lists as nothing, not an error"
+                       (agent-notify2 store list) [])]
+
     summarise $r --title "store"
 }

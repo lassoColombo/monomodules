@@ -7,9 +7,10 @@ use ../clients/claude.nu
 use ../clients/codex.nu
 
 # Each shipped client, with the states it can actually reach. That last column is
-# not decoration: Codex's `notify` only ever says "the turn is over", so an agent
-# integrated through it can never appear as working, and a surface built on the
-# assumption that every agent reports everything would be wrong.
+# not decoration, and not every agent will fill it: an agent whose hooks only fire
+# at the end of a turn can never appear as working, and a surface that assumed
+# otherwise would count it as waiting for you while it was busy. Both shipped
+# clients reach all four today; Aider, which passes no payload at all, would not.
 @search-terms agent notify clients agents list integrations
 @example "what can report into the store" { agent-notify2 clients }
 export def main []: nothing -> table {
