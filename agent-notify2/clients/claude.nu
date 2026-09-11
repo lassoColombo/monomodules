@@ -38,6 +38,7 @@
 
 use ../core/event.nu
 use ../core/payload.nu
+use ../core/proc.nu
 
 const SELF = path self
 
@@ -46,6 +47,9 @@ export const INFO = {
     title: "Claude Code"
     transport: "stdin-json"
     states: ["working" "awaiting" "needs-attention" "idle"]
+    # How to recognise the agent among our own ancestors, so a killed session can
+    # be proved dead later (core/proc.nu). Claude does not tell us its pid.
+    process: "claude"
 }
 
 # Notification types that genuinely mean "the agent needs YOU". The others — idle
@@ -131,7 +135,21 @@ export def map [event: string, payload: record]: nothing -> record {
 # nothing may print. A broken notifier is a nuisance; a notifier that blocks your
 # agent is a catastrophe.
 export def main [event: string] {
-    try { event apply (map $event (payload from-stdin)) | ignore }
+    try {
+        let op = map $event (payload from-stdin)
+        event apply (if $event == "SessionStart" { with-proc $op } else { $op }) | ignore
+    }
+}
+
+# The agent's process, attached ONCE — at SessionStart, the only event where it
+# can be new. Walking the process tree costs ~10ms, which is why it does not
+# happen on the events that fire hundreds of times a session. Kept out of `map`
+# so that `map` stays a pure function of its payload.
+def with-proc [op: record]: nothing -> record {
+    if ($op.op? != "patch") { return $op }
+    let p = proc find $INFO.process
+    if $p == null { return $op }
+    $op | upsert changes ($op.changes | merge {proc: $p})
 }
 
 export def wiring []: nothing -> string {

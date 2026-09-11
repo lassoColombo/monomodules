@@ -23,6 +23,7 @@
 # Thin on purpose: everything here is a wrapper. The semantics live in
 # core/store.nu, which stays free of any notion of a command line.
 
+use ../core/janitor.nu
 use ../core/store.nu *
 
 def body [given: any, stdin: bool]: nothing -> record {
@@ -78,3 +79,13 @@ export def "store set" [
 # Forget an agent. Returns whether there was anything to forget.
 @search-terms agent notify store delete forget
 export def "store drop" [id: string]: nothing -> bool { remove $id }
+
+# Forget every agent that is provably gone: its recorded process is no longer
+# running (core/proc.nu), or `/clear` left it behind in a process that has since
+# moved on. Prints what it removed and why.
+#
+# Records with no recorded process are never touched — not knowing that an agent
+# is dead is not the same as knowing that it is. See core/janitor.nu.
+@search-terms agent notify store prune clean stale dead gc janitor
+@example "clean up agents that were killed" { agent-notify2 store prune }
+export def "store prune" []: nothing -> table { janitor prune }

@@ -456,6 +456,63 @@ the block to paste. Merging into four foreign configs in three formats — with
 backups, pre-existing entries and an uninstall path — is a great deal of blast
 radius for the convenience of not pasting a block yourself.
 
+### 4.6b Liveness — proving an agent is gone
+
+Records are dropped by `SessionEnd`, so the only leaks come from agents that never
+got to say goodbye: a killed process, a crash, a closed pane, a closed terminal.
+
+**An agent is a process.** If its process is gone, the agent is gone. Every other
+signal is a proxy, and every proxy is wrong somewhere:
+
+| proxy | wrong when |
+|---|---|
+| the zellij pane exists | the agent is killed and the pane stays open |
+| the record was updated recently | the agent is idle, waiting for you |
+| the transcript file exists | the file outlives the session that wrote it |
+
+Nobody hands us the pid, so we find it: a hook is STARTED BY the agent, which
+makes it a descendant, and a descendant can ask who started it.
+
+```
+83758  nu                         ← the hook
+83572  /bin/zsh                   ← the shell Claude ran the command with
+3234   /opt/homebrew/bin/claude   ← the agent
+2837   nu                         ← the pane's shell
+907    /opt/homebrew/bin/zellij
+```
+
+The parent is no use (that shell dies when the hook returns) and the number of
+steps is not fixed (an agent running the command directly has one fewer), so we
+climb until we meet the name **the client declares** — `process: "claude"` in
+`clients/claude.nu`, which is where agent-specific knowledge already lives.
+`$env.AGENT_NOTIFY_PID` short-circuits the walk, the same escape hatch
+`AGENT_NOTIFY_ID` gives for identity (P5).
+
+Stored as `proc: {pid, started}`, **once**, at `SessionStart` — the only event
+where it can be new. The start time is not decoration: pids are recycled, so a
+number alone would eventually match a stranger's process and keep a dead agent
+alive forever. A number *and* the second it started cannot be confused.
+
+The check is one `ps` for every recorded pid at once. Present with a matching
+start time → alive. Absent → **proof** → drop.
+
+**The safety rail: we cannot tell → we drop nothing.** That covers a record with
+no `proc` (its SessionStart predates this, or its agent could not be located) and
+a `ps` that failed to answer. One unreadable answer must never wipe a live store.
+
+**One extra case.** `/clear` does not end the process — the same agent starts a
+fresh session inside it, so two records can name one genuinely live pid. A process
+runs one session at a time, so among records sharing a live pid only the most
+recently updated survives.
+
+Never on a hook: `ps` costs ~13ms and a hook could do nothing with the answer. It
+runs from `store prune`, from `surfaces refresh` (so the bar's timer pays for it),
+and later from the picker.
+
+What it deliberately cannot do: a **hung** agent stays, which is correct — it
+really is still there. And an agent whose `SessionStart` we missed has no `proc`
+and can never be pruned.
+
 ### 4.7 Surfaces — the projection gate
 
 A surface is a pure function from the store to what should be on screen, plus an
@@ -558,6 +615,9 @@ is an error, because that is a typo.
 | D27 | A surface reports what it learned; dispatch writes it | **LOCKED** | §4.7 — one writer, and it keeps surfaces out of the store's import cone |
 | D28 | A pane's name comes from the store, never from parsing its old title | **LOCKED** | user decision; deletes ~60 lines of v1 and one zellij call per event. A manual rename is overwritten |
 | D29 | The import cone must be a TREE | **LOCKED** | §10 — a diamond is parsed twice, on every event, forever |
+| D30 | Liveness is the agent's PROCESS, recorded once at SessionStart | **LOCKED** | §4.6b — the only signal that is proof rather than a proxy; replaces v1's zellij scan and janitor outright |
+| D31 | Cannot tell ⇒ delete nothing | **LOCKED** | §4.6b — one unreadable `ps` must never wipe a live store |
+| D32 | The client declares how to find its own process | **LOCKED** | §4.6b — same rule as every other agent-specific fact (D18) |
 | D15 | Replace pandoc with a nu-native flattener | **OPEN** | 25.1ms on the event path, and a dependency |
 | D16 | Where the bench harness lives | **OPEN** | ~350 lines of documented nu; §8 |
 | D17 | Final promoted name/location (top-level `agent-notify`?) | **OPEN** | v1 is `ai/agent-notify`; v2 is top-level |
@@ -711,6 +771,17 @@ its own bar item names so both can be live at once.
    leaf/report rules above), and Private Use Area glyphs do not survive ordinary
    tooling — written as literals they arrived as empty strings, and the suite
    caught it as "every state has the same title".
+4c. **Liveness** — ✅ done. `core/proc.nu` (find the agent's process, ask `ps`
+   which are still running) and `core/janitor.nu` (the two rules), reached by
+   `agent-notify2 store prune` and by `surfaces refresh`, which now prunes before
+   it repaints. 198/198 across six suites.
+   Two earlier proposals were **dropped** on the way, both correctly: a zellij
+   pane check (a killed agent can leave its pane open, so it proves the wrong
+   thing) and a heartbeat (it existed only because I had no proof and needed a
+   hint — with proof available, guessing has no job). One mechanism replaced
+   three layers.
+   Costs: `SessionStart` 27ms → 38.6ms for the one-time walk, every other event
+   unchanged, `proc.nu` free to parse, `prune` 13ms of `ps` on a cold path.
 4b. **zellij tab aggregates** — deferred deliberately. A tab's name belongs to the
    user, so a tab title cannot be computed from the store alone: it has to be
    read, stripped and put back. The real question is who owns the tab name, and
@@ -809,6 +880,11 @@ not `nothing`. Drop the return type on commands whose job is to fail.
 
 **A comment may not sit between an `@attribute` and its `def`.** "Attributes must
 be followed by a definition" — put the prose above the attributes.
+
+**An operator cannot start a continuation line, and a boolean expression does not
+continue across lines at all.** A leading `and` is read as a command (`Command
+'and' not found`); moving it to the end of the previous line gives "incomplete
+math expression" instead. Bind the halves with `let` and compare them on one line.
 
 **A flag cannot start a continuation line.** `summarise (…)\n  --title "x"` is a
 parse error; bind the argument to a `let` and keep the call on one line.

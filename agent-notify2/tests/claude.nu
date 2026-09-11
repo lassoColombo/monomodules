@@ -146,5 +146,22 @@ export def main [] {
                    "export $env.AGENT_NOTIFY_ID" {|| agent-notify2 report --state working })
     ]
 
-    summarise ($m ++ $d ++ $e ++ $f ++ $s ++ $s2) --title "claude client"
+    # ── the agent's process, recorded once ───────────────────────────────────
+    # Deterministic because AGENT_NOTIFY_PID short-circuits the walk: the suite
+    # does not have to be running inside Claude for this to mean something.
+    $env.AGENT_NOTIFY_PID = ($nu.pid | into string)
+    run-hook "SessionStart" (payload {session_id: "proc-1"}) | ignore
+    run-hook "PostToolUse" (payload {session_id: "proc-2", tool_name: "Bash"}) | ignore
+    let p = [
+        (check "the mapping stays pure — it looks up no process"
+               ("proc" in (claude map "SessionStart" (payload) | get changes | columns)) false)
+        (check "SessionStart records the agent's process, so a kill can be proved later"
+               (agent-notify2 store get "proc-1" | get proc.pid) $nu.pid)
+        (check "…and no other event pays the ~10ms walk"
+               (agent-notify2 store get "proc-2" | get -o proc) null)
+    ]
+    hide-env AGENT_NOTIFY_PID
+
+    let all = ($m ++ $d ++ $e ++ $f ++ $s ++ $s2 ++ $p)
+    summarise $all --title "claude client"
 }

@@ -18,6 +18,7 @@
 #   surfaces: [zellij]
 #
 #   agent-notify2 store get|list|patch|set|drop     the store itself
+#   agent-notify2 store prune                      forget agents that are provably gone
 #   agent-notify2 report|name                       what an agent says about itself
 #   agent-notify2 clients [wiring <name>]           which agents can report, and how
 #   agent-notify2 config path|show|check            the settings file

@@ -42,6 +42,7 @@
 
 use ../core/event.nu
 use ../core/payload.nu
+use ../core/proc.nu
 
 const SELF = path self
 
@@ -50,6 +51,7 @@ export const INFO = {
     title: "Codex CLI"
     transport: "stdin-json"
     states: ["working" "awaiting" "needs-attention" "idle"]
+    process: "codex"   # how to find the agent among our ancestors (core/proc.nu)
 }
 
 # Named `ignored`, not `ignore`: a def shadows the builtin of that name for the
@@ -116,8 +118,18 @@ export def map [event: string, payload: record]: nothing -> record {
 export def main [] {
     try {
         let body = payload from-stdin
-        event apply (map ($body.hook_event_name? | default "") $body) | ignore
+        let event = $body.hook_event_name? | default ""
+        let op = map $event $body
+        event apply (if $event == "SessionStart" { with-proc $op } else { $op }) | ignore
     }
+}
+
+# See clients/claude.nu: the agent's process, attached once, at SessionStart only.
+def with-proc [op: record]: nothing -> record {
+    if ($op.op? != "patch") { return $op }
+    let p = proc find $INFO.process
+    if $p == null { return $op }
+    $op | upsert changes ($op.changes | merge {proc: $p})
 }
 
 export def wiring []: nothing -> string {
