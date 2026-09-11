@@ -140,7 +140,10 @@ export def wiring []: nothing -> string {
     let hooks = $events | reduce --fold {} {|e, acc|
         $acc | merge {($e): [{hooks: [{
             type: "command"
-            command: $"nu -n --no-std-lib -c 'use ($SELF); claude ($e)'"
+            # An ABSOLUTE nu, not `nu`: a hook's PATH is not your shell's PATH,
+            # and v1 had to `export PATH=/opt/homebrew/bin:$PATH` at the top of
+            # its glue script for exactly this reason.
+            command: $"($nu.current-exe) -n --no-std-lib -c 'use ($SELF); claude ($e)'"
         }]}]}
     }
     ([ "Add to ~/.claude/settings.json, merging with any hooks already there:"

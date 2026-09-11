@@ -123,7 +123,8 @@ export def main [] {
 export def wiring []: nothing -> string {
     let events = ["SessionStart" "UserPromptSubmit" "PostToolUse" "Stop"
                   "PermissionRequest" "SessionEnd"]
-    let cmd = $"nu -n --no-std-lib -c 'use ($SELF); codex'"
+    # An ABSOLUTE nu, not `nu`: a hook's PATH is not your shell's PATH.
+    let cmd = $"($nu.current-exe) -n --no-std-lib -c 'use ($SELF); codex'"
     let hooks = $events | reduce --fold {} {|e, acc|
         $acc | merge {($e): [{hooks: [{type: "command", command: $cmd}]}]}
     }
