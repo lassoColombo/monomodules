@@ -1426,6 +1426,25 @@ Not nushell — the programs underneath. Same rule as §10: cost time once, not 
 - `delete-session <name> --force` removes a running session; without `--force` it
   refuses and says so.
 
+**Claude Code**
+
+- **IT WRITES ITS OWN TERMINAL TITLE, AND THAT TITLE WINS.** zellij lets a
+  terminal-emitted OSC title overwrite a name set by `action rename-pane`, and
+  Claude Code repaints its own ("◐ <session summary>") right after every hook —
+  so a pane rename lands and is clobbered a moment later. v1 found this the hard
+  way; **v2 depends on the fix and never mentions it**, which is why it is here:
+  `"env": {"CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1"}` in `~/.claude/settings.json`.
+  Remove it and every pane title in this module silently stops working, with
+  nothing in any log. It takes effect for NEW sessions only.
+  Diagnosis: `zellij --session S action list-panes -t -j` and look at `title` —
+  a Claude spinner glyph there means the OSC won.
+- **Hooks are loaded at session start**, so a `settings.json` edit reaches only
+  sessions started after it. Half a fleet on the old wiring is the normal state
+  of things for an hour after any change.
+- **A subagent's tool calls carry the PARENT's session id**, so they fold into
+  the parent's record for free — and `SubagentStop` must be ignored, or the
+  parent reads as finished while it is still working.
+
 **SketchyBar**
 
 - A message costs what a process costs and almost nothing per property: `--set`
