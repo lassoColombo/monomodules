@@ -694,7 +694,7 @@ committed. Each surface is wrapped alone, so one failing cannot stop the next.
 | D45 | A preview's text is made single-quote-safe (`'` → `’`) rather than shell-escaped | **LOCKED** | step 5b — probed: inside single quotes `$HOME` and backticks are already literal, so one substitution is the whole of the escaping |
 | D46 | The bar's slots are keys in the projection, one per row | **LOCKED** | step 5b — D40 then does the per-slot diffing for free; v1 needed a disk cache and ~60 lines of its own |
 | D47 | A tool's config has two halves, `surface` (push) and `commands` (pull) | **LOCKED** | §4.7 — `surfaces:` must not read as "which integrations exist"; splitting it in the FILE is what stops removing a surface from taking its picker away |
-| D48 | The picker has NO configurable engine — skim is a dependency | **LOCKED** | step 6 — the same call `telescope` made in `f90d448`; a swappable picker was a hook nobody but us used |
+| D48 | The picker has NO configurable engine — skim is a dependency | **SUPERSEDED** (2026-09-12) | half right: the hook goes, but so does skim. The picker is to have NO external dependency at all — nushell's own input and zellij, nothing else. See `picker.md` |
 | D49 | `surfaces/` → `integrations/`, one directory per tool, one file per half | **LOCKED** | step 6 — the halves must be separate FILES: the push half is in every hook's import cone and the pull half must never be |
 | D50 | The jump names NO window manager and assumes no OS | **LOCKED** | step 6 — raising the terminal's window is only needed by a BAR CLICK; the picker runs inside the terminal, where it is already in front. Deferred with the click |
 | D51 | `jump argv` is the whole decision; `main` only runs it | **LOCKED** | step 6 — the same data-first split as `commands`/`apply`, and here it is what lets the cross-session branch be tested at all: running it moves a real screen |
@@ -980,7 +980,14 @@ its own bar item names so both can be live at once.
    Markdown is stripped in nushell rather than by pandoc: v1 could afford ~30ms
    because it converted where the preview was STORED, on a path already spawning
    processes; v2's whole paint is 6.5ms, and the picker still wants the markdown.
-6. **Picker + jump** — ✅ done.
+6. **Picker + jump** — the jump is ✅ done; the picker is ⏳ **TO BE REBUILT**.
+   The skim + bat version shipped and works, and both dependencies were then
+   rejected outright. A research session established what replaces it and proved
+   it with a working prototype: **`picker.md` is the design document, and the
+   next session starts there.** In short: `input listen` instead of `sk`, and
+   `zellij action dump-screen --pane-id` for the preview — which makes the
+   preview the agent's REAL SCREEN rather than a stored message, and deletes
+   `bat`, the markdown rendering and the picker's use of `message` at once.
    First the shape changed. `surfaces/` became `integrations/` (D49) because a
    tool has two halves and only one of them is a surface, and the config file
    grew `surface:`/`commands:` to match (D47). The picker's engine is NOT
