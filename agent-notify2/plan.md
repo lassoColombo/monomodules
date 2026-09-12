@@ -959,6 +959,14 @@ written as literal characters arrived in the file as empty strings — silently,
 with no error anywhere. Write them as `"\u{f021}"`. The tests caught it only
 because they asserted a title's exact contents.
 
+**A LAUNCHD JOB'S PATH IS SMALLER THAN A HOOK'S**, which is smaller than your
+shell's: the clock runs with `/usr/bin:/bin` and nothing else, so `^sketchybar`
+and `^zellij` silently did nothing there — the clock pruned correctly and never
+painted, while dispatch reported "applied". Every external program a surface
+calls is now resolved to an ABSOLUTE path in `settings`, where a missing one is a
+loud error instead of a surface that paints nothing. The same rule already
+applied to `nu` itself in the wiring blocks; it applies to everything.
+
 **`job spawn` runs a thread INSIDE the process.** It dies when that process
 exits, and so does any external command it started — both verified. Nothing a
 hook spawns can outlive the hook, so nothing spawned can be a clock.

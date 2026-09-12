@@ -52,6 +52,10 @@ export def main [] {
                (zellij settings {glyphs: {working: "W"}} "me-1" | get glyphs.awaiting) $s.glyphs.awaiting)
         (check "it is told which agent the event is about" $s.me.id "me-1")
         (check "…and which pane" $s.me.pane_id "3")
+        (check "the program is resolved to an ABSOLUTE path, not left to PATH"
+               ($s.binary | str starts-with "/") true)
+        (check-err "…and a path that is not there is a loud error, not a silent no-op"
+                   "no program at" {|| zellij settings {binary: "/nope/zellij"} "me-1" })
         (check-err "a setting we do not have is a typo, not a silent no-op"
                    "is not a setting" {|| zellij settings {colour: "red"} "me-1" })
         (check-err "a glyph for a state that does not exist is refused"

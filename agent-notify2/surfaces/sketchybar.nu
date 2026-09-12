@@ -62,6 +62,7 @@ const GLYPHS = {
 
 # Rosé Pine, to match the rest of the bar. `dim` is the colour a zero wears.
 const DEFAULTS = {
+    binary: ""          # "" means: find it (see resolve-binary)
     prefix: "an_"
     position: "left"
     font: "MesloLGLDZ Nerd Font"
@@ -72,6 +73,31 @@ const DEFAULTS = {
         needs-attention: "0xffeb6f92"  # love
         dim: "0xff6e6a86"              # muted
     }
+}
+
+# An ABSOLUTE path to the program, because a hook's PATH is not your shell's PATH
+# and a LAUNCHD JOB's is smaller still: the clock runs with /usr/bin:/bin and
+# nothing else, so a bare `^sketchybar` silently does nothing there. Resolved once, in
+# `settings`, so a missing program is a loud configuration error rather than a
+# surface that reports "applied" and paints nothing — which is exactly how this
+# was found.
+# No `-> string` signature: a def annotated that way cannot END in `error make`
+# (§10).
+def resolve-binary [given: string] {
+    if ($given | is-not-empty) {
+        if not ($given | path exists) {
+            error make --unspanned {msg: $"sketchybar: no program at '($given)'"}
+        }
+        return $given
+    }
+    let found = which "sketchybar" | get -o 0.path | default ""
+    if ($found | is-not-empty) { return $found }
+    for d in ["/opt/homebrew/bin" "/usr/local/bin" "/usr/bin"] {
+        let p = $d | path join "sketchybar"
+        if ($p | path exists) { return $p }
+    }
+    error make --unspanned {msg: ("sketchybar: not found. Set `sketchybar.binary: <path>` in the config "
+        + "file if it lives somewhere unusual.")}
 }
 
 def item-suffix [state: string]: nothing -> string {
@@ -103,7 +129,10 @@ export def settings [given: record, me: any]: nothing -> record {
             error make --unspanned {msg: $"sketchybar: the colour for '($k)' must look like 0xAARRGGBB, got ($v | to nuon)"}
         }
     }
-    $DEFAULTS | merge ($given | reject --optional colors) | upsert colors ($DEFAULTS.colors | merge $colors)
+    $DEFAULTS
+    | merge ($given | reject --optional colors)
+    | upsert colors ($DEFAULTS.colors | merge $colors)
+    | upsert binary (resolve-binary ($given.binary? | default ""))
 }
 
 # PURE, and deliberately tiny: three numbers. Everything else about an agent —
@@ -134,7 +163,7 @@ export def message [desired: record, settings: record]: nothing -> list<string> 
 # nothing that can be left behind.
 export def apply [desired: record, previous: any, settings: record]: nothing -> any {
     let m = message $desired $settings
-    if ($m | is-not-empty) { try { ^sketchybar ...$m | complete | ignore } }
+    if ($m | is-not-empty) { ^$settings.binary ...$m | complete | ignore }
     null   # nothing learned; the bar tells us nothing we did not already know
 }
 
@@ -168,7 +197,7 @@ export def install-message [s: record]: nothing -> list<string> {
 }
 
 export def install [s: record]: nothing -> nothing {
-    ^sketchybar ...(install-message $s) | complete | ignore
+    ^$s.binary ...(install-message $s) | complete | ignore
 }
 
 export def wiring []: nothing -> string {

@@ -63,8 +63,8 @@ const DEFAULT_GLYPHS = {
 # already knows it, and knows it exactly, where asking the environment would be a
 # guess. The pane is ours to find: dispatch runs inside the agent's process.
 export def settings [given: record, me: any]: nothing -> record {
-    for k in ($given | columns | where {|k| $k != "glyphs" }) {
-        error make --unspanned {msg: $"zellij: '($k)' is not a setting \(the only one is: glyphs\)"}
+    for k in ($given | columns | where {|k| $k not-in ["glyphs" "binary"] }) {
+        error make --unspanned {msg: $"zellij: '($k)' is not a setting \(try: glyphs, binary\)"}
     }
     let g = $given.glyphs? | default {}
     if not (($g | describe) | str starts-with "record") {
@@ -79,7 +79,8 @@ export def settings [given: record, me: any]: nothing -> record {
         }
     }
 
-    { glyphs: ($DEFAULT_GLYPHS | merge $g)
+    { binary: (resolve-binary ($given.binary? | default ""))
+      glyphs: ($DEFAULT_GLYPHS | merge $g)
       me: { id: ($me | default "")
             session: ($env.ZELLIJ_SESSION_NAME? | default "")
             pane_id: ($env.ZELLIJ_PANE_ID? | default "") } }
@@ -87,6 +88,31 @@ export def settings [given: record, me: any]: nothing -> record {
 
 # The title one record deserves. Empty means "we have nothing to say", which
 # `apply` turns into dropping our name rather than writing a blank one.
+# An ABSOLUTE path to the program, because a hook's PATH is not your shell's PATH
+# and a LAUNCHD JOB's is smaller still: the clock runs with /usr/bin:/bin and
+# nothing else, so a bare `^zellij` silently does nothing there. Resolved once, in
+# `settings`, so a missing program is a loud configuration error rather than a
+# surface that reports "applied" and paints nothing — which is exactly how this
+# was found.
+# No `-> string` signature: a def annotated that way cannot END in `error make`
+# (§10).
+def resolve-binary [given: string] {
+    if ($given | is-not-empty) {
+        if not ($given | path exists) {
+            error make --unspanned {msg: $"zellij: no program at '($given)'"}
+        }
+        return $given
+    }
+    let found = which "zellij" | get -o 0.path | default ""
+    if ($found | is-not-empty) { return $found }
+    for d in ["/opt/homebrew/bin" "/usr/local/bin" "/usr/bin"] {
+        let p = $d | path join "zellij"
+        if ($p | path exists) { return $p }
+    }
+    error make --unspanned {msg: ("zellij: not found. Set `zellij.binary: <path>` in the config "
+        + "file if it lives somewhere unusual.")}
+}
+
 def base-for [rec: record]: nothing -> string {
     let named = $rec.name? | default "" | str trim
     if ($named | is-not-empty) { $named } else { $rec.cwd? | default "" | path basename }
@@ -129,11 +155,11 @@ export def project [records: list<record>, settings: record]: nothing -> list<re
 # A blank title DROPS our name instead of writing one, so zellij falls back to
 # what it would have shown anyway (the running command). A projection with
 # nothing to say must never blank a pane.
-def rename [session: string, pane_id: string, name: string] {
+def rename [binary: string, session: string, pane_id: string, name: string] {
     if ($name | str trim | is-empty) {
-        ^zellij --session $session action undo-rename-pane --pane-id $pane_id | complete | ignore
+        ^$binary --session $session action undo-rename-pane --pane-id $pane_id | complete | ignore
     } else {
-        ^zellij --session $session action rename-pane --pane-id $pane_id $name | complete | ignore
+        ^$binary --session $session action rename-pane --pane-id $pane_id $name | complete | ignore
     }
 }
 
@@ -179,7 +205,7 @@ export def renames [desired: list<record>, previous: any]: nothing -> list<recor
 
 export def apply [desired: list<record>, previous: any, settings: record]: nothing -> any {
     for r in (renames $desired $previous) {
-        try { rename $r.session $r.pane_id $r.title }
+        try { rename $settings.binary $r.session $r.pane_id $r.title }
     }
     let me = $settings.me
     if ($me.pane_id | is-empty) { null } else { {zellij: {session: $me.session, pane_id: $me.pane_id}} }

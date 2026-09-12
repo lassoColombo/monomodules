@@ -23,7 +23,11 @@ export def main [] {
     # ── settings ─────────────────────────────────────────────────────────────
     let a = [
         (check "there is a default for everything" ($s | columns | sort)
-               ["background" "colors" "font" "position" "prefix"])
+               ["background" "binary" "colors" "font" "position" "prefix"])
+        (check "the program is resolved to an ABSOLUTE path, not left to PATH"
+               ($s.binary | str starts-with "/") true)
+        (check-err "…and a path that is not there is a loud error, not a silent no-op"
+                   "no program at" {|| sketchybar settings {binary: "/nope/sketchybar"} null })
         (check "the item prefix keeps v1 and v2 apart on one bar" $s.prefix "an_")
         (check "a colour override replaces just that one"
                (sketchybar settings {colors: {working: "0xff000000"}} null | get colors.working) "0xff000000")
