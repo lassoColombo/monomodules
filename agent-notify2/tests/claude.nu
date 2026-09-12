@@ -155,13 +155,25 @@ export def main [] {
     $env.AGENT_NOTIFY_PID = ($nu.pid | into string)
     run-hook "SessionStart" (payload {session_id: "proc-1"}) | ignore
     run-hook "PostToolUse" (payload {session_id: "proc-2", tool_name: "Bash"}) | ignore
+    # An agent whose SessionStart we never saw — the case that made a missing pid
+    # permanent, and every surface show it forever.
+    run-hook "Stop" (payload {session_id: "proc-3"}) | ignore
+    let missed = agent-notify2 store get "proc-3" | get -o proc
+    run-hook "UserPromptSubmit" (payload {session_id: "proc-3"}) | ignore
     let p = [
         (check "the mapping stays pure — it looks up no process"
                ("proc" in (claude map "SessionStart" (payload) | get changes | columns)) false)
         (check "SessionStart records the agent's process, so a kill can be proved later"
                (agent-notify2 store get "proc-1" | get proc.pid) $nu.pid)
-        (check "…and no other event pays the ~10ms walk"
+        (check "…and a tool call does not pay the ~10ms walk"
                (agent-notify2 store get "proc-2" | get -o proc) null)
+        (check "an agent whose SessionStart we missed starts out unprovable" $missed null)
+        (check "…and the next turn recovers it, so a missing pid is never permanent"
+               (agent-notify2 store get "proc-3" | get proc.pid) $nu.pid)
+        (check "attaching it twice changes nothing — a pid does not move"
+               (run-hook "UserPromptSubmit" (payload {session_id: "proc-3"}) | get exit_code) 0)
+        (check "…and the record is the same one"
+               (agent-notify2 store get "proc-3" | get proc.pid) $nu.pid)
     ]
     hide-env AGENT_NOTIFY_PID
 

@@ -120,11 +120,12 @@ export def main [] {
         let body = payload from-stdin
         let event = $body.hook_event_name? | default ""
         let op = map $event $body
-        event apply (if $event == "SessionStart" { with-proc $op } else { $op }) | ignore
+        event apply (if $event in ["SessionStart" "UserPromptSubmit"] { with-proc $op } else { $op }) | ignore
     }
 }
 
-# See clients/claude.nu: the agent's process, attached once, at SessionStart only.
+# See clients/claude.nu: attached at SessionStart, and looked up again once per
+# turn so that a missing one is never permanent.
 def with-proc [op: record]: nothing -> record {
     if ($op.op? != "patch") { return $op }
     let p = proc find $INFO.process

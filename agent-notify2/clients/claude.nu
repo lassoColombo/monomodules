@@ -137,14 +137,24 @@ export def map [event: string, payload: record]: nothing -> record {
 export def main [event: string] {
     try {
         let op = map $event (payload from-stdin)
-        event apply (if $event == "SessionStart" { with-proc $op } else { $op }) | ignore
+        event apply (if $event in ["SessionStart" "UserPromptSubmit"] { with-proc $op } else { $op }) | ignore
     }
 }
 
-# The agent's process, attached ONCE — at SessionStart, the only event where it
-# can be new. Walking the process tree costs ~10ms, which is why it does not
-# happen on the events that fire hundreds of times a session. Kept out of `map`
-# so that `map` stays a pure function of its payload.
+# The agent's process. SessionStart is where it can be NEW; UserPromptSubmit is
+# where a missing one is recovered.
+#
+# The retry matters more than it looks. Without it a missing pid is PERMANENT: if
+# the walk fails once, or the session predates this code, that agent can never be
+# proved dead for the rest of its life, and every surface shows it forever. Once
+# per turn it is simply looked up again.
+#
+# No store read is needed to decide whether it is missing, because attaching it is
+# IDEMPOTENT: a pid does not change within a session, so a second attach produces
+# an identical record, `changed` is false, and nothing is written or painted. The
+# whole cost is the ~10ms walk, once per turn — against the hundreds of tool calls
+# that never pay it. Kept out of `map` so `map` stays a pure function of its
+# payload.
 def with-proc [op: record]: nothing -> record {
     if ($op.op? != "patch") { return $op }
     let p = proc find $INFO.process

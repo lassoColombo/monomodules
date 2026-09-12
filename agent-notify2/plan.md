@@ -488,8 +488,16 @@ climb until we meet the name **the client declares** — `process: "claude"` in
 `$env.AGENT_NOTIFY_PID` short-circuits the walk, the same escape hatch
 `AGENT_NOTIFY_ID` gives for identity (P5).
 
-Stored as `proc: {pid, started}`, **once**, at `SessionStart` — the only event
-where it can be new. The start time is not decoration: pids are recycled, so a
+Stored as `proc: {pid, started}` at `SessionStart` — where it can be new — and
+looked up again on `UserPromptSubmit`, once per turn. **That retry is what stops a
+missing pid being permanent**: if the walk fails once, or the session predates
+this code, that agent could otherwise never be proved dead for the rest of its
+life and every surface would show it forever. No store read is needed to decide
+whether it is missing, because attaching it is idempotent — a pid does not change
+within a session, so a second attach produces an identical record, `changed` is
+false, and nothing is written or painted. Measured: `UserPromptSubmit` 28.5ms →
+40.2ms, once per turn; `PostToolUse`, which fires hundreds of times, is
+untouched at 29ms. The start time is not decoration: pids are recycled, so a
 number alone would eventually match a stranger's process and keep a dead agent
 alive forever. A number *and* the second it started cannot be confused.
 
