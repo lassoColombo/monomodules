@@ -11,16 +11,16 @@
 # other way round. Everything, logic and graphics alike, lives in this module; no
 # glue scripts in anyone else's config directory.
 #
-# BUILD STATE — everything but the picker (plan.md §9). The store and its command
-# surface, the Claude and Codex clients, liveness by process, the config file,
-# dispatch, zellij pane and tab titles, the SketchyBar counters with their
-# drawers and hover previews, and the launchd clock. **v1 was dismissed on
-# 2026-09-12** while this was still incomplete, on purpose: `ai/agent-notify/` is
-# untouched on disk and nothing invokes it.
+# BUILD STATE — complete (plan.md §9). The store and its command surface, the
+# Claude and Codex clients, liveness by process, the config file, dispatch,
+# zellij pane and tab titles, the SketchyBar counters with their drawers and
+# hover previews, the launchd clock, the jump, and the picker. **v1 was dismissed
+# on 2026-09-12** while this was still incomplete, on purpose: `ai/agent-notify/`
+# is untouched on disk and nothing invokes it.
 #
-# Nothing is missing any more. What v1 did, this does — including the picker and
-# the jump Alt-a ends in. Left over: deleting `ai/agent-notify/`, settling D17
-# (the promoted name), and making a click on a bar row jump too.
+# What v1 did, this does — with no skim, no bat and no pandoc anywhere. Left
+# over: deleting `ai/agent-notify/`, settling D17 (the promoted name), a palette
+# for the picker, and making a click on a bar row jump too.
 #
 # Turn the surfaces on with ~/.config/agent-notify/config.yaml. That list is what
 # the store is PUSHED to; a tool's COMMANDS run because you ran them, which is
@@ -54,8 +54,14 @@ export use cli/clients.nu
 export use cli/config.nu *
 export use cli/surfaces.nu
 export use cli/clock.nu *
+export use cli/browse.nu
 
 # The PULL half of an integration: commands, not a surface. Nothing dispatches to
 # them and `surfaces:` does not turn them on — see integrations/mod.nu.
+#
+# `browse` is NOT here, and that is the shape of it: a picker is not a zellij
+# program. It asks whichever integration claimed an agent where it lives and what
+# is on its screen (`picker/locators.nu`), so it sits with the other commands and
+# a tmux integration would never touch it. A jump genuinely is zellij's, and
+# stays here.
 export use integrations/zellij/jump.nu
-export use integrations/zellij/browse.nu

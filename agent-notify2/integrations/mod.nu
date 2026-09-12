@@ -10,24 +10,31 @@
 #          switched on by `surfaces:` in the config file, and configured under
 #          that tool's `surface:` key.
 #
-#   PULL — its COMMANDS. Something you invoke: the picker, the jump. Nothing
-#          turns them on, because you ran them. Configured under `commands:`.
+#   PULL — its COMMANDS, and what the PICKER needs from it. Nothing turns these
+#          on, because you ran them. Configured under `commands:`.
 #
 #   integrations/
 #     zellij/
 #       mod.nu      PUSH   pane and tab titles
-#       browse.nu   PULL   the picker
 #       jump.nu     PULL   go to an agent's pane
+#       locate.nu   PULL   where an agent lives, what is on its screen, how to go
 #     sketchybar/
 #       mod.nu      PUSH   counters, drawers and hover previews
 #       items.nu           item names, the fixed pool, the generated shell
 #       text.nu            markdown → what a label can show
 #
+# THE PICKER IS NOT IN HERE, and that is the shape of it. `agent-notify2 browse`
+# lives in `cli/` with the other commands, and the machinery in `picker/`,
+# because a picker is not a zellij program: it asks whichever integration claimed
+# an agent the four questions in `locate.nu` and draws the answers. A tmux
+# integration is one more `locate.nu` and one more row in `picker/locators.nu` —
+# and not one line of the picker changes.
+#
 # The halves are separate FILES, not just separate exports, and that is load
 # bearing: the push half is in the HOT cone of every hook, and the pull half must
 # never be. `core/dispatch.nu` imports `mod.nu`; the CLI imports the others. A
-# command that dragged skim into the hook's import cone would be paid for on
-# every tool call, forever.
+# pull half that reached the hook's import cone would be parsed on every tool
+# call, forever — and `locate.nu` drags `jump.nu` and the config in behind it.
 #
 # ── THE SURFACE CONTRACT ─────────────────────────────────────────────────────
 # A surface DESCRIBES; `core/dispatch.nu` DECIDES; the store holds the facts. A
@@ -55,6 +62,22 @@
 # table, because nushell has no first-class modules and a name cannot be turned
 # into a module at runtime. A new COMMAND is one file plus one line in the
 # facade — no table, because nothing dispatches to it.
+#
+# ── THE LOCATOR CONTRACT ─────────────────────────────────────────────────────
+# The same idea for the picker, and the same hand-written table, in
+# `picker/locators.nu`:
+#
+#   INFO      what it is
+#   claims    is this record yours?          it has a `zellij` namespace
+#   place     where does it live?            home/root
+#   screen    what is on its screen?         `dump-screen`, the agent's REAL one
+#   go        take me there                  `jump`
+#
+# Which locator answers is decided by the RECORD, not by the config file:
+# `surfaces:` says what the store is pushed to and nothing else (D47), so
+# switching the zellij surface off must not stop the picker previewing a zellij
+# pane. `tests/fake.nu` ships a fake locator beside the fake surface, which is how
+# the whole picker is asserted with neither zellij nor tmux installed.
 #
 # ── THREE RULES, each of which cost real time when broken ────────────────────
 #

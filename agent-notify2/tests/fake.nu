@@ -36,3 +36,39 @@ export def apply [changed: record, removed: record, settings: record]: nothing -
     let undid = $removed | columns | each {|k| $"-($k)" }
     $"(($wrote ++ $undid) | str join ' ')\n" | save --append $settings.log
 }
+
+# ── and a LOCATOR, for the picker ────────────────────────────────────────────
+#
+# The other half of an integration, in the same spirit: four questions answered
+# out of the record itself, so the whole picker — rows, filtering, scrolling,
+# frames, keys — can be asserted on a machine with no zellij and no tmux.
+#
+#   {fake: {where: "box/one", screen: "a\nb\nc"}}
+#
+# `go` does nothing. Where a jump would take you is `jump argv`'s business and it
+# has its own suite; what this file proves is that the CONTRACT is answerable
+# without the tool, which is the only claim `picker/locators.nu` makes.
+
+export const LOCATOR_INFO = {name: "fake", title: "a pane in a record, for tests"}
+
+export def locates [rec: record]: nothing -> bool {
+    (($rec.fake?.where? | default "") | is-not-empty)
+}
+
+export def lives [rec: record]: nothing -> string { $rec.fake?.where? | default "" }
+
+# The BOTTOM of the screen, the way a real one is cut — what is current.
+export def shows [rec: record, height: int]: nothing -> list<string> {
+    let text = $rec.fake?.screen? | default ""
+    if ($text | is-empty) or ($height < 1) { return [] }
+    let all = $text | lines
+    $all | last ([$height ($all | length)] | math min)
+}
+
+export def locator []: nothing -> record {
+    { fake: {info: $LOCATOR_INFO
+             claims: {|rec| locates $rec }
+             place:  {|rec| lives $rec }
+             screen: {|rec, n| shows $rec $n }
+             go:     {|rec| null }} }
+}

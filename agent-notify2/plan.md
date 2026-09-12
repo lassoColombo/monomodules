@@ -374,9 +374,11 @@ zellij — processes with no shell config, and `nu -n` cannot see `$env` set in
 becomes a parse failure, and the path cannot be chosen at runtime. `open` has
 neither problem and costs 0.06ms.
 
-**What stays in `config.nu`:** closures only — `$env.ai_config.picker` (skim) and
-`.render` (bat), used by the interactive picker, wired by `module-hooks.nu`
-exactly as today. Data in the file, code in the env.
+**What stays in `config.nu`: nothing.** This was written expecting the v1
+arrangement to survive — `$env.ai_config.picker` (skim) and `.render` (bat),
+closures wired in by `module-hooks.nu`. Both are gone (D48, D54): the picker has
+no engine to swap and nothing to render, so there is no code in the env and no
+hook to wire. Data in the file, and only the file.
 
 Colours live in the config file. Validation is **strict**: an unknown integration
 name or a malformed entry is an error with a helpful message, not a silent no-op,
@@ -694,12 +696,16 @@ committed. Each surface is wrapped alone, so one failing cannot stop the next.
 | D45 | A preview's text is made single-quote-safe (`'` → `’`) rather than shell-escaped | **LOCKED** | step 5b — probed: inside single quotes `$HOME` and backticks are already literal, so one substitution is the whole of the escaping |
 | D46 | The bar's slots are keys in the projection, one per row | **LOCKED** | step 5b — D40 then does the per-slot diffing for free; v1 needed a disk cache and ~60 lines of its own |
 | D47 | A tool's config has two halves, `surface` (push) and `commands` (pull) | **LOCKED** | §4.7 — `surfaces:` must not read as "which integrations exist"; splitting it in the FILE is what stops removing a surface from taking its picker away |
-| D48 | The picker has NO configurable engine — skim is a dependency | **SUPERSEDED** (2026-09-12) | half right: the hook goes, but so does skim. The picker is to have NO external dependency at all — nushell's own input and zellij, nothing else. See `picker.md` |
+| D48 | The picker has NO configurable engine — skim is a dependency | **SUPERSEDED** by D54–D57 | half right: the hook goes, but so does skim. There is no engine and no dependency at all — nushell's own `input listen` and zellij's `dump-screen`, nothing else |
 | D49 | `surfaces/` → `integrations/`, one directory per tool, one file per half | **LOCKED** | step 6 — the halves must be separate FILES: the push half is in every hook's import cone and the pull half must never be |
 | D50 | The jump names NO window manager and assumes no OS | **LOCKED** | step 6 — raising the terminal's window is only needed by a BAR CLICK; the picker runs inside the terminal, where it is already in front. Deferred with the click |
 | D51 | `jump argv` is the whole decision; `main` only runs it | **LOCKED** | step 6 — the same data-first split as `commands`/`apply`, and here it is what lets the cross-session branch be tested at all: running it moves a real screen |
 | D52 | `browse` runs IN PLACE; the floating pane belongs to the keybinding | **LOCKED** | step 6 — v1 re-launched itself through `zellij run --floating` and needed a `--here` flag to not. Same bargain as `sketchybarrc` and `settings.json`: we print the block, you own the file |
 | D53 | `browse` does not prune | **LOCKED** | step 6 — the clock already does, every 30s. A second mechanism for one guarantee, and all it saves is a jump that says "no session called 'x'" |
+| D54 | The picker OWNS ITS EVENT LOOP — `input listen`, not `input list` | **LOCKED** | step 6b — `input list` is OPAQUE: it blocks and reports nothing until enter, so nothing can redraw a preview beside it. Every design that kept it needed a second process parsing the highlight back off the picker's own screen |
+| D55 | The picker is `picker/`, its command is `cli/browse.nu`, and each integration answers a four-question LOCATOR contract | **LOCKED** | step 6b — three things vary per multiplexer (where an agent lives, what is on its screen, how to go there) and nothing else does. tmux is one `locate.nu` and one row in `picker/locators.nu` |
+| D56 | Which locator answers is decided by the RECORD, not by the config file | **LOCKED** | step 6b — `surfaces:` says what the store is PUSHED to and nothing else (D47), so switching the zellij surface off must not stop the picker previewing a zellij pane. It also makes a MIXED fleet work with nothing configured |
+| D57 | The preview is the agent's LIVE SCREEN; the filter matches only what the row SHOWS | **LOCKED** | step 6b — `dump-screen` is truer than anything we could store and deletes markdown rendering outright. And a message is kilobytes of prose: folding it into the filter made a two-letter query match an agent for an invisible reason, at character 4195 of something it said an hour ago |
 | D15 | Replace pandoc with a nu-native flattener | **OPEN** | 25.1ms on the event path, and a dependency |
 | D16 | Where the bench harness lives | **OPEN** | ~350 lines of documented nu; §8 |
 | D17 | Final promoted name/location (top-level `agent-notify`?) | **OPEN** | v1 is `ai/agent-notify`; v2 is top-level |
@@ -980,18 +986,9 @@ its own bar item names so both can be live at once.
    Markdown is stripped in nushell rather than by pandoc: v1 could afford ~30ms
    because it converted where the preview was STORED, on a path already spawning
    processes; v2's whole paint is 6.5ms, and the picker still wants the markdown.
-6. **Picker + jump** — the jump is ✅ done; the picker is ⏳ **TO BE REBUILT**.
-   The skim + bat version shipped and works, and both dependencies were then
-   rejected outright. A research session established what replaces it and proved
-   it with a working prototype: **`picker.md` is the design document, and the
-   next session starts there.** In short: `input listen` instead of `sk`, and
-   `zellij action dump-screen --pane-id` for the preview — which makes the
-   preview the agent's REAL SCREEN rather than a stored message, and deletes
-   `bat`, the markdown rendering and the picker's use of `message` at once.
-   First the shape changed. `surfaces/` became `integrations/` (D49) because a
-   tool has two halves and only one of them is a surface, and the config file
-   grew `surface:`/`commands:` to match (D47). The picker's engine is NOT
-   configurable — skim is a dependency, as it is for `telescope` (D48).
+6. **Jump** — ✅ done. First the shape changed: `surfaces/` became
+   `integrations/` (D49) because a tool has two halves and only one of them is a
+   surface, and the config file grew `surface:`/`commands:` to match (D47).
    `integrations/zellij/jump.nu`, 16 assertions, 350/350 overall. `program.nu`
    holds the one thing both halves share: which zellij.
    **It names no window manager and assumes no operating system** (D50). v1
@@ -1008,21 +1005,55 @@ its own bar item names so both can be live at once.
    `jump argv <who>` is the whole decision as data (D51) and `main` is four lines
    that run it. That is what makes the cross-session branch testable: obeying it
    moves a real screen.
-   Then the picker. `integrations/zellij/browse.nu`, 25 assertions, 375/375
-   overall. Rows are four columns — state, agent, where, what it last said — most
-   urgent first, with idle last rather than hidden. The preview is the agent's
-   message as the markdown it wrote, over a header saying HOW LONG it has been in
-   this state, which is the question a fleet list is really asking. `bat` styles
-   it when present and is not a dependency; skim is (D48).
-   It runs IN PLACE (D52) and does not prune (D53).
-   The rows are NOT shared with the bar's drawers, which I had assumed they would
-   be. Having built both: the drawer shows one state per drawer, oldest first,
-   with the message STRIPPED of markdown and wrapped to 62×11; the picker shows
-   every state in one list, most urgent first, with the markdown KEPT because
-   skim and bat wrap it themselves. What is genuinely common is the label rule and
-   the glyphs — about fifteen lines, duplicated, as the surfaces already duplicate
-   the glyphs to stay leaves.
-   `config.kdl`'s Alt-a now runs v2, flipped once.
+6b. **The picker** — ✅ done, and rebuilt from nothing. A skim + bat version
+   shipped first and was rejected outright, both dependencies with it. The
+   replacement has NO external dependency at all: nushell's own `input listen`
+   and zellij's `dump-screen`, and nothing else.
+   **It is not in `integrations/zellij/`** (D55). Three things vary per
+   multiplexer — where an agent lives, what is on its screen, how to get there —
+   and nothing else does, so those three are a four-question LOCATOR contract
+   (`integrations/zellij/locate.nu`) and everything else is a plain picker in
+   `picker/`, with its command in `cli/` beside the others. tmux would be one
+   more `locate.nu` and one more row in `picker/locators.nu`. Which locator
+   answers is asked of the RECORD, not of the config file (D56), so a mixed fleet
+   works with nothing configured and switching the zellij SURFACE off does not
+   take the preview away.
+   **It owns its event loop** (D54), because `input list` is opaque: it blocks
+   and reports nothing until enter, so nothing can redraw a preview beside it. A
+   design that kept it was built, worked, and was rejected — it needed a second
+   pane parsing the highlight back off the picker's own screen, and could break
+   silently. Owning the loop is resilient through three ABSENCES: nothing to
+   parse (we set the selection), nothing to poll (`input listen` blocks), nothing
+   to coordinate (one pane, one process).
+   **The preview is the agent's real terminal** (D57), 12ms per read, which is
+   truer than anything we could store and deletes markdown rendering from this
+   module outright. A `--timeout 2sec` heartbeat keeps it live while you sit
+   still. An agent with no pane falls back to its stored message.
+   Four calls in `picker/mod.nu` touch the world — read the store, read a screen,
+   print, read a key — and every other line is pure: `rows.nu`, `frame.nu`,
+   `keys.nu`. `frame render` returns the WHOLE SCREEN as a list of strings and
+   never prints (D34, after the bar's `message` and zellij's `commands`), so the
+   suite asserts entire frames line for line with no terminal and nothing
+   installed. `tests/fake.nu` grew a fake LOCATOR beside its fake surface.
+   82 assertions, 432/432 overall. It runs IN PLACE (D52) and does not prune (D53).
+   **Four bugs the suite could not have found, all found by running it in a
+   floating pane and typing at it with `send-keys`:** the default locator table
+   never reached `rows build`, because `{}` is not null and `default` does not
+   fire on it — so nothing was ever claimed, and the picker showed no places and
+   no live previews; `input listen` spells the control modifier
+   `keymodifiers(control)`, so ctrl-c typed a `c` instead of leaving; with no
+   terminal the loop spun ~37,000 times a second forever, because a caught
+   timeout and a caught "there is no terminal" are the same value (it is timed
+   now, not trusted); and `dump-screen` without `--session` reads the wrong
+   session's pane, because pane ids are per session — an agent living elsewhere
+   would have shown a stranger's terminal, silently.
+   The filter matches only what the row SHOWS. Folding the agent's message in
+   made a two-letter query keep an agent for an invisible reason, at character
+   4195 of something it said an hour ago (D57).
+   Graphics are deliberately plain — no colour, no glyphs, a `>` for the
+   selection. A palette is a separate pass; freezing one now would only mean
+   asserting escape codes and revising them later.
+   `config.kdl`'s Alt-a is one `nu -n` and nothing else.
 7. **Cutover** — ⏳ **v1 dismissed early, on purpose** (2026-09-12), while
    incomplete. v1's hooks are out of `settings.json`, its bar block is out of
    `sketchybarrc` (one line in its place), `CLAUDE.md`'s session-naming rule calls
@@ -1177,6 +1208,43 @@ every surface down with it.
 **Intermediate pipelines print nothing under `nu -c`** — only the final one — so
 anything a script means to show needs an explicit `print`.
 
+**An error raised INSIDE a `catch` block escapes that `try`** — and nushell then
+reports the ORIGINAL error, at the ORIGINAL span. So it looks exactly like a
+`try` that does not catch, and you will go looking in the wrong place. Found by
+writing `catch {|e| {msg: $e.msg, json: ($e | to json)} }`: **`to json` throws on
+a caught error record**, the catch died, and the report pointed at the `input
+listen` two lines above. `$e.msg` is safe; nothing else in a catch should be able
+to fail.
+
+**`input listen --timeout` THROWS on expiry** rather than returning null, so a
+heartbeat is a caught error. And the catch must be able to tell that expiry from
+"there is no terminal", which arrives the same way: with stdin closed the loop
+turns over **~37,000 times a second, forever**. Time it rather than matching the
+message — a listen that failed in far less than the timeout was not a timeout,
+and the wording belongs to nushell.
+
+**`input listen` spells a held modifier `keymodifiers(control)`**, not `control`
+— a Debug format leaking into the record. `"control" in $ev.modifiers` is false
+for every control key there is, so ctrl-u types a `u` and ctrl-c types a `c`
+instead of leaving. Match on CONTAINS so both spellings work. The suite could not
+catch this: it builds its own events, spelled the way the docs say.
+
+**`term size` answers 80×24 when there is no terminal** rather than failing, so
+it cannot be used to find out whether there is one.
+
+**An explicit `{}` is not null, so `default` does not fire on it.** "Use the
+shipped table" and "use an empty table" must not be spelled the same way — they
+were, and the picker silently claimed nothing, previewed nothing and showed no
+places until it was run. Relatedly: a LITERAL `null` cannot be passed to a typed
+optional parameter (parse error), but a VARIABLE holding null can, and `default`
+then works — which is how an optional is threaded through a caller.
+
+**`str downcase` is deprecated** (0.114) in favour of `str lowercase`.
+
+**Arithmetic does not continue across lines either**, with the operator at either
+end — the same rule as booleans. `+ (…)` on its own line is read as a fresh
+pipeline and fails with "Command `+` not found".
+
 ---
 
 ## 11. Platform notes (hard-won)
@@ -1198,6 +1266,23 @@ Not nushell — the programs underneath. Same rule as §10: cost time once, not 
 - **`tab_id` is not `tab_position`.** `rename-tab --tab-id` wants the id; ids are
   not renumbered when tabs move, and `query-tab-names` returns names in POSITION
   order with no ids, so it cannot be used for renaming.
+- **`action dump-screen --pane-id` reads ANY pane's live screen** for **12ms**,
+  which is what makes a preview the agent's real terminal rather than something
+  we stored. `--full` for scrollback, `--ansi` to keep styling, `--path` to a file.
+- **PANE IDS ARE PER SESSION, so `--session` is not optional.** Probed with two
+  sessions, both holding a pane 0 and different contents: `action dump-screen
+  --pane-id terminal_0` with no `--session` reads whichever session the process is
+  attached to. An agent living anywhere else would show A STRANGER'S TERMINAL,
+  silently, with no error — the same failure class that got the screen-scraping
+  picker rejected. `jump` always passed `--session`; so must anything else.
+- `action send-keys --pane-id <id> "Down" "Ctrl u"` drives any pane's keyboard
+  **without focusing it**, and `action close-pane --pane-id` closes any pane, not
+  only the focused one. With `dump-screen`, that is the whole technique for
+  testing an interactive program: `zellij run --floating … -- nu -n probe.nu`,
+  screenshot it, type at it.
+- **A dump races the redraw.** `send-keys` then `dump-screen` in the same breath
+  shows the frame BEFORE the key. Dump twice; several "it did not work" findings
+  were this.
 - `--session <name>` on every action makes it work from anywhere, including a
   process with no ambient `$ZELLIJ`.
 - **It exits 0 whether or not the action worked.** The reason arrives on STDERR:
