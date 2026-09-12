@@ -181,6 +181,12 @@ export def pool-args [s: record]: nothing -> list<string> {
             $"label.color=($s.colors.dim)"
             # popup.align=left so a drawer opens rightward; align=right ran it
             # off the screen edge.
+            #
+            # popup.height is THE VERTICAL SPACING BETWEEN ROWS, and left alone
+            # it is the BAR's height — 34px around a 12pt line, which is why an
+            # untouched drawer is nine tenths air. A row's own background.height
+            # cannot correct it: that sizes the pill, not the slot.
+            $"popup.height=($s.line_height)"
             "popup.align=left" "popup.background.drawing=on"
             $"popup.background.color=($s.colors.popup)"
             "popup.background.corner_radius=10" "popup.background.border_width=1"
@@ -206,7 +212,7 @@ export def pool-args [s: record]: nothing -> list<string> {
                 "--add" "item" $n $"popup.($item)"
                 "--set" $n "drawing=off"
                 "background.drawing=on" $"background.color=($s.colors.row)"
-                "background.corner_radius=8" "background.height=30"
+                "background.corner_radius=8" $"background.height=($s.line_height)"
                 "background.padding_left=8" "background.padding_right=8"
                 "icon.padding_left=13" "icon.padding_right=10"
                 "label.padding_left=0" "label.padding_right=18"
@@ -233,10 +239,10 @@ export def pool-args [s: record]: nothing -> list<string> {
                 $"label.color=(if $lead { (tint $hue '99') } else { $s.colors.dim })"
                 $"label.font=($s.font):(if $lead { 'Bold:11.0' } else { 'Italic:12.0' })"
                 "label.padding_left=14" "label.padding_right=14"
-                # A popup row is `background.height` tall (26 by default) and the
-                # text is ~16px, so shrink it to hug the line and kill the gap.
-                "icon.drawing=off" "background.drawing=off" "background.height=16"
-                $"y_offset=(if $lead { 4 } else { 0 })"
+                # No background at all: the slot is popup.height tall and the
+                # row is only text, so a pill here would just box a sentence.
+                "icon.drawing=off" "background.drawing=off"
+                $"y_offset=(if $lead { 2 } else { 0 })"
             ]
         }
     }

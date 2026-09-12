@@ -61,8 +61,13 @@ const DEFAULTS = {
     background: "0xff26233a"
     rows: 10                # agent rows per drawer; the rest are counted, not drawn
     preview_lines: 12       # preview rows, of which the first is the WHERE line
-    preview_width: 62       # characters a preview row may hold
+    preview_width: 110      # characters a preview row may hold; it is NOT wrapped
     row_width: 40           # characters an agent's name may hold
+    # `popup.height` is what a drawer actually spaces its rows by, and it
+    # DEFAULTS TO THE BAR HEIGHT — 34px, over twice a 12pt line, which is why an
+    # untouched drawer is mostly air. The rows' own `background.height` cannot
+    # fix it: it sizes the pill, not the slot the pill sits in.
+    line_height: 22         # px between popup rows, and the height of a row pill
     colors: {
         working: "0xff9ccfd8"          # foam
         awaiting: "0xfff6c177"         # gold
@@ -76,7 +81,7 @@ const DEFAULTS = {
 }
 
 const EXTRA_COLORS = ["dim" "text" "row" "popup" "border"]
-const NUMBERS = ["rows" "preview_lines" "preview_width" "row_width"]
+const NUMBERS = ["rows" "preview_lines" "preview_width" "row_width" "line_height"]
 
 # An ABSOLUTE path to the program, because a hook's PATH is not your shell's PATH
 # and a LAUNCHD JOB's is smaller still: the clock runs with /usr/bin:/bin and
@@ -184,7 +189,9 @@ def label-of [r: record, s: record]: nothing -> string {
 }
 
 # The preview, ready to be baked into a shell command: the WHERE line, then the
-# message with its markdown taken off and its paragraphs cut into rows.
+# message with its markdown taken off, one source line per row and NOTHING
+# WRAPPED — a drawer is wide, and a sentence spilling onto a second row costs a
+# slot and reads as two thoughts. What does not fit is cut with an ellipsis.
 def lines-of [r: record, s: record]: nothing -> list<string> {
     let source = text plain ($r.message? | default "")
     let body = text lay-out $source $s.preview_width ($s.preview_lines - 1)

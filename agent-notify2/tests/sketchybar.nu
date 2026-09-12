@@ -42,7 +42,7 @@ export def main [] {
     # ── settings ─────────────────────────────────────────────────────────────
     let a = [
         (check "there is a default for everything" ($s | columns | sort)
-               ["background" "binary" "colors" "font" "position" "prefix"
+               ["background" "binary" "colors" "font" "line_height" "position" "prefix"
                 "preview_lines" "preview_width" "row_width" "rows"])
         (check "the program is resolved to an ABSOLUTE path, not left to PATH"
                ($s.binary | str starts-with "/") true)
@@ -106,6 +106,7 @@ export def main [] {
 
     # ── what a row says ──────────────────────────────────────────────────────
     let long_name = ("z" | fill --width 80 --character "z")
+    let narrow = sketchybar settings {preview_width: 40}
     let c = [
         (check "an agent's own name is its row"
                (row-of {id: "x", name: "build-the-thing", cwd: "/a/b"} $s | get label) "build-the-thing")
@@ -123,11 +124,13 @@ export def main [] {
         (check "a home directory is written the short way"
                (row-of {id: "x", cwd: ($nu.home-dir | path join "w")} $s | get lines | first
                 | str contains "~/w") true)
+        # A narrow drawer, so the eliding is exercised rather than the 110
+        # characters a real one has.
         (check "a directory too long for the row keeps its END, not its beginning"
-               (row-of {id: "x", client: "c", cwd: "/very/long/prefix/that/will/not/fit/anywhere/near/here/at/all/thing"} $s
+               (row-of {id: "x", client: "c", cwd: "/very/long/prefix/that/will/not/fit/anywhere/near/here/at/all/thing"} $narrow
                 | get lines | first | str ends-with "/thing") true)
         (check "…and the cut lands on a separator rather than mid-word"
-               (row-of {id: "x", client: "c", cwd: "/very/long/prefix/that/will/not/fit/anywhere/near/here/at/all/thing"} $s
+               (row-of {id: "x", client: "c", cwd: "/very/long/prefix/that/will/not/fit/anywhere/near/here/at/all/thing"} $narrow
                 | get lines | first | str contains "· …/") true)
         (check "an agent with nothing to say says so rather than nothing"
                (row-of {id: "x", cwd: "/a"} $s | get lines | last) "—")
@@ -287,9 +290,11 @@ export def main [] {
         (check "a rule is a whole row spent on nothing, so it goes" (text plain "a\n---\nb") ["a" "b"])
         (check "a fence is a toggle; what it wraps is code and is left alone"
                (text plain "```nu\nlet a = 1\n```") ["let a = 1"])
-        (check "a long line is wrapped on word boundaries"
-               (text lay-out ["one two three four"] 9 5) ["one two" "three" "four"])
-        (check "…and a line that already fits keeps its indentation"
+        # A drawer is 110 characters wide; folding a sentence onto a second row
+        # would spend one of twelve slots saying nothing new.
+        (check "a long line is CUT, never wrapped — one row per source line"
+               (text lay-out ["one two three four"] 9 5) ["one two…"])
+        (check "…so a block keeps its shape, indentation and all"
                (text lay-out ["    indented"] 40 5) ["    indented"])
         (check "two blank lines become one — an empty row is the scarcest thing here"
                (text lay-out ["a" "" "" "b"] 40 5) ["a" "" "b"])

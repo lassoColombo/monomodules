@@ -2,8 +2,13 @@
 #
 # A label takes ONE font and ONE colour and holds ONE line, so everything that
 # makes a message readable in a terminal — the bold, the headings, the fences —
-# is noise here, and a paragraph has to be cut into rows before it can be shown
-# at all. That is this file: strip, then lay out.
+# is noise here. That is this file: strip, then lay out.
+#
+# NOTHING IS WRAPPED. An earlier version folded a long line onto a second row,
+# which is what a 62-character drawer forced. A drawer is 110 characters wide
+# now, and at that width a fold is pure loss: the continuation eats one of the
+# twelve slots, and two rows read as two thoughts when they are one sentence. A
+# line that does not fit is CUT and says so.
 #
 # WHY NOT PANDOC, which is what v1 used. v1 converted where the preview was
 # STORED, once per message, so the ~30ms was paid on a path that was already
@@ -92,46 +97,10 @@ export def plain [md: string]: nothing -> list<string> {
 
 # ── laying out ───────────────────────────────────────────────────────────────
 
-# Greedy word wrap into at most `max` lines of at most `width` characters; the
-# last one is ellipsised when there was more. `max = 1` is therefore also the
-# single-line truncator.
-def fold [text: string, width: int, max: int]: nothing -> list<string> {
-    mut lines = []
-    mut cur = ""
-    for w0 in ($text | split row " " | where {|w| $w != "" }) {
-        mut word = $w0
-        # A word longer than the whole width has to be cut, not wrapped.
-        while (chars $word) > $width {
-            if ($cur | is-not-empty) {
-                $lines = $lines ++ [$cur]
-                $cur = ""
-            }
-            $lines = $lines ++ [($word | split chars | first $width | str join)]
-            $word = ($word | split chars | skip $width | str join)
-        }
-        if ($cur | is-empty) {
-            $cur = $word
-        } else {
-            let fits = ((chars $cur) + 1 + (chars $word)) <= $width
-            if $fits {
-                $cur = $"($cur) ($word)"
-            } else {
-                $lines = $lines ++ [$cur]
-                $cur = $word
-            }
-        }
-    }
-    if ($cur | is-not-empty) { $lines = $lines ++ [$cur] }
-    if ($lines | length) <= $max { return $lines }
-    ($lines | first ($max - 1)) ++ [(mark ($lines | get ($max - 1)) $width)]
-}
-
-# Plain lines in, display rows out: each source line wrapped on its OWN so the
-# block structure survives, blanks collapsed to one, the whole thing capped.
-#
-# INDENTATION IS KEPT by passing a line that already fits straight through —
-# `fold` splits on spaces and so cannot preserve it. That is what keeps a code
-# block looking like one.
+# Plain lines in, display rows out: ONE ROW PER SOURCE LINE, blanks collapsed to
+# one, the whole thing capped. The block structure survives because nothing is
+# ever merged or split — a list stays a list, a table's rows stay aligned, and a
+# code block keeps its indentation, which a word wrap could never preserve.
 export def lay-out [source: list<string>, width: int, max: int]: nothing -> list<string> {
     mut out = []
     mut cut = false
@@ -147,15 +116,13 @@ export def lay-out [source: list<string>, width: int, max: int]: nothing -> list
             if $room { $out = $out ++ [""] }
             continue
         }
-        let room = $max - ($out | length)
-        let wrapped = if (chars $line) <= $width { [$line] } else { fold $line $width $room }
-        $out = $out ++ $wrapped
+        $out = $out ++ [(cut-to $line $width)]
     }
     let trimmed = $out | reverse | skip while {|l| $l == "" } | reverse
     if not $cut { return $trimmed }
     let last = $trimmed | last | default ""
-    # `fold` marks its own overflow, so a line that ran out of budget inside a
-    # block already ends in an ellipsis — do not stack a second one on it.
+    # A line that was itself cut already ends in an ellipsis — do not stack a
+    # second one on it.
     if ($last | str ends-with "…") { return $trimmed }
     ($trimmed | drop 1) ++ [(mark $last $width)]
 }
