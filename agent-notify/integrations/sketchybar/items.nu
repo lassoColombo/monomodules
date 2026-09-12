@@ -206,6 +206,13 @@ export def pool-args [s: record]: nothing -> list<string> {
             "icon.padding_left=14" "label.padding_right=14"
             "background.drawing=off" "y_offset=1"
         ]
+        # THE GAP: a row has no `click_script`, so clicking an agent does nothing.
+        # Not an oversight — see plan.md §9b.1. Everything the click needs is
+        # already here (the row knows its agent at paint time, and D44 says bake
+        # the answer in as a shell line rather than spawn one of ours). What is
+        # missing is the RAISE: a bar click comes from a desktop, so the
+        # terminal's WINDOW has to come forward before a pane can be focused, and
+        # that is a window manager's job. D50 says this module names none.
         for i in 0..<$s.rows {
             let n = row-name $s $state $i
             $args = $args ++ [

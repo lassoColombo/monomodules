@@ -22,8 +22,11 @@
 # in ~/.config/sketchybar/plugins and the one line in sketchybarrc that still
 # called into them. Nothing of ours lives in anyone else's config directory.
 #
-# What v1 did, this does — with no skim, no bat and no pandoc anywhere. Left
-# over: a palette for the picker, and making a click on a bar row jump too.
+# What v1 did, this does — with no skim, no bat and no pandoc anywhere. Every
+# step in plan.md §9 is done; what was set aside on purpose is §9b, which is one
+# list rather than a comment in each file: a click on a bar row (blocked on the
+# window-manager question, not on effort), a palette for the picker, and where
+# the bench harness should live.
 #
 # Turn the surfaces on with ~/.config/agent-notify/config.yaml. That list is what
 # the store is PUSHED to; a tool's COMMANDS run because you ran them, which is

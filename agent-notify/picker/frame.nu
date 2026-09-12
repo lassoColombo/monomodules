@@ -17,8 +17,10 @@
 #
 # DELIBERATELY PLAIN. No colour and no glyphs yet: the state is spelled out, the
 # selection is a `>`, and that is the whole vocabulary. A palette is a separate
-# question and gets a separate pass — freezing one now would only mean asserting
-# escape codes in the suite and revising them later.
+# question and gets a separate pass (plan.md §9b.2) — freezing one now would only
+# mean asserting escape codes in the suite and revising them later. Whoever adds
+# it should read §9b.2 first: the suite compares WHOLE FRAMES, and colour put in
+# naively turns every one of those assertions into an escape-code diff.
 #
 # ── WIDTH ────────────────────────────────────────────────────────────────────
 # Every line is truncated to the terminal's width, and every line is cleaned of

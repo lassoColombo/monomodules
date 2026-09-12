@@ -12,6 +12,10 @@ Status markers used throughout:
 - **LOCKED** — decided. Do not reopen without new evidence.
 - **PROPOSED** — recommended from measured data, awaiting explicit sign-off.
 - **OPEN** — genuinely undecided.
+- **REVISED** — was right about the problem, wrong about the answer. The row says
+  which half survived.
+- **SUPERSEDED** — overtaken by a later decision, which the row names. Kept
+  because a decision that quietly disappears gets made again.
 
 ---
 
@@ -657,16 +661,16 @@ committed. Each surface is wrapped alone, so one failing cannot stop the next.
 | D6 | No animations — static glyphs, coloured by state | **LOCKED** | user decision; also removes the only 1Hz process (~15ms/s forever) |
 | D7 | No surface/render cache, no `surfaces/` namespace | **LOCKED** | saves ~2.4ms in a rare case; costs a namespace, a staleness class, and a concurrency race |
 | D8 | One store namespace: `agents/`, one file per agent, temp+rename | **LOCKED** | inherited from v1, measured cheap (0.26ms put) |
-| D9 | In-process dispatch — no poke, no `render.sh`, no second process | PROPOSED | removes a whole nu spawn + parse: 34.6ms/event measured |
-| D10 | No daemon | PROPOSED | at ~1 event/s, saving the 12.9ms floor cannot justify the lifecycle risk |
+| D9 | In-process dispatch — no poke, no `render.sh`, no second process | **LOCKED** | step 3 — built and running: `core/dispatch.nu` fans out inside the agent's own process. It removed a whole nu spawn + parse (34.6ms/event measured) and two glue scripts with it |
+| D10 | No daemon | **LOCKED** | held all the way through: at ~1 event/s, saving the 12.9ms floor never justified the lifecycle risk, and the one periodic job that IS needed is a launchd `StartInterval` (D39), not a process we keep alive |
 | D11 | Identity = the agent's session id, opaque and caller-supplied | **LOCKED** | the only way zellij can genuinely be opt-in; opaque because of P5 |
 | D11b | Agent-agnostic: any agent may call the entry points; Claude is one client among N | **LOCKED** | P5 |
 | D11c | Open schema — small core + one namespace per owner | **LOCKED** | a closed schema would make core depend on every integration |
 | D11d | Closed, core-owned state vocabulary | **LOCKED** | surfaces cannot render a state they have never heard of |
 | D11e | Injective id → filename encoding (percent-encode outside `[A-Za-z0-9._-]`) | **LOCKED** | opaque ids may contain anything; v1's mapping collides |
-| D12 | Facts not decisions: `name` + `name_auto`, precedence in the view | PROPOSED | removes v1's base-name ladder and `pane_locked` |
-| D13 | Lazy zellij reads: skip renames via `title_written`; read tab context only when a tab write is pending, throttled by `context_read_at` | PROPOSED | 11ms is the most expensive call in the system |
-| D14 | Store the message as written; derive the flattened form at paint time | PROPOSED | depends on D15 |
+| D12 | Facts not decisions: the store holds `name` or nothing | **REVISED** (step 4) | right about the problem, wrong about the answer. `name_auto` was never built and is not wanted: a name the agent did not choose is not a fact, so the store holds one field and each surface computes its own fallback at paint time (`name` → `cwd` basename → id prefix). v1's base-name ladder and `pane_locked` are gone either way |
+| D13 | Lazy zellij reads via `title_written` and `context_read_at` | **SUPERSEDED** by D23/D40 | never built, and it turned out not to be needed. The projection gate skips the write when nothing moved, and dispatch's per-key diff skips the ones that did not — with no extra fields, no throttle and no staleness to reason about. `observe` covers the tab read (D43). Two state fields avoided, not optimised |
+| D14 | Store the message as written; derive the flattened form at paint time | **LOCKED** | step 5b — built: `integrations/sketchybar/text.nu` flattens at paint, the store keeps the markdown. It is what let the picker later take a different view of the same field, and then stop needing it at all (D57) |
 | D18 | One client MODULE per agent, not a declarative mapping table | **LOCKED** | §4.6 — transport, reply contract and identity all vary; a map would become a worse nushell |
 | D19 | Clients are discovered by the agent's own config naming the file; no registry | **LOCKED** | adding an agent is one new file |
 | D20 | Wiring is printed, never applied | **LOCKED** | four foreign configs in three formats |
@@ -707,8 +711,8 @@ committed. Each surface is wrapped alone, so one failing cannot stop the next.
 | D55 | The picker is `picker/`, its command is `cli/browse.nu`, and each integration answers a four-question LOCATOR contract | **LOCKED** | step 6b — three things vary per multiplexer (where an agent lives, what is on its screen, how to go there) and nothing else does. tmux is one `locate.nu` and one row in `picker/locators.nu` |
 | D56 | Which locator answers is decided by the RECORD, not by the config file | **LOCKED** | step 6b — `surfaces:` says what the store is PUSHED to and nothing else (D47), so switching the zellij surface off must not stop the picker previewing a zellij pane. It also makes a MIXED fleet work with nothing configured |
 | D57 | The preview is the agent's LIVE SCREEN; the filter matches only what the row SHOWS | **LOCKED** | step 6b — `dump-screen` is truer than anything we could store and deletes markdown rendering outright. And a message is kilobytes of prose: folding it into the filter made a two-letter query match an agent for an invisible reason, at character 4195 of something it said an hour ago |
-| D15 | Replace pandoc with a nu-native flattener | **OPEN** | 25.1ms on the event path, and a dependency |
-| D16 | Where the bench harness lives | **OPEN** | ~350 lines of documented nu; §8 |
+| D15 | Replace pandoc with a nu-native flattener | **LOCKED** (step 5b) | done: `integrations/sketchybar/text.nu` does it in nushell. 25.1ms off the event path and a dependency gone. v1 could afford pandoc because it converted where the preview was STORED, on a path already spawning processes; v2's whole paint is 6.5ms |
+| D16 | Where the bench harness lives | **OPEN** | the only open row left. ~350 lines of documented nu; §8, and §9b.3 |
 | D17 | Promoted to `monomodules/agent-notify`, a module beside `ai` and the rest | **LOCKED** (2026-09-12) | step 7 — it was never `ai`-shaped: reflecting agent state on a status bar is not provider-agnostic content generation, and being a submodule is what made every hook parse the whole `ai` tree. The directory, the command, the store at `~/.local/share/agent-notify/` and the bar prefix `an_` all carry the one name |
 
 ---
@@ -1114,6 +1118,101 @@ the bar.
 > agent reporting itself just calls the command; there is nothing to enable. So
 > the client can land before config, and config can wait until a surface makes it
 > concrete.
+
+---
+
+## 9b. Deferred — what is not built, and what each one waits on
+
+Every step in §9 is done. These are not unfinished steps; they are work set aside
+on purpose, each for a reason that has not changed. Written down because the
+alternative is rediscovering them — and because the first and the third are
+blocked on a DECISION rather than on effort, which is a different kind of waiting
+and needs saying out loud. The fourth is not work at all: it is a behaviour that
+looks like a bug and is not, recorded so it does not get filed as one.
+
+### 9b.1 A click on a bar row should jump
+
+**What it is.** v1 did this and this does not: clicking an agent in a drawer
+takes you to its pane. It is the only thing v1 did that is still missing.
+
+**Almost all of it exists.** The rows are already items
+(`an_<state>.row.<i>`), the jump is already a command, and D44 already settled
+how a bar item answers without spawning anything of ours: bake the answer in at
+PAINT TIME, as a shell command line, because the paint already knows which agent
+is in which row. So the click script is one generated line per row with the
+agent's id in it — no lookup, no nushell, no second process. v1 proved the
+mechanism with `jump.sh`; what it did not have was D44.
+
+**What blocks it is the RAISE, and only the raise.** A bar click arrives from a
+desktop, not from a terminal, so before focusing a pane you have to bring the
+terminal's WINDOW to the front — and that is a window manager's job. The picker
+never needed this, which is exactly why the picker shipped first: it runs inside
+the terminal, where the window is already in front.
+
+D50 says this module names no window manager and assumes no operating system.
+v1 broke both — it called aerospace, fell back to `open -a Ghostty`, and read
+the attached session out of the WINDOW TITLE. So the click waits for an answer
+that keeps D50 true. Three shapes, none chosen:
+
+| | |
+|---|---|
+| a setting | `sketchybar.commands.raise: [<program>, <args>…]` — user-supplied argv, run before the jump. Names no program, assumes no OS, and is empty by default. Sketched during step 6, not built |
+| nothing | focus the pane and let the user bring the window up themselves. The jump is still correct; it just is not complete |
+| the terminal's own | many terminals can raise themselves from a CLI or a URL scheme. Correct per terminal, which makes it the same problem one level down |
+
+The first is the only one that has survived a reading so far, and the user has
+deferred the question twice. It should be taken on its own, not folded into
+another step.
+
+### 9b.2 A palette for the picker
+
+**What it is.** The picker is deliberately plain: no colour, no glyphs, a `>`
+for the selection, one `─` for a rule. Everything else in this module is
+coloured — the bar has a Rosé Pine palette in the config file, the pane titles
+carry the three glyphs — and the picker will want the same vocabulary.
+
+**Why it was left.** Freezing a palette while the layout was still moving would
+have meant asserting escape codes in the suite and revising them a day later.
+Plain first, colour once the shape is settled — which it now is.
+
+**Two things it has to decide, and one it has to not break.**
+
+- **ANSI names, or hex?** The old picker used ANSI NAMES on purpose: the bar sits
+  on a desktop and picks its own colours, but a terminal has a theme and the
+  surface inside it should obey. That reasoning survives even though the code
+  that held it does not.
+- **Where does it come from?** Not the config file. The picker reads no settings
+  and that is a constraint, not an omission (D48, D54) — so the palette is a
+  constant in `frame.nu` or it is nothing.
+- **THE SUITE ASSERTS WHOLE FRAMES, line for line** (D34). Colour introduced
+  naively turns every one of those assertions into an escape-code diff, which is
+  how a readable suite becomes an unreadable one. The precedent is the old
+  `tests/browse.nu`, which stripped colour before comparing — `$s | ansi strip`
+  — on the grounds that colours are real but are the one thing a test should not
+  freeze, since they follow the terminal's theme. That is three lines and it
+  keeps §9b.2 from costing the thing that made the picker testable.
+
+### 9b.3 D16 — where the bench harness lives
+
+Still genuinely open, and the only OPEN row left. ~350 lines under `bench/`, not
+part of the module — nothing in `mod.nu` imports it, so `use agent-notify` never
+parses a byte. §8 promises every step re-measures, which is why it is in the repo
+rather than in a scratch directory. The question is only whether that is where it
+stays now that the steps are done.
+
+### 9b.4 Known and accepted: a resumed session starts nameless
+
+Not deferred work — a behaviour, written down so it is not filed as a bug.
+
+`SessionEnd` drops the record, and a resumed session gets a NEW id from Claude
+Code, so it starts with no name. `CLAUDE.md` tells an agent to name itself "once,
+at session start", which a resumed agent may reasonably read as already done.
+
+It is covered rather than broken: the label falls back to the working directory's
+last component, which is usually the right answer anyway. Carrying a name across
+a resume would mean matching on (cwd + pane) — a heuristic, and D12's whole point
+is that the store holds facts rather than guesses. So the fix, if it is ever
+wanted, belongs in `CLAUDE.md`'s wording and not in this module.
 
 ---
 
