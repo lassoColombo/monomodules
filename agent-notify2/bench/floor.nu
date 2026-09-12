@@ -12,19 +12,22 @@
 use harness.nu *
 
 const REPO = path self ../..
-const SKIM = ($nu.home-dir | path join ".cargo" "bin" "nu_plugin_skim")
 
-# The `use` ladder, cheapest first — a leaf file, a selective import from the big
-# module, the module, the whole `ai` tree (what every v1 hook pays today).
+# The `use` ladder, cheapest first: a leaf, the HOT CONE a hook actually pays,
+# and the whole module a human pays at a prompt.
+#
+# It used to climb the old module's tree, up to `use ai` — the whole provider
+# tree that every v1 hook parsed, which is the measurement that started this
+# rewrite. That module is gone, so the ladder now measures the thing it argued
+# for: the gap between the top two rows is what the hot/cold split is worth, and
+# §4.4 is the rule that keeps it there.
 const LADDER = [
-    [label                          code];
-    ["(nothing)"                    ""]
-    ["leaf lib/state.nu"            "use ai/agent-notify/lib/state.nu"]
-    ["leaf lib/store.nu"            "use ai/agent-notify/lib/store.nu"]
-    ["leaf lib/view.nu"             "use ai/agent-notify/lib/view.nu"]
-    ["agent-notify list (selective)" "use ai/agent-notify list"]
-    ["agent-notify (whole)"         "use ai/agent-notify"]
-    ["ai (v1 hook)"                 "use ai"]
+    [label                           code];
+    ["(nothing)"                     ""]
+    ["leaf core/paths.nu"            "use agent-notify2/core/paths.nu"]
+    ["leaf core/store.nu"            "use agent-notify2/core/store.nu"]
+    ["the HOT cone (what a hook pays)" "use agent-notify2/clients/claude.nu"]
+    ["the whole module (what a human pays)" "use agent-notify2"]
 ]
 
 def nu-args [code: string] { [$NU "-n" "--no-std-lib" "-I" $REPO "-c" $code] }
@@ -38,7 +41,6 @@ export def main [] {
         (wall "nu -n --no-std-lib -c ''" [$NU "-n" "--no-std-lib" "-c" ""])
         (wall "nu -n -c ''            (std lib on)" [$NU "-n" "-c" ""])
         (wall "nu -c ''               (+ user config)" [$NU "-c" ""])
-        (wall "nu -n --no-std-lib --plugins skim -c ''" [$NU "-n" "--no-std-lib" "--plugins" $SKIM "-c" ""])
     ] | fmt | table)
 
     print ""
@@ -55,8 +57,8 @@ export def main [] {
         (cpu "/usr/bin/true" ["/usr/bin/true"])
         (cpu "/bin/bash -c ''" ["/bin/bash" "-c" ""])
         (cpu "nu -c '' (no std lib)" (nu-args ""))
-        (cpu "nu -c 'use leaf store.nu'" (nu-args "use ai/agent-notify/lib/store.nu"))
-        (cpu "nu -c 'use ai'" (nu-args "use ai"))
-        (cpu "nu -n -c 'use ai'   (v1 hook, std lib on)" [$NU "-n" "-I" $REPO "-c" "use ai"])
+        (cpu "nu -c 'use core/store.nu'" (nu-args "use agent-notify2/core/store.nu"))
+        (cpu "nu -c 'use clients/claude.nu'  (the hook)" (nu-args "use agent-notify2/clients/claude.nu"))
+        (cpu "nu -c 'use agent-notify2'      (the CLI)" (nu-args "use agent-notify2"))
     ] | fmt-cpu | table)
 }

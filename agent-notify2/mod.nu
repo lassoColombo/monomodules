@@ -15,12 +15,14 @@
 # Claude and Codex clients, liveness by process, the config file, dispatch,
 # zellij pane and tab titles, the SketchyBar counters with their drawers and
 # hover previews, the launchd clock, the jump, and the picker. **v1 was dismissed
-# on 2026-09-12** while this was still incomplete, on purpose: `ai/agent-notify/`
-# is untouched on disk and nothing invokes it.
+# on 2026-09-12** while this was still incomplete, on purpose, and DELETED once
+# this was finished: `ai/agent-notify/` is gone, along with its five glue scripts
+# in ~/.config/sketchybar/plugins and the one line in sketchybarrc that still
+# called into them.
 #
 # What v1 did, this does — with no skim, no bat and no pandoc anywhere. Left
-# over: deleting `ai/agent-notify/`, settling D17 (the promoted name), a palette
-# for the picker, and making a click on a bar row jump too.
+# over: settling D17 (the promoted name), a palette for the picker, and making a
+# click on a bar row jump too.
 #
 # Turn the surfaces on with ~/.config/agent-notify/config.yaml. That list is what
 # the store is PUSHED to; a tool's COMMANDS run because you ran them, which is

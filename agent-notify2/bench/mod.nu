@@ -10,14 +10,14 @@
 #   bench parse slope  the ms-per-KB slope; `parse comments`, `parse entry`
 #   bench work         zellij / sketchybar / pandoc costs
 #   bench rate         how often hooks actually fire, from real transcripts
-#   bench v1           v1's end-to-end cost — the baseline to beat
-#   bench v2           v2's end-to-end cost — the number to protect
+#   bench v2           the end-to-end cost per event — the number to protect
 #
-# `store_bench` measures v1's store and retires with v1 at cutover.
+# `v1.nu` and `store_bench.nu` measured the OLD module and retired with it at the
+# cutover, as this file always said they would. The numbers they produced are not
+# lost — they are plan.md §3, which is where a baseline belongs once the thing it
+# measured is gone.
 export use floor.nu
 export use parse.nu
 export use work.nu
 export use rate.nu
-export use v1.nu
 export use v2.nu
-export use store_bench.nu
