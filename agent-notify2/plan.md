@@ -598,14 +598,39 @@ The config file has **the same shape as a store record**: a small core the modul
 owns, one namespace per owner, unknown keys rejected. One idea, two files.
 
 ```yaml
-surfaces: [zellij, sketchybar]     # the opt-in list; its order is dispatch order
+surfaces: [zellij, sketchybar]     # what the store is PUSHED to; order is dispatch order
 zellij:
-  glyphs: {working: 🧠, awaiting: 🔔}
+  binary: zellij                   # shared by both halves
+  surface:                         # PUSH — how it shows the store
+    glyphs: {working: 🧠, awaiting: 🔔}
+  commands: {}                     # PULL — how its commands behave
 ```
 
+**A tool's namespace has two halves** (D47), because a tool can do two unrelated
+things with the store and they are not controlled by the same switch:
+
+| | driven by | examples | turned on by |
+|---|---|---|---|
+| **push** | an event arriving | pane titles, bar counters and drawers | `surfaces:` |
+| **pull** | you running a command | the picker, the jump | nothing — you ran it |
+
+That distinction was implicit and therefore wrong: `surfaces:` reads like "which
+integrations exist", so putting the picker inside zellij's directory would
+suggest that removing `zellij` from the list takes the picker away. It must not —
+removing it means *stop renaming my panes*, and nothing else. Splitting the halves
+**in the file** makes that unambiguous without a paragraph of explanation.
+
+Keys at a tool's own level are shared by both halves, which is what `binary`
+actually is: the same program renames a pane and focuses one.
+
 A namespace for a surface that is merely switched off is fine — disabling should
-not mean deleting your colours. A namespace naming a surface that does not exist
-is an error, because that is a typo.
+not mean deleting your colours, and its commands still work. A namespace naming a
+surface that does not exist is an error, because that is a typo.
+
+`config check` also runs each ENABLED tool's own `settings` over its `surface`
+half, because only the tool knows what a key MEANS — a misspelled colour is
+exactly the failure that command exists to explain, and nesting gives a typo one
+more place to hide.
 
 **Strict where a human is, lenient where a hook is.** `config check` is exact and
 loud; `load` never throws. A YAML typo must not be able to stop the store
@@ -668,6 +693,8 @@ committed. Each surface is wrapped alone, so one failing cannot stop the next.
 | D44 | A hover's answer is BAKED into the item at paint time, as a shell command | **LOCKED** | step 5b — the paint already knows the text; the alternative is a second nu per hover, which is the thing v2 deleted |
 | D45 | A preview's text is made single-quote-safe (`'` → `’`) rather than shell-escaped | **LOCKED** | step 5b — probed: inside single quotes `$HOME` and backticks are already literal, so one substitution is the whole of the escaping |
 | D46 | The bar's slots are keys in the projection, one per row | **LOCKED** | step 5b — D40 then does the per-slot diffing for free; v1 needed a disk cache and ~60 lines of its own |
+| D47 | A tool's config has two halves, `surface` (push) and `commands` (pull) | **LOCKED** | §4.7 — `surfaces:` must not read as "which integrations exist"; splitting it in the FILE is what stops removing a surface from taking its picker away |
+| D48 | The picker has NO configurable engine — skim is a dependency | **LOCKED** | step 6 — the same call `telescope` made in `f90d448`; a swappable picker was a hook nobody but us used |
 | D15 | Replace pandoc with a nu-native flattener | **OPEN** | 25.1ms on the event path, and a dependency |
 | D16 | Where the bench harness lives | **OPEN** | ~350 lines of documented nu; §8 |
 | D17 | Final promoted name/location (top-level `agent-notify`?) | **OPEN** | v1 is `ai/agent-notify`; v2 is top-level |

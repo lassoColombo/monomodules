@@ -21,9 +21,16 @@
 # What is missing is step 6 — the picker and the jump — so Alt-a still opens v1's,
 # over a store that no longer updates.
 #
-# Turn the surfaces on with ~/.config/agent-notify/config.yaml:
+# Turn the surfaces on with ~/.config/agent-notify/config.yaml. That list is what
+# the store is PUSHED to; a tool's COMMANDS run because you ran them, which is
+# why each tool's settings have two halves (plan.md D47):
 #
 #   surfaces: [zellij, sketchybar]
+#
+#   zellij:
+#     binary: zellij         # shared
+#     surface: {glyphs: …}   # push — how it shows the store
+#     commands: {}           # pull — how its commands behave
 #
 #   agent-notify2 store get|list|patch|set|drop     the store itself
 #   agent-notify2 store prune                      forget agents that are provably gone

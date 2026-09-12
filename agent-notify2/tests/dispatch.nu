@@ -45,13 +45,13 @@ export def main [] {
     # ── A. the config file ───────────────────────────────────────────────────
     let a = [
         (check "with no file at all, nothing is on" (config enabled) [])
-        (check "…and that is not a problem" (config problems ["fake"]) [])
+        (check "…and that is not a problem" (config problems (surfaces)) [])
         (check "the path is the one we were told to use" (config file) $CFG)
     ]
 
     write-config {surfaces: ["fake"], fake: {log: $LOG}}
     let a2 = [
-        (check "a good file is silent" (config problems ["fake" "boom"]) [])
+        (check "a good file is silent" (config problems (surfaces)) [])
         (check "…and says what is on" (config enabled) ["fake"])
         (check "config show reports where it read from"
                (agent-notify2 config show | get path) $CFG)
@@ -60,24 +60,71 @@ export def main [] {
     write-config {surfaces: ["zellij"], fake: {log: $LOG}}
     let a3 = [
         (check "a surface that does not exist is a typo, and is named"
-               (config problems ["fake"] | length) 1)
+               (config problems (surfaces) | length) 1)
         (check "…and the message says which one"
-               (config problems ["fake"] | first | str contains "'zellij'") true)
+               (config problems (surfaces) | first | str contains "'zellij'") true)
     ]
     write-config {surfaces: ["fake"], colours: {working: "blue"}, fake: {log: $LOG}}
     let a4 = [
         (check "a top-level key that owns nothing is rejected"
-               (config problems ["fake"] | first | str contains "'colours'") true)
+               (config problems (surfaces) | first | str contains "'colours'") true)
     ]
     write-config {surfaces: "fake", fake: {log: $LOG}}
     let a5 = [
         (check "`surfaces` must be a list"
-               (config problems ["fake"] | first | str contains "must be a list") true)
+               (config problems (surfaces) | first | str contains "must be a list") true)
     ]
     write-config {surfaces: ["fake"], fake: "nope"}
     let a6 = [
         (check "a surface's settings must be a map"
-               (config problems ["fake"] | first | str contains "must be a map") true)
+               (config problems (surfaces) | first | str contains "must be a map") true)
+    ]
+
+    # ── the two halves ───────────────────────────────────────────────────────
+    # One tool, two unrelated jobs. What it SHOWS is pushed to it as events
+    # arrive; what its COMMANDS do happens because you ran one. `surfaces:`
+    # controls the first and says nothing about the second.
+    let split = {surfaces: ["fake"]
+                 fake: {log: $LOG, surface: {glyphs: {working: "X"}}, commands: {query: "me"}}}
+    write-config $split
+    let a7 = [
+        (check "a half is given what it owns, on top of what the tool shares"
+               (config section $split "fake" "surface") {log: $LOG, glyphs: {working: "X"}})
+        (check "…and the other half sees its own keys, never the first's"
+               (config section $split "fake" "commands") {log: $LOG, query: "me"})
+        (check "a tool with nothing configured is not an error"
+               (config section {} "fake" "surface") {})
+        (check "…nor is a half it has nothing to say about"
+               (config section {fake: {log: $LOG}} "fake" "commands") {log: $LOG})
+        # The whole reason the halves are split: a picker must not disappear
+        # because you stopped wanting your panes renamed.
+        (check "a tool that is NOT pushed to still has its commands configured"
+               (config section {fake: {commands: {query: "me"}}} "fake" "commands") {query: "me"})
+        (check "a namespace that is not a map reads as nothing, rather than throwing"
+               (config section {fake: "nope"} "fake" "surface") {})
+        (check "a file using both halves is silent" (config problems (surfaces)) [])
+    ]
+
+    write-config {surfaces: ["fake"], fake: {log: $LOG, surface: "nope"}}
+    let a8 = [
+        (check "a half that is not a map is named, half and all"
+               (config problems (surfaces) | first | str contains "'fake.surface'") true)
+    ]
+
+    # Only the TOOL knows what a key means, so the last check is its own
+    # `settings` — which is what turns a typo into a sentence.
+    write-config {surfaces: ["fake"], fake: {surface: {}}}
+    let a9 = [
+        (check "a setting the tool rejects is reported in the tool's own words"
+               (config problems (surfaces) | first | str contains "`log` is required") true)
+        (check "…and says which tool and which half"
+               (config problems (surfaces) | first | str starts-with "fake.surface:") true)
+    ]
+
+    write-config {surfaces: [], fake: {surface: {}}}
+    let a10 = [
+        (check "settings for a tool that is switched off are not a problem"
+               (config problems (surfaces)) [])
     ]
 
     # ── B. the diff, which is the whole idea ─────────────────────────────────
@@ -171,7 +218,22 @@ export def main [] {
                (event apply {op: "drop", id: "d1"} | get changed) false)
     ]
 
-    let all = ($a ++ $a2 ++ $a3 ++ $a4 ++ $a5 ++ $a6 ++ $b ++ $b_gate ++ $b_key
-               ++ $b_gone ++ $b_force ++ $c ++ $c_iso ++ $c_settings ++ $c_nofile ++ $d)
+    # ── E. the halves reach the right place ──────────────────────────────────
+    # The nesting is not decoration. What is under `surface:` has to arrive in
+    # the surface's own `settings`, and what is under `commands:` must not.
+    write-config {surfaces: ["fake"], fake: {log: $LOG, surface: {glyphs: {working: "X"}}}}
+    dispatch project [] [$one] --table (surfaces) --force | ignore
+    let e1 = last-line
+    write-config {surfaces: ["fake"], fake: {log: $LOG, commands: {glyphs: {working: "!"}}}}
+    dispatch project [] [$one] --table (surfaces) --force | ignore
+    let e = [
+        (check "a setting under `surface` reaches the surface" $e1 "Xa1")
+        (check "…and one under `commands` does not — the surface keeps its default"
+               (last-line) "Wa1")
+    ]
+
+    let all = ($a ++ $a2 ++ $a3 ++ $a4 ++ $a5 ++ $a6 ++ $a7 ++ $a8 ++ $a9 ++ $a10
+               ++ $b ++ $b_gate ++ $b_key ++ $b_gone ++ $b_force
+               ++ $c ++ $c_iso ++ $c_settings ++ $c_nofile ++ $d ++ $e)
     summarise $all --title "config + dispatch"
 }

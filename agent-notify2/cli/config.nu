@@ -17,7 +17,8 @@ use ../core/dispatch.nu
 export def "config path" []: nothing -> string { config file }
 
 # The resolved settings and where they came from. `surfaces` is pulled out because
-# it is the one question that gets asked: what is actually turned on?
+# it is the one question that gets asked: what is actually PUSHED to — which is
+# all that list controls. A tool's commands run whether or not it is named there.
 @search-terms agent notify config show settings resolved
 @example "what is configured?" { agent-notify2 config show }
 export def "config show" []: nothing -> record {
@@ -39,7 +40,7 @@ export def "config show" []: nothing -> record {
 @example "is my config sane?" { agent-notify2 config check }
 export def "config check" [] {
     let f = config file
-    let found = config problems (dispatch known)
+    let found = config problems (dispatch shipped)
 
     if ($found | is-empty) {
         if ($f | path exists) {

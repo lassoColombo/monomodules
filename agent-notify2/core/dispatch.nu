@@ -108,7 +108,10 @@ export def project [
     $on | each {|name|
         let s = $surfaces | get $name
         try {
-            let settings = do $s.settings ($cfg | get -o $name | default {})
+            # The SURFACE half of this tool's namespace, plus whatever it shares
+            # with its command half. A tool's commands are not dispatched to and
+            # are not configured from here — see core/config.nu.
+            let settings = do $s.settings (config section $cfg $name "surface")
 
             # What this process can see about itself that the store does not know
             # yet — which pane it is in, say. Recorded in the surface's own
