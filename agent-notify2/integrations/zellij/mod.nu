@@ -43,9 +43,9 @@
 # The price is that a tab renamed LATER is overwritten on the next state change,
 # the same bargain already struck for pane names: the store owns the name.
 
-use ../core/schema.nu
+use ../../core/schema.nu
 
-export const INFO = {name: "zellij", title: "zellij pane titles"}
+export const INFO = {name: "zellij", title: "zellij pane and tab titles"}
 
 # Nerd Font (Font Awesome BMP), chosen so the states are told apart by SHAPE: a
 # zellij title carries no colour, so the shape has to do the whole job.

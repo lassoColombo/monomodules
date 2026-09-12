@@ -6,7 +6,7 @@ use ../core/config.nu
 use ../core/dispatch.nu
 use ../core/janitor.nu
 use ../core/store.nu
-use ../surfaces/sketchybar
+use ../integrations/sketchybar
 
 @search-terms agent notify surfaces integrations zellij sketchybar list enabled
 @example "what can show the store?" { agent-notify2 surfaces }

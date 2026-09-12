@@ -7,7 +7,7 @@
 # cannot be tested without a live session to rename.
 
 use ../../agent-notify2
-use ../surfaces/zellij.nu
+use ../integrations/zellij
 use ../core/dispatch.nu
 use assert.nu *
 

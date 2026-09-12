@@ -10,8 +10,8 @@
 # hover runs a command we generated, and a single stray quote in an agent's
 # message would break it.
 
-use ../surfaces/sketchybar
-use ../surfaces/sketchybar/text.nu
+use ../integrations/sketchybar
+use ../integrations/sketchybar/text.nu
 use ../core/dispatch.nu
 use assert.nu *
 

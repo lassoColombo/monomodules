@@ -671,7 +671,7 @@ committed. Each surface is wrapped alone, so one failing cannot stop the next.
 | D22 | Fix an agent's transport before inferring states it does not report | **LOCKED** | §4.6 — the store must not hold a confident fact nothing supports |
 | D23 | The projection gate: compare `project(before)` with `project(after)` | **LOCKED** | §4.7 — replaces v1's bash gate, trigger dedup and janitor with one comparison, and no state |
 | D24 | Strict config validation in the CLI, never in the hook | **LOCKED** | §4.7 — a YAML typo must not be able to stop the store recording facts |
-| D25 | The readers are `surfaces/`, the writers are `clients/` | **LOCKED** | "integration" covers both halves; these two words do not |
+| D25 | The readers are `surfaces/`, the writers are `clients/` | **REVISED** (step 6) | half right. The writers are still `clients/`; the readers went back to `integrations/`, because an integration has two halves and only one of them is a surface — see D47 |
 | D26 | Surfaces reach dispatch as a hand-written table of closures | **LOCKED** | `use` is parse-time; it is also what makes them testable with nothing installed |
 | D27 | A surface reports what it learned; dispatch writes it | **LOCKED** | §4.7 — one writer, and it keeps surfaces out of the store's import cone |
 | D28 | A pane's name comes from the store, never from parsing its old title | **LOCKED** | user decision; deletes ~60 lines of v1 and one zellij call per event. A manual rename is overwritten |
@@ -695,6 +695,7 @@ committed. Each surface is wrapped alone, so one failing cannot stop the next.
 | D46 | The bar's slots are keys in the projection, one per row | **LOCKED** | step 5b — D40 then does the per-slot diffing for free; v1 needed a disk cache and ~60 lines of its own |
 | D47 | A tool's config has two halves, `surface` (push) and `commands` (pull) | **LOCKED** | §4.7 — `surfaces:` must not read as "which integrations exist"; splitting it in the FILE is what stops removing a surface from taking its picker away |
 | D48 | The picker has NO configurable engine — skim is a dependency | **LOCKED** | step 6 — the same call `telescope` made in `f90d448`; a swappable picker was a hook nobody but us used |
+| D49 | `surfaces/` → `integrations/`, one directory per tool, one file per half | **LOCKED** | step 6 — the halves must be separate FILES: the push half is in every hook's import cone and the pull half must never be |
 | D15 | Replace pandoc with a nu-native flattener | **OPEN** | 25.1ms on the event path, and a dependency |
 | D16 | Where the bench harness lives | **OPEN** | ~350 lines of documented nu; §8 |
 | D17 | Final promoted name/location (top-level `agent-notify`?) | **OPEN** | v1 is `ai/agent-notify`; v2 is top-level |
@@ -862,12 +863,12 @@ its own bar item names so both can be live at once.
    parse-time `use` leaves no way around; two realistic surface modules (18KB,
    this repo's comment-heavy style) were measured separately at 2.07ms, so the
    budget holds through step 5. The hook is 25ms.
-   `surfaces/` ships EMPTY on purpose: the contract is exercised by `tests/fake.nu`,
+   `integrations/` ships EMPTY on purpose: the contract is exercised by `tests/fake.nu`,
    a complete surface that writes a line to a file and therefore needs nothing
    installed — the same move that proved the client contract on Codex. One
    consequence for the core: `drop` now reads the record before removing it, because
    a surface cannot say whether its output changed about an agent it never saw.
-4. **zellij integration** — ✅ done, panes only. `surfaces/zellij.nu`: glyph plus
+4. **zellij integration** — ✅ done, panes only. `integrations/zellij/mod.nu`: glyph plus
    name, one call to zellij per state change and **none at all** when nothing
    visible changed. Two of v1's three calls per event are gone, for two separate
    reasons: the pane is known from the environment (dispatch runs inside the
@@ -927,7 +928,7 @@ its own bar item names so both can be live at once.
    Costs: `SessionStart` 27ms → 38.6ms for the one-time walk, every other event
    unchanged, `proc.nu` free to parse, `prune` 13ms of `ps` on a cold path.
 5. **SketchyBar integration** — ✅ done, the three counters.
-   `surfaces/sketchybar.nu`, 233/233 across seven suites, +0.82ms of parse (the
+   `integrations/sketchybar/`, 233/233 across seven suites, +0.82ms of parse (the
    whole surface machinery is now +4.69ms).
    Measured first, because the numbers chose the design: `--query bar` 5.98ms,
    `--set` one property 6.59ms, **`--set` TEN properties in one message 6.54ms**,
@@ -944,7 +945,7 @@ its own bar item names so both can be live at once.
    rename and a directory change all project identically and never reach the bar.
    `~/.config/sketchybar` keeps ONE line, which creates the pool and then paints
    it from the store.
-5b. **Bar drawers and the hover preview** — ✅ done. `surfaces/sketchybar/`
+5b. **Bar drawers and the hover preview** — ✅ done. `integrations/sketchybar/`
    (`mod.nu` the contract, `items.nu` the names and the generated shell, `text.nu`
    markdown → labels), 91 assertions in its suite, 319/319 overall.
    **The projection grew from three numbers to one key per SLOT** — `count|working`,

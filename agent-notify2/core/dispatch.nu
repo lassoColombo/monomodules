@@ -38,8 +38,8 @@
 use config.nu
 use store.nu
 use identity.nu
-use ../surfaces/zellij.nu
-use ../surfaces/sketchybar
+use ../integrations/zellij
+use ../integrations/sketchybar
 
 # ── the shipped surfaces ─────────────────────────────────────────────────────
 # One entry per surface, written by hand because nushell has no first-class
