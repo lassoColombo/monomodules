@@ -18,21 +18,21 @@ export def main [
     return
   }
   if ($file | is-not-empty) {
-    ^nvim ($file | path expand)
-    zellij rename-pane $"nvim ($file)"
+    ^$env.editor ($file | path expand)
+    zellij rename-pane $"($env.editor) ($file)"
     return
   }
   if $tab {
-    zellij tab nvim "nvim tab in"
+    zellij tab nvim $"($env.editor) tab in"
     return
   }
   if $fuzzy {
-    let dir = (pick "nvim in")
+    let dir = (pick $"($env.editor) in")
     if ($dir == null) { return }
-    commandline edit --replace $"cd ($dir); nvim ."
+    commandline edit --replace $"cd ($dir); ($env.editor) ."
     zellij rename-pane ($dir | path basename)
     return
   }
   zellij rename-pane (pwd | path basename)
-  ^nvim .
+  ^$env.editor .
 }
