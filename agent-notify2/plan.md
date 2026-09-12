@@ -665,6 +665,9 @@ committed. Each surface is wrapped alone, so one failing cannot stop the next.
 | D41 | Dispatch takes two store SNAPSHOTS, not a delta | **LOCKED** | §4.7 — one spelling for "a moment ago", whether a hook or the clock is calling |
 | D42 | `observe` reports the environment; it is not smuggled through `settings` or `apply` | **LOCKED** | §4.7 — it is what lets `project` be a plain function of records |
 | D43 | A tab's name is learned ONCE, in the read we already need for its id | **LOCKED** | step 4b — a third subprocess per state change to respect later renames was not worth it |
+| D44 | A hover's answer is BAKED into the item at paint time, as a shell command | **LOCKED** | step 5b — the paint already knows the text; the alternative is a second nu per hover, which is the thing v2 deleted |
+| D45 | A preview's text is made single-quote-safe (`'` → `’`) rather than shell-escaped | **LOCKED** | step 5b — probed: inside single quotes `$HOME` and backticks are already literal, so one substitution is the whole of the escaping |
+| D46 | The bar's slots are keys in the projection, one per row | **LOCKED** | step 5b — D40 then does the per-slot diffing for free; v1 needed a disk cache and ~60 lines of its own |
 | D15 | Replace pandoc with a nu-native flattener | **OPEN** | 25.1ms on the event path, and a dependency |
 | D16 | Where the bench harness lives | **OPEN** | ~350 lines of documented nu; §8 |
 | D17 | Final promoted name/location (top-level `agent-notify`?) | **OPEN** | v1 is `ai/agent-notify`; v2 is top-level |
@@ -912,16 +915,45 @@ its own bar item names so both can be live at once.
    changed?", which is what the gate answers with nothing stored. The gate bites
    harder here than for zellij: a counter shows only a NUMBER, so a new message, a
    rename and a directory change all project identically and never reach the bar.
-   `~/.config/sketchybar` keeps ONE line, which creates the pool and a hidden 30s
-   item that prunes then repaints — the backstop and the janitor in one.
-5b. **Bar drawers** — deferred to step 6. The rows a counter opens are the same
-   rows the picker lists, so they are built once, on the shared view, and used by
-   both.
-6. **Picker + jump** — ⏳ NEXT, and the one thing the early cutover cost you.
-   Alt-a still opens v1's picker over a store that no longer updates. Needs: the
-   rows (shared with 5b's bar drawers), the jump action (session + pane are in the
-   store already), and the keybinding in `config.kdl` flipped — once, when it
-   works, rather than twice.
+   `~/.config/sketchybar` keeps ONE line, which creates the pool and then paints
+   it from the store.
+5b. **Bar drawers and the hover preview** — ✅ done. `surfaces/sketchybar/`
+   (`mod.nu` the contract, `items.nu` the names and the generated shell, `text.nu`
+   markdown → labels), 91 assertions in its suite, 319/319 overall.
+   **The projection grew from three numbers to one key per SLOT** — `count|working`,
+   `row|working|0` — so D40's diff does all of the paint optimisation: a row that
+   did not move is not written, and a row whose agent is gone arrives in `removed`
+   and is switched off. v1's `render/cache.nu` plus ~60 lines of hand-rolled
+   per-slot comparison are replaced by nothing at all.
+   **Hover was the hard part.** SketchyBar reacts to a mouse in exactly one way:
+   it runs an item's `script`. v1 pointed that at `plugins/hover.sh`, which
+   started a whole nushell to read the store and wrap the text — ~47ms for every
+   row the pointer brushed past, and a file in someone else's config directory.
+   The fix is that **the paint already knows the answer**, so the script IS the
+   answer: a literal `sketchybar --set …` command line written onto the row when
+   the row is drawn. A hover is then one `sh` and one client, ~7ms, reading
+   nothing.
+   Probed on the real daemon before building any of it: a `script` goes through a
+   shell (`$SENDER` expands, quoting is honoured), **inside single quotes `$HOME`
+   and backticks stay literal**, `--update` arrives as `SENDER=forced` (so every
+   generated script guards), and `mouse.exited.global` reaches a `drawing=off`
+   item (so shutting the drawers lives on an item of its own and no paint ever
+   rewrites it).
+   Measured after: install is 74 items in ONE message, 117ms, once per bar load;
+   a one-key paint is 4.9ms and the whole projection 6.5ms.
+   **The gate got weaker, on purpose.** A counter is a number, so a new message
+   used to project identically and never reach the bar. It is now a row's preview,
+   so a `Stop` costs one ~7ms message. `PostToolUse` — the one that fires
+   constantly — still projects identically and still sends nothing.
+   Markdown is stripped in nushell rather than by pandoc: v1 could afford ~30ms
+   because it converted where the preview was STORED, on a path already spawning
+   processes; v2's whole paint is 6.5ms, and the picker still wants the markdown.
+6. **Picker + jump** — ⏳ NEXT, and the one thing the early cutover still costs
+   you. Alt-a still opens v1's picker over a store that no longer updates. Needs:
+   the rows, the jump action (session + pane are in the store already), and the
+   keybinding in `config.kdl` flipped — once, when it works, rather than twice.
+   Clicking a bar row is deliberately inert until then: the jump is the same
+   action from both surfaces and wants deciding once.
 7. **Cutover** — ⏳ **v1 dismissed early, on purpose** (2026-09-12), while
    incomplete. v1's hooks are out of `settings.json`, its bar block is out of
    `sketchybarrc` (one line in its place), `CLAUDE.md`'s session-naming rule calls
@@ -929,7 +961,7 @@ its own bar item names so both can be live at once.
    `~/.config/agent-notify/config.yaml`, and the clock is a launchd job.
    **`ai/agent-notify/` is still on disk and complete** — nothing invokes it, so
    reverting is one settings file away. Knowingly given up until step 6: the
-   picker and jump, and the bar drawers.
+   picker and the jump.
 
    **Running it for real is what found the remaining defects.** Every one of these
    was invisible to 250+ passing tests, because each needed a real machine, a real
@@ -1107,8 +1139,27 @@ Not nushell — the programs underneath. Same rule as §10: cost time once, not 
 - `--add` + `--remove` of a single item is 17.51ms, ~3× a whole repaint. Create the
   item pool ONCE and never touch it again — v1 learned this by pinning the daemon
   near 40% CPU.
-- `--query <item>` returns JSON with `update_freq` under `scripting`, not at the
-  top level.
+- `--query <item>` returns JSON with `script`, `click_script` and `update_freq`
+  under `scripting`, not at the top level.
+- **An item's `script` is run by a SHELL**, so it can be a whole command line
+  rather than a path to one. That is what lets a hover answer without starting a
+  second interpreter (D44).
+- Inside single quotes a script's `$HOME`, backticks and `--flags` are all
+  literal — probed, not assumed. Only `'` can break out (D45).
+- **A `script` also runs on a forced `--update`**, which the bar sends at load,
+  with `SENDER=forced`. Every script needs a `[ "$SENDER" = … ] || exit 0` guard
+  or the bar opens things nobody hovered.
+- `mouse.exited.global` IS delivered to a `drawing=off` item, so a behaviour that
+  never changes can live on an invisible item of its own instead of being
+  rewritten onto a visible one by every paint.
+- `--add` of an item that already exists is a no-op, but `--remove /regex/` is
+  the only way to shrink a pool; the regex needs the literal dot (`/an_x\..*/`)
+  to spare the parent item.
+- A popup is `popup.<parent>` as a position, and `popup.align=left` opens it
+  rightward — `align=right` runs it off the screen edge.
+- 74 items with subscriptions and full styling cost **117ms in one `--add`
+  message**, and a 70-property `--set` costs 18.6ms. Creating the pool once and
+  setting into it forever is worth roughly an order of magnitude.
 
 **launchd**
 

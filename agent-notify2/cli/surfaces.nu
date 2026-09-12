@@ -6,7 +6,7 @@ use ../core/config.nu
 use ../core/dispatch.nu
 use ../core/janitor.nu
 use ../core/store.nu
-use ../surfaces/sketchybar.nu
+use ../surfaces/sketchybar
 
 @search-terms agent notify surfaces integrations zellij sketchybar list enabled
 @example "what can show the store?" { agent-notify2 surfaces }
@@ -42,6 +42,10 @@ export def install [name: string]: nothing -> nothing {
     match $name {
         "sketchybar" => {
             sketchybar install (sketchybar settings ($cfg | get -o sketchybar | default {}))
+            # AND PAINT. The pool arrives blank, and this runs from `sketchybarrc`
+            # — so without a repaint the bar shows three zeros and three empty
+            # drawers until the next agent happens to say something.
+            refresh | ignore
             print $"(ansi green)installed(ansi reset) the SketchyBar counters"
         }
         "zellij" => { print "zellij needs no installation — it renames panes directly." }

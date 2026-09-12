@@ -42,7 +42,7 @@
 # into a module at runtime.
 #
 #   zellij.nu       pane titles — one key per pane, and it has things to undo
-#   sketchybar.nu   three counters — fixed keys, so nothing is ever removed
+#   sketchybar/     counters, their drawers, and each drawer's hover preview
 #
 # `tests/fake.nu` is a complete surface too, and exists so the contract can be
 # exercised with nothing at all installed.

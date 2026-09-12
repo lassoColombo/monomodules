@@ -13,9 +13,10 @@
 #
 # BUILD STATE — everything but the picker (plan.md §9). The store and its command
 # surface, the Claude and Codex clients, liveness by process, the config file,
-# dispatch, zellij pane and tab titles, the SketchyBar counters, and the launchd
-# clock. **v1 was dismissed on 2026-09-12** while this was still incomplete, on
-# purpose: `ai/agent-notify/` is untouched on disk and nothing invokes it.
+# dispatch, zellij pane and tab titles, the SketchyBar counters with their
+# drawers and hover previews, and the launchd clock. **v1 was dismissed on
+# 2026-09-12** while this was still incomplete, on purpose: `ai/agent-notify/` is
+# untouched on disk and nothing invokes it.
 #
 # What is missing is step 6 — the picker and the jump — so Alt-a still opens v1's,
 # over a store that no longer updates.
