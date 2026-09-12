@@ -26,6 +26,6 @@ export def project [records: list<record>, settings: record]: nothing -> list<st
     $records | each {|r| $"(($settings.glyphs | get -o $r.state) | default '?')($r.id)" }
 }
 
-export def apply [desired: list<string>, settings: record]: nothing -> nothing {
+export def apply [desired: list<string>, previous: any, settings: record]: nothing -> nothing {
     $"($desired | str join ' ')\n" | save --append $settings.log
 }

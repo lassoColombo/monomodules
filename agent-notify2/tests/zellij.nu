@@ -106,7 +106,7 @@ export def main [] {
     let spy = {zellij: {info: $zellij.INFO
                         settings: {|given, me| zellij settings $given $me }
                         project: {|recs, st| zellij project $recs $st }
-                        apply: {|desired, st| $"($desired | to json --raw)\n" | save --append ($TMP | path join "painted") }}}
+                        apply: {|desired, prev, st| $"($desired | to json --raw)\n" | save --append ($TMP | path join "painted") }}}
 
     let r1 = agent-notify2 store patch "me-1" {client: "claude", state: "working", name: "monomodules"}
     let d1 = dispatch project $r1.before $r1.after --table $spy
@@ -126,14 +126,14 @@ export def main [] {
     # An empty list of panes, so nothing is renamed and no subprocess runs. A
     # surface never writes the store — it REPORTS, and dispatch records it, which
     # is also what keeps this file out of the store's import cone (§10).
-    let learned = zellij apply [] $s
+    let learned = zellij apply [] null $s
 
     # …and dispatch is what writes it down. A recorder: the real surface, with
     # `apply` handed an empty list so it reports without painting anything.
     let recorder = {zellij: {info: $zellij.INFO
                              settings: {|given, me| zellij settings $given $me }
                              project: {|recs, st| zellij project $recs $st }
-                             apply: {|desired, st| zellij apply [] $st }}}
+                             apply: {|desired, prev, st| zellij apply [] null $st }}}
     let r4 = agent-notify2 store patch "me-1" {state: "needs-attention"}
     dispatch project $r4.before $r4.after --table $recorder | ignore
     let stored = agent-notify2 store get "me-1"
@@ -146,7 +146,7 @@ export def main [] {
                (zellij project [$stored] {glyphs: $s.glyphs, me: {id: "", session: "", pane_id: ""}}
                 | first | get pane_id) "3")
         (check "an agent in no pane has nothing to report"
-               (zellij apply [] {glyphs: $s.glyphs, me: {id: "x", session: "", pane_id: ""}}) null)
+               (zellij apply [] null {glyphs: $s.glyphs, me: {id: "x", session: "", pane_id: ""}}) null)
     ]
 
     # ── a forced repaint, from inside the agent's own pane ───────────────────
@@ -169,14 +169,59 @@ export def main [] {
     # agent updated the store and never appeared on any surface at all. The proof
     # is indirect and exact: the zellij namespace only lands on a record if
     # dispatch ran and recorded what the surface reported back.
-    agent-notify2 store patch "cli-1" {client: "other", state: "working", name: "from-the-cli"} | ignore
+    # Forget where we are. This write cannot change what zellij shows — the pane
+    # comes from the environment for our own record either way — so the gate skips
+    # it and nothing puts the fact back.
+    agent-notify2 store patch "me-1" {zellij: null} | ignore
+    let forgotten = agent-notify2 store get "me-1" | get -o zellij
+
+    # A write about a DIFFERENT agent, with a pane of its own, so the picture
+    # genuinely changes. If the CLI reached the seam, the surface ran; if the
+    # surface ran, it reported where WE are and dispatch wrote it down.
+    agent-notify2 store patch "cli-1" {
+        client: "other", state: "working", name: "from-the-cli"
+        zellij: {session: "agent-notify2-tests-no-such-session", pane_id: "42"}
+    } | ignore
     let g = [
-        (check "a CLI write goes through the seam, so a foreign agent is painted too"
-               (agent-notify2 store get "cli-1" | get -o zellij | is-not-empty) true)
-        (check "…and a CLI drop still answers whether there was anything to drop"
+        (check "a write that cannot change the picture is skipped, so the fact stays gone"
+               $forgotten null)
+        (check "a CLI write goes through the seam: the surface ran and reported back"
+               (agent-notify2 store get "me-1" | get -o zellij | is-not-empty) true)
+        (check "…and what it reported is OUR pane, not the pane of the agent written about"
+               (agent-notify2 store get "me-1" | get zellij.pane_id) "3")
+        (check "…while the foreign agent keeps its own" 
+               (agent-notify2 store get "cli-1" | get zellij.pane_id) "42")
+        (check "a CLI drop still answers whether there was anything to drop"
                (agent-notify2 store drop "cli-1") true)
     ]
 
-    let all = ($a ++ $b ++ $c ++ $d ++ $e ++ $f ++ $g)
+    # ── which panes actually get written ─────────────────────────────────────
+    # The decision, as data. This is where "an agent that ended leaves its glyph
+    # behind forever" is prevented, and where a pane that did not move is spared
+    # an 11ms subprocess.
+    let one = {session: "s", pane_id: "1", title: "A one", base: "one"}
+    let two = {session: "s", pane_id: "2", title: "B two", base: "two"}
+    let h = [
+        (check "with nothing before, everything is written"
+               (zellij renames [$one $two] null | length) 2)
+        (check "a pane whose title did not move is left alone"
+               (zellij renames [$one $two] [$one] | get pane_id) ["2"])
+        (check "nothing moved means nothing is written"
+               (zellij renames [$one $two] [$one $two]) [])
+        (check "a pane we no longer own is handed back"
+               (zellij renames [$one] [$one $two] | get pane_id) ["2"])
+        (check "…keeping its NAME and losing only the glyph"
+               (zellij renames [$one] [$one $two] | get title) ["two"])
+        (check "an agent that ended releases its pane and nothing else"
+               (zellij renames [] [$one $two] | get title) ["one" "two"])
+        (check "a pane with no name to keep is handed back blank, which means undo"
+               (zellij renames [] [($two | update base "")] | get title) [""])
+        (check "a title change and a release in one go"
+               (zellij renames [($one | update title "A changed")] [$one $two]
+                | select pane_id title)
+               [{pane_id: "1", title: "A changed"} {pane_id: "2", title: "two"}])
+    ]
+
+    let all = ($a ++ $b ++ $c ++ $d ++ $e ++ $f ++ $g ++ $h)
     summarise $all --title "zellij surface"
 }

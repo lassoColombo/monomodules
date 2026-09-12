@@ -130,7 +130,9 @@ export def message [desired: record, settings: record]: nothing -> list<string> 
     } | flatten
 }
 
-export def apply [desired: record, settings: record]: nothing -> any {
+# `previous` is unused here: a counter is written whole every time, so there is
+# nothing that can be left behind.
+export def apply [desired: record, previous: any, settings: record]: nothing -> any {
     let m = message $desired $settings
     if ($m | is-not-empty) { try { ^sketchybar ...$m | complete | ignore } }
     null   # nothing learned; the bar tells us nothing we did not already know

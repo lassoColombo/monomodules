@@ -87,11 +87,14 @@ export def settings [given: record, me: any]: nothing -> record {
 
 # The title one record deserves. Empty means "we have nothing to say", which
 # `apply` turns into dropping our name rather than writing a blank one.
+def base-for [rec: record]: nothing -> string {
+    let named = $rec.name? | default "" | str trim
+    if ($named | is-not-empty) { $named } else { $rec.cwd? | default "" | path basename }
+}
+
 def title-for [rec: record, glyphs: record]: nothing -> string {
     let glyph = $glyphs | get -o ($rec.state? | default "idle") | default ""
-    let named = $rec.name? | default "" | str trim
-    let base = if ($named | is-not-empty) { $named } else { $rec.cwd? | default "" | path basename }
-    [$glyph $base] | where {|x| $x | is-not-empty } | str join " "
+    [$glyph (base-for $rec)] | where {|x| $x | is-not-empty } | str join " "
 }
 
 # PURE: which panes should say what.
@@ -111,7 +114,12 @@ export def project [records: list<record>, settings: record]: nothing -> list<re
         if ($session | is-empty) or ($pane | is-empty) {
             null
         } else {
-            {session: $session, pane_id: $pane, title: (title-for $r $settings.glyphs)}
+            # `base` is the title WITHOUT the glyph: what the pane should say once
+            # this agent is gone. Carried in the projection so releasing a pane
+            # needs no lookup — see `renames`.
+            {session: $session, pane_id: $pane
+             title: (title-for $r $settings.glyphs)
+             base: (base-for $r)}
         }
       }
     | compact
@@ -142,9 +150,36 @@ def rename [session: string, pane_id: string, name: string] {
 # No title is read back before writing. The gate in core/dispatch.nu has already
 # established that the projection changed; asking zellij to confirm would cost a
 # second subprocess to learn something we decided ourselves.
-export def apply [desired: list<record>, settings: record]: nothing -> any {
-    for p in $desired {
-        try { rename $p.session $p.pane_id $p.title }
+# Exactly which panes to write, and what to write on them — as DATA, so the
+# decision can be read and asserted without a zellij to rename (D34).
+#
+# Two kinds. The panes whose title MOVED: the gate proved that something changed,
+# but with several agents open most of them did not, and each rename is ~11ms of
+# subprocess. And the panes we have RELEASED: an agent that ended must not leave
+# its glyph behind, and nothing else would ever clear it, because a pane nobody
+# projects onto is a pane nobody touches.
+#
+# A released pane gets its `base` — the same title with the glyph taken off. NOT
+# a blank one, which would mean undo-rename-pane, and undo POPS ONE RENAME off a
+# stack rather than clearing our name: after a session's worth of state changes
+# it would leave the second-to-last agent title sitting there. Verified the hard
+# way on a real pane. Blank still means undo, and is still right for an agent that
+# never had a name to show.
+export def renames [desired: list<record>, previous: any]: nothing -> list<record> {
+    let before = $previous | default []
+    let moved = $desired | where {|p|
+        let was = $before | where {|b| ($b.session == $p.session) and ($b.pane_id == $p.pane_id) } | get -o 0
+        ($was == null) or ($was.title != $p.title)
+    }
+    let released = $before
+        | where {|b| not ($desired | any {|p| ($p.session == $b.session) and ($p.pane_id == $b.pane_id) }) }
+        | each {|b| {session: $b.session, pane_id: $b.pane_id, title: ($b.base? | default "")} }
+    $moved ++ $released
+}
+
+export def apply [desired: list<record>, previous: any, settings: record]: nothing -> any {
+    for r in (renames $desired $previous) {
+        try { rename $r.session $r.pane_id $r.title }
     }
     let me = $settings.me
     if ($me.pane_id | is-empty) { null } else { {zellij: {session: $me.session, pane_id: $me.pane_id}} }

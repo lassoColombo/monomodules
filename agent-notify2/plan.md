@@ -627,6 +627,9 @@ is an error, because that is a typo.
 | D33 | The hook paints the bar itself; no trigger, no daemon round trip | **LOCKED** | step 5 — dispatch already holds the store; v1's path cost a second nu (~47ms) and a glue script |
 | D34 | A side effect is built as DATA first (`message`), then sent | **LOCKED** | step 5 — it is what lets the bar be tested exactly, with no bar installed and no subprocess |
 | D35 | A fixed item pool, created once, never added to or removed from | **INHERITED** | v1's most expensive lesson; re-measured at 17.51ms per add+remove against 6.5ms per message |
+| D36 | Every write goes through `core/event.nu`, the CLI included | **LOCKED** | step 7 — the command surface IS the public API (P5); a write that skips the seam is a surface that never hears about it |
+| D37 | `apply` receives the previous projection | **LOCKED** | step 7 — the only way a surface can act on what has disappeared, and it makes "skip what did not move" free |
+| D38 | Dispatch answers "whose event" and "whose environment" separately | **LOCKED** | step 7 — identical for a hook, different for a CLI write about another agent |
 | D15 | Replace pandoc with a nu-native flattener | **OPEN** | 25.1ms on the event path, and a dependency |
 | D16 | Where the bench harness lives | **OPEN** | ~350 lines of documented nu; §8 |
 | D17 | Final promoted name/location (top-level `agent-notify`?) | **OPEN** | v1 is `ai/agent-notify`; v2 is top-level |
@@ -817,8 +820,34 @@ its own bar item names so both can be live at once.
    rows the picker lists, so they are built once, on the shared view, and used by
    both.
 6. **Picker + jump** — the terminal surface and the actions, on the shared `view/`.
-7. **Cutover** — store migration, hook flip, delete v1, rename, update
-   `settings.json` / `sketchybarrc` / `config.kdl`.
+7. **Cutover** — ⏳ **v1 dismissed early, on purpose** (2026-09-12). v1's hooks are
+   out of `settings.json`, its bar block is out of `sketchybarrc` (one line in its
+   place), `CLAUDE.md`'s session-naming rule now calls `agent-notify2 name`, and
+   both surfaces are on in `~/.config/agent-notify/config.yaml`. **`ai/agent-notify/`
+   is still on disk and still complete** — nothing invokes it, so reverting is one
+   settings file away. Alt-a still points at v1's picker and will until step 6.
+   Knowingly given up in the meantime: the picker and jump, tab glyphs, the bar
+   drawers and hover previews.
+   The cutover paid for itself in the first ten minutes by exposing three defects
+   no test had reason to look for:
+   - **A CLI write skipped the dispatch seam.** `store patch|set|drop` wrote
+     straight at the store, so an agent reporting through the PUBLIC API (P5) would
+     update the store and never appear on any surface. `event.nu` gained a `set`
+     op and all three now go through it.
+   - **`apply` could not know what had VANISHED.** A pane nobody projects onto is a
+     pane nobody touches, so an agent that ended left its glyph on its pane
+     forever. Dispatch already computes the previous projection for the gate, so it
+     is handed to `apply` too — which also lets a surface skip the panes that did
+     not move (~11ms each, and with several agents open most of them do not).
+   - **`undo-rename-pane` POPS ONE RENAME off a stack**; it does not clear our name.
+     After a session's worth of state changes it leaves the second-to-last agent
+     title sitting there. A released pane now gets its `base` — the same title with
+     the glyph removed, which is what v1 did and why v1 was right.
+   And one conflation, which wrote a title onto the wrong pane before it was
+   caught: **"whose event is this" and "whose environment is this" are different
+   questions.** They are the same agent for a hook, which is how it hid; they are
+   not for a command typed about some other agent. `core/dispatch.nu` now answers
+   both separately.
 
 > **Reordered after step 1** (was: write API → config → zellij → client). Two
 > reasons. The old step 2 largely landed inside step 1 — `patch`, `changed` and

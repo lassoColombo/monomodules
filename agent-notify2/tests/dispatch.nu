@@ -23,11 +23,11 @@ def surfaces []: nothing -> record {
     { boom: {info: {name: "boom", title: "always fails"}
              settings: {|given, me| $given }
              project: {|recs, s| $recs | length }
-             apply: {|desired, s| error make --unspanned {msg: "boom: no such display"} }}
+             apply: {|desired, prev, s| error make --unspanned {msg: "boom: no such display"} }}
       fake: {info: $fake.INFO
              settings: {|given, me| fake settings $given $me }
              project: {|recs, s| fake project $recs $s }
-             apply: {|desired, s| fake apply $desired $s }} }
+             apply: {|desired, prev, s| fake apply $desired $prev $s }} }
 }
 
 def write-config [cfg: record] { $cfg | to yaml | save --force $CFG }

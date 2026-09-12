@@ -33,6 +33,7 @@
 
 use config.nu
 use store.nu
+use identity.nu
 use ../surfaces/zellij.nu
 use ../surfaces/sketchybar.nu
 
@@ -44,11 +45,11 @@ export def shipped []: nothing -> record {
     { zellij: {info: $zellij.INFO
                settings: {|given, me| zellij settings $given $me }
                project: {|recs, s| zellij project $recs $s }
-               apply: {|desired, s| zellij apply $desired $s }}
+               apply: {|desired, prev, s| zellij apply $desired $prev $s }}
       sketchybar: {info: $sketchybar.INFO
                    settings: {|given, me| sketchybar settings $given $me }
                    project: {|recs, s| sketchybar project $recs $s }
-                   apply: {|desired, s| sketchybar apply $desired $s }} }
+                   apply: {|desired, prev, s| sketchybar apply $desired $prev $s }} }
 }
 
 export def known []: nothing -> list<string> { shipped | columns }
@@ -78,15 +79,27 @@ export def project [
     } else { [] }
     if ($on | is-empty) { return [] }
 
-    # Normally the event says who this is about. A forced repaint has no event, so
-    # the caller may say instead — `cli/surfaces.nu` asks `core/identity.nu`,
-    # which is a cold path and therefore free to import it.
+    # TWO DIFFERENT QUESTIONS, and conflating them wrote a title onto the wrong
+    # pane once already:
+    #
+    #   subject  whose event is this?          — the record that just changed
+    #   me       whose environment is this?    — the agent we are running INSIDE
+    #
+    # For a hook they are the same agent, which is why the difference hid. For a
+    # write typed at the command line about some OTHER agent they are not: the
+    # environment belongs to whoever typed it. `subject` decides what the store
+    # looked like before; `me` is what a surface may believe about its
+    # surroundings, and where anything it learns is recorded.
+    let subject = $after | default $before | get -o id
     let told = $me | default ""
-    let me = if ($told | is-not-empty) { $told } else { ($after | default $before | get -o id) }
+    let me = if ($told | is-not-empty) { $told } else {
+        let who = try { identity resolve } catch { null }
+        if ($who == null) { "" } else { $who.id? | default "" }
+    }
     let now = store list | sort-by id
     let was = if $force { null } else {
-        if $me == null { return [] }
-        (($now | where id != $me) ++ (if $before == null { [] } else { [$before] })) | sort-by id
+        if $subject == null { return [] }
+        (($now | where id != $subject) ++ (if $before == null { [] } else { [$before] })) | sort-by id
     }
 
     $on | each {|name|
@@ -94,7 +107,12 @@ export def project [
         try {
             let settings = do $s.settings ($cfg | get -o $name | default {}) $me
             let desired = do $s.project $now $settings
-            if (not $force) and ((do $s.project $was $settings) == $desired) {
+            # The previous projection is computed for the gate anyway, so `apply`
+            # is handed it too: it is the only way a surface can know what has
+            # DISAPPEARED. Without it an agent that ends leaves its glyph on a pane
+            # forever, because a pane nobody projects onto is a pane nobody touches.
+            let previous = if $force { null } else { do $s.project $was $settings }
+            if (not $force) and ($previous == $desired) {
                 {surface: $name, action: "skipped"}
             } else {
                 # A surface never writes the store. It may REPORT what it learned
@@ -102,8 +120,8 @@ export def project [
                 # and that is recorded here, in its own namespace, by the one
                 # module that owns writing. `patch` commits nothing when the facts
                 # are unchanged, so the steady state is a read and a comparison.
-                let learned = do $s.apply $desired $settings
-                if ($me != null) and (($learned | describe) | str starts-with "record") {
+                let learned = do $s.apply $desired $previous $settings
+                if ($me | is-not-empty) and (($learned | describe) | str starts-with "record") {
                     store patch $me $learned | ignore
                 }
                 {surface: $name, action: "applied"}

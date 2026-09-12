@@ -4,7 +4,6 @@
 
 use ../core/config.nu
 use ../core/dispatch.nu
-use ../core/identity.nu
 use ../core/janitor.nu
 use ../surfaces/sketchybar.nu
 
@@ -28,11 +27,7 @@ export def refresh []: nothing -> table {
     # janitor without ever touching a hook — step 5's bar timer calls it.
     janitor prune | ignore
 
-    # Run from inside an agent's own pane, a surface can only paint that pane if
-    # it is told which agent it is — a forced repaint has no event to say so. Cold
-    # path, so importing identity here costs the hot path nothing.
-    let who = try { identity resolve } catch { null }
-    dispatch project --force --me (if ($who == null) { "" } else { $who.id? | default "" })
+    dispatch project --force
 }
 
 # Create a surface's items on the bar. Unlike `clients wiring`, this one ACTS:
