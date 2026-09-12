@@ -11,35 +11,13 @@
 # The previews are the whole point of this module, and they are the one thing
 # Nushell's built-in picker cannot draw — so telescope still WORKS on the default
 # picker (you drill in blind, by key or by column value) and comes alive on one
-# that has a preview pane. Which one it uses is `$env.telescope_config.picker`;
-# see `choose` below and ~/.config/nushell/module-hooks.nu.
-
-# Choosing goes through ONE hook: `$env.telescope_config.picker`, a closure that
-# takes the items as pipeline input and an options record {prompt, display,
-# preview}, both closures reading the item from `$in`. telescope says what there
-# is to choose from and what each item says; the frame, the sizing and the
-# preview pane belong to the picker, which is why nothing handed over here is a
-# number. Nothing configured means the built-in `input list`, which has no
-# preview pane and drops `preview` on the floor.
-def choose [opts: record] {
-  let items = $in
-  let custom = $env.telescope_config?.picker?
-  if ($custom != null) { return ($items | do $custom $opts) }
-  $items | input list --fuzzy --display $opts.display $opts.prompt
-}
-
-# Render a value for the preview pane. Records are transposed to a key/value
-# table so wide rows don't get column-truncated; tables and lists render as-is.
-# `width` is the pane's, handed over by the picker that owns it, so `table
-# --expand` neither over-runs it nor leaves it half empty.
-def preview-of [width: int]: any -> any {
-  let v = $in
-  if (($v | describe) | str starts-with "record") {
-    $v | transpose key value | table --expand --width $width
-  } else {
-    $v | table --expand --width $width
-  }
-}
+# that has a preview pane. Which picker it gets is the SK switch at the top of
+# picker.nu; what a value looks like in the pane is preview.nu's.
+#
+# This file is the drilling itself: what there is to choose from at each step,
+# and what each row reads as.
+use picker.nu choose
+use preview.nu preview-of
 
 # Recursively search a data structure for a pattern in keys or primitive values
 def search-recurse [pattern: string, path: string]: any -> table<path: string, value: any> {
