@@ -18,7 +18,7 @@ def agents [...states: string]: nothing -> list<record> {
 }
 
 export def main [] {
-    let s = sketchybar settings {} null
+    let s = sketchybar settings {}
 
     # ── settings ─────────────────────────────────────────────────────────────
     let a = [
@@ -27,21 +27,21 @@ export def main [] {
         (check "the program is resolved to an ABSOLUTE path, not left to PATH"
                ($s.binary | str starts-with "/") true)
         (check-err "…and a path that is not there is a loud error, not a silent no-op"
-                   "no program at" {|| sketchybar settings {binary: "/nope/sketchybar"} null })
+                   "no program at" {|| sketchybar settings {binary: "/nope/sketchybar"} })
         (check "the item prefix keeps v1 and v2 apart on one bar" $s.prefix "an_")
         (check "a colour override replaces just that one"
-               (sketchybar settings {colors: {working: "0xff000000"}} null | get colors.working) "0xff000000")
+               (sketchybar settings {colors: {working: "0xff000000"}} | get colors.working) "0xff000000")
         (check "…and leaves the rest alone"
-               (sketchybar settings {colors: {working: "0xff000000"}} null | get colors.awaiting)
+               (sketchybar settings {colors: {working: "0xff000000"}} | get colors.awaiting)
                $s.colors.awaiting)
         (check "a different prefix is honoured"
-               (sketchybar settings {prefix: "x_"} null | get prefix) "x_")
+               (sketchybar settings {prefix: "x_"} | get prefix) "x_")
         (check-err "a setting we do not have is a typo" "is not a setting"
-                   {|| sketchybar settings {colour: "red"} null })
+                   {|| sketchybar settings {colour: "red"} })
         (check-err "a colour for something that is not a state is refused" "is not a colour we use"
-                   {|| sketchybar settings {colors: {banana: "0xffffffff"}} null })
+                   {|| sketchybar settings {colors: {banana: "0xffffffff"}} })
         (check-err "a colour that is not 0xAARRGGBB is refused" "0xAARRGGBB"
-                   {|| sketchybar settings {colors: {working: "red"}} null })
+                   {|| sketchybar settings {colors: {working: "red"}} })
     ]
 
     # ── project: three numbers, and nothing else ─────────────────────────────
@@ -80,8 +80,10 @@ export def main [] {
     # ── the message that would be sent ───────────────────────────────────────
     let msg = sketchybar message {working: 1, awaiting: 0, needs-attention: 0} $s
     let d = [
-        (check "one message covers all three counters — batching is free"
+        (check "one message covers every counter given — batching is free"
                ($msg | where {|x| $x == "--set" } | length) 3)
+        (check "…and only the counters that moved are in it"
+               (sketchybar message {awaiting: 2} $s | where {|x| $x == "--set" } | length) 1)
         (check "needs-attention becomes a legal item name"
                ("an_attention" in $msg) true)
         (check "a live counter wears its full colour"
@@ -92,7 +94,7 @@ export def main [] {
         (check "…and its number goes muted rather than invisible"
                ($"label.color=($s.colors.dim)" in $msg) true)
         (check "a custom prefix reaches the items"
-               ("x_working" in (sketchybar message {working: 1} (sketchybar settings {prefix: "x_"} null)))
+               ("x_working" in (sketchybar message {working: 1} (sketchybar settings {prefix: "x_"})))
                true)
     ]
 
@@ -114,8 +116,12 @@ export def main [] {
     # ── it is a surface like any other ───────────────────────────────────────
     let f = [
         (check "dispatch ships it" ("sketchybar" in (dispatch known)) true)
-        (check "…with the four things every surface has"
+        (check "…with the parts every surface has"
                (dispatch shipped | get sketchybar | columns | sort) ["apply" "info" "project" "settings"])
+        (check "…and no `observe`: a bar can see nothing about its own process"
+               (dispatch shipped | get sketchybar | get -o observe) null)
+        (check "zellij does have one, because it can"
+               (dispatch shipped | get zellij | get -o observe | is-not-empty) true)
     ]
 
     let all = ($a ++ $b ++ $c ++ $d ++ $e ++ $f)

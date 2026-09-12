@@ -551,64 +551,48 @@ Three candidates were tried, in this order:
 drives it, and the tick is `surfaces refresh` — the same command a human types.
 Verified end to end: a record planted with a dead pid was gone in 15 seconds.
 
-### 4.7 Surfaces — the projection gate
-
-A surface is a pure function from the store to what should be on screen, plus an
-impure half that puts it there. Four exports, mirroring the client contract:
+### 4.7 Surfaces — describe, decide, write
 
 ```nu
 export const INFO = {name, title}
-export def settings [given: record, me: any] -> record # strict; defaults; ambient
-export def project [records, settings] -> any          # PURE — the thinking
-export def apply [desired, settings] -> any            # side effect; returns what it learned
+export def settings [given: record] -> record        # config only: defaults, strict, binary
+export def observe []              -> record         # OPTIONAL: what this process sees of itself
+export def project [records, settings] -> record     # PURE: key → what that key should show
+export def apply [changed, removed, settings]        # write these, undo those
 ```
 
-`settings` gathers everything the surface needs to know before it thinks: its
-config namespace, `me` (the agent this event is about, handed down by dispatch,
-which knows it exactly where the environment would be a guess), and anything else
-ambient. Gathering it once is what keeps `project` pure enough to run twice.
+**A surface describes. Dispatch decides. The store holds facts.**
 
-**The gate.** Dispatch runs the pure half TWICE — once against the store as it
-was, once as it is — and touches nothing when the two agree:
+`project` returns a MAP, not an opaque blob, and that is what makes the division
+possible: dispatch holds two of them — the store as it was, the store as it is —
+and diffs them itself, once, correctly, for every surface that will ever exist.
 
 ```
-project(before) == project(after)   →  do nothing
+key changed          → changed
+key gone from after  → removed, WITH its old value, because undoing needs it
+both empty           → nothing to say, nothing is sent
 ```
 
-That single comparison is the performance story. A `Stop` changes `message`, but
-a pane title has no message in it, so the projection is identical and zellij —
-11ms of subprocess, twice — is never called. v1 reached the same place with a
-bash fast-path gate, a separate rule for SketchyBar and a janitor to re-check;
-here every future surface inherits it for free, with no cache, no TTL and nothing
-remembered between events. It is also why `project` must be pure: an impure one
-could not be run twice.
+The gate is no longer a separate idea; it falls out of the diff. And the diff is
+**per key**: with four agents open, a state change moves one pane title and the
+other three are never written. A surface used to work that out for itself, and
+zellij's hand-rolled version is what this replaced.
 
-**Dispatch runs inside the agent's process**, so a surface inherits the agent's
-environment — which is how the zellij surface will learn its pane id without the
-core ever hearing the word zellij. A daemon would have to be told.
+**Two snapshots, not a delta.** Callers pass the whole store before and after, so
+there is one spelling for "what was there a moment ago" whether the change came
+from a hook (one record moved, `core/event.nu` reconstructs the rest) or from the
+clock (some records were pruned, `surfaces refresh` prepends them). `--gone` and
+`--me` are gone with it.
 
-**Surfaces are a table of closures**, built by hand in `core/dispatch.nu`, because
-`use` is parse-time and nushell has no first-class modules: a name cannot become a
-module at runtime. Passing a different table is what lets the tests exercise all
-of it with nothing installed (`tests/fake.nu`).
+**`observe` is why `project` can be pure.** zellij needs to know which pane it is
+in, which only the running process knows. Rather than passing ambient facts
+through `settings` and branching inside `project` — *"is this record me?"* —
+`observe` reports them, dispatch records them in the surface's own namespace, and
+by the time `project` runs they are just facts in the store like any other.
 
-**A side effect is built as data first.** `project` returns what should be shown;
-a surface that talks to a program also exposes the *message* it would send as a
-pure function, and `apply` is then two lines that send it. The SketchyBar suite
-runs 33 checks with no bar installed and not one subprocess, and asserts the exact
-arguments the daemon would receive.
-
-**A surface never writes the store.** It returns what it learned — where its pane
-is, which item it was given — and dispatch records that in the surface's own
-namespace. The store stays the one thing that owns writing, and the surface stays
-a LEAF of the import tree, which is not a stylistic point: nushell parses a module
-once per import path, so a store reached both directly and through a surface is
-parsed twice on every event (§10). Removing that one diamond took the machinery
-from 5.28ms to 3.87ms.
-
-**Nothing in the dispatch path may throw.** It runs after the store has committed.
-Each surface is wrapped alone, so one failing cannot stop the next, and a broken
-config degrades to "no surfaces" rather than to a broken hook.
+**A surface never writes the store**, never learns what changed, and never reads
+back what it wrote. It keeps a surface a LEAF of the import tree (§10) and keeps
+one writer.
 
 The config file has **the same shape as a store record**: a small core the module
 owns, one namespace per owner, unknown keys rejected. One idea, two files.
@@ -622,6 +606,14 @@ zellij:
 A namespace for a surface that is merely switched off is fine — disabling should
 not mean deleting your colours. A namespace naming a surface that does not exist
 is an error, because that is a typo.
+
+**Strict where a human is, lenient where a hook is.** `config check` is exact and
+loud; `load` never throws. A YAML typo must not be able to stop the store
+recording facts. The cost is that a broken config shows up as "my bar stopped
+moving" rather than as an error, which is what `config check` is for.
+
+**Nothing in the dispatch path may throw.** It runs after the store has
+committed. Each surface is wrapped alone, so one failing cannot stop the next.
 
 ---
 
@@ -669,6 +661,9 @@ is an error, because that is a typo.
 | D37 | `apply` receives the previous projection | **LOCKED** | step 7 — the only way a surface can act on what has disappeared, and it makes "skip what did not move" free |
 | D38 | Dispatch answers "whose event" and "whose environment" separately | **LOCKED** | step 7 — identical for a hook, different for a CLI write about another agent |
 | D39 | The clock is its own launchd job, never a surface's item | **LOCKED** | §4.6c — a core guarantee must not depend on an optional surface being installed |
+| D40 | `project` returns a MAP; dispatch owns the diff | **LOCKED** | §4.7 — one correct implementation instead of one per surface, and the gate falls out of it |
+| D41 | Dispatch takes two store SNAPSHOTS, not a delta | **LOCKED** | §4.7 — one spelling for "a moment ago", whether a hook or the clock is calling |
+| D42 | `observe` reports the environment; it is not smuggled through `settings` or `apply` | **LOCKED** | §4.7 — it is what lets `project` be a plain function of records |
 | D15 | Replace pandoc with a nu-native flattener | **OPEN** | 25.1ms on the event path, and a dependency |
 | D16 | Where the bench harness lives | **OPEN** | ~350 lines of documented nu; §8 |
 | D17 | Final promoted name/location (top-level `agent-notify`?) | **OPEN** | v1 is `ai/agent-notify`; v2 is top-level |

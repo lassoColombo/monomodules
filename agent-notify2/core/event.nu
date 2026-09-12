@@ -57,7 +57,17 @@ export def apply [op: record]: nothing -> record {
     # Persist first, project after: a projection that fails must never cost us a
     # fact, and an unchanged write never reaches a surface at all. `dispatch` is
     # written so that nothing here can throw — the store has already committed.
-    if $result.changed { dispatch project $result.before $result.after | ignore }
+    #
+    # Dispatch wants the whole store BEFORE and AFTER, not our one-record delta,
+    # so that a hook and the clock speak to it the same way. Reconstructing the
+    # "before" is our job because only we know which record moved.
+    if $result.changed {
+        let now = store list
+        let subject = $result.after | default $result.before | get -o id
+        let then = ($now | where id != $subject) ++ (
+            if $result.before == null { [] } else { [$result.before] })
+        dispatch project $then $now | ignore
+    }
 
     $result
 }

@@ -5,6 +5,7 @@
 use ../core/config.nu
 use ../core/dispatch.nu
 use ../core/janitor.nu
+use ../core/store.nu
 use ../surfaces/sketchybar.nu
 
 @search-terms agent notify surfaces integrations zellij sketchybar list enabled
@@ -26,8 +27,8 @@ export def refresh []: nothing -> table {
     # one thing no hook will ever report, so this is the only chance to undo what
     # it left on screen — its pane title outlives it otherwise.
     let gone = janitor prune
-
-    dispatch project --force --gone $gone
+    let now = store list
+    dispatch project ($gone ++ $now) $now --force
 }
 
 # Create a surface's items on the bar. Unlike `clients wiring`, this one ACTS:
@@ -40,7 +41,7 @@ export def install [name: string]: nothing -> nothing {
     let cfg = config load
     match $name {
         "sketchybar" => {
-            sketchybar install (sketchybar settings ($cfg | get -o sketchybar | default {}) null)
+            sketchybar install (sketchybar settings ($cfg | get -o sketchybar | default {}))
             print $"(ansi green)installed(ansi reset) the SketchyBar counters"
         }
         "zellij" => { print "zellij needs no installation — it renames panes directly." }

@@ -111,7 +111,7 @@ def tint [color: string, alpha: string]: nothing -> string {
     $"0x($alpha)($color | str substring 4..)"
 }
 
-export def settings [given: record, me: any]: nothing -> record {
+export def settings [given: record]: nothing -> record {
     for k in ($given | columns | where {|k| $k not-in ($DEFAULTS | columns) }) {
         error make --unspanned {msg: $"sketchybar: '($k)' is not a setting \(try: ($DEFAULTS | columns | str join ', ')\)"}
     }
@@ -135,9 +135,11 @@ export def settings [given: record, me: any]: nothing -> record {
     | upsert binary (resolve-binary ($given.binary? | default ""))
 }
 
-# PURE, and deliberately tiny: three numbers. Everything else about an agent —
-# its name, its message, where it lives — is invisible here, which is exactly why
-# the gate stops so much work before it starts.
+# PURE, and deliberately tiny: three numbers, keyed by state. Everything else
+# about an agent — its name, its message, where it lives — is invisible here,
+# which is exactly why so much work stops before it starts. And because the keys
+# are fixed, nothing is ever REMOVED from this map: a counter that empties goes to
+# zero, it does not disappear.
 export def project [records: list<record>, settings: record]: nothing -> record {
     $COUNTED | reduce --fold {} {|state, acc|
         $acc | merge {($state): ($records | where {|r| ($r.state? | default "idle") == $state } | length)}
@@ -147,9 +149,9 @@ export def project [records: list<record>, settings: record]: nothing -> record 
 # The repaint, as DATA. Separated from `apply` so the tests can read exactly what
 # would be sent without a bar being installed — the same trick `project` plays for
 # the thinking, applied to the side effect.
-export def message [desired: record, settings: record]: nothing -> list<string> {
-    $COUNTED | each {|state|
-        let n = $desired | get -o $state | default 0
+export def message [counters: record, settings: record]: nothing -> list<string> {
+    $counters | columns | each {|state|
+        let n = $counters | get $state
         let item = $"($settings.prefix)(item-suffix $state)"
         let hue = $settings.colors | get $state
         [ "--set" $item
@@ -159,12 +161,12 @@ export def message [desired: record, settings: record]: nothing -> list<string> 
     } | flatten
 }
 
-# `previous` is unused here: a counter is written whole every time, so there is
-# nothing that can be left behind.
-export def apply [desired: record, previous: any, settings: record]: nothing -> any {
-    let m = message $desired $settings
+# `removed` is always empty here — the three keys are fixed, so a counter that
+# empties goes to zero rather than disappearing. It is in the signature because
+# every surface has the same one, not because this surface has anything to undo.
+export def apply [changed: record, removed: record, settings: record]: nothing -> nothing {
+    let m = message $changed $settings
     if ($m | is-not-empty) { ^$settings.binary ...$m | complete | ignore }
-    null   # nothing learned; the bar tells us nothing we did not already know
 }
 
 # ── installation ─────────────────────────────────────────────────────────────

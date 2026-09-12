@@ -1,35 +1,39 @@
-# Telling the surfaces that something happened — and, far more often, working out
-# that nothing worth telling them happened at all.
+# What changed, and whether it is worth telling anyone.
 #
-# THE GATE. A surface is a pure function from the store to what should be on
-# screen, plus an impure half that puts it there. So before touching anything we
-# run the pure half TWICE: once against the store as it was, once as it is. If the
-# two agree, the screen would not change, and we stop.
+# THE DIVISION OF LABOUR, which is the whole point of this file:
 #
-#     project(before) == project(after)   →  do nothing
+#   a surface    DESCRIBES — `project` returns a map of key → what that key
+#                should show. It never works out what moved.
+#   dispatch     DECIDES — it holds two of those maps, one for the store as it
+#                was and one for the store as it is, and diffs them. Once,
+#                correctly, for every surface that will ever exist.
+#   the store    holds facts, and is the only thing anybody writes.
 #
-# That one comparison is the whole performance story. A `Stop` changes `message`,
-# but a zellij pane title has no message in it, so the projection is identical and
-# zellij — 11ms of subprocess — is never called. v1 reached the same place with a
-# bash fast-path gate, a separate rule for SketchyBar and a janitor to re-check;
-# here it is a property every future surface inherits for free, with no cache, no
-# TTL and nothing remembered between events.
+# THE GATE falls out of the diff rather than being a separate idea: no key
+# changed and none disappeared means there is nothing to say, so nothing is sent.
+# A `Stop` changes an agent's message, but a pane title has no message in it and a
+# counter is a number — both maps come back identical and no subprocess runs.
 #
-# WHY IT RUNS INSIDE THE AGENT'S PROCESS. The hook already has what a surface
-# needs: the agent's environment. That is how the zellij surface will learn which
-# pane it is in — `$env.ZELLIJ_PANE_ID` is simply there — without the core ever
-# hearing the word zellij. A daemon would have to be told.
+# AND THE DIFF IS PER KEY. With four agents open, a state change moves one pane
+# title; the other three keys are unchanged and are never written. A surface used
+# to have to work that out for itself, and zellij's hand-rolled version of it is
+# what this replaces.
 #
-# WHY THE SURFACES ARE A TABLE OF CLOSURES. `use` is parse-time and nushell has no
-# first-class modules, so a name cannot be turned into a module at runtime. The
-# `shipped` table is written once, by hand, with one entry per surface; passing a
-# different table is what lets the tests exercise all of this with nothing
-# installed.
+# REMOVED KEYS CARRY THEIR OLD VALUE, because undoing needs to know what was
+# there. A pane cannot be handed back by its id alone — it needs the name to put
+# back once the glyph comes off.
 #
-# NOTHING HERE MAY THROW. It runs after the store has already committed, on the
-# path of every tool call. Each surface is wrapped on its own, so zellij failing
-# cannot stop the bar, and a broken config means "no surfaces" rather than a
-# broken hook (core/config.nu explains that trade).
+# TWO SNAPSHOTS, NOT A DELTA. Callers pass the whole store before and after, so
+# there is one spelling for "what was there a moment ago" whether the change came
+# from a hook (one record moved) or from the clock (some records were pruned).
+#
+# WHY IT RUNS INSIDE THE AGENT'S PROCESS: the hook already has the environment a
+# surface may need to see — which is what `observe` is for — and the store in
+# hand. A daemon would have to be told both.
+#
+# NOTHING HERE MAY THROW. It runs after the store has committed. Each surface is
+# wrapped alone, so one failing cannot stop the next, and a broken config degrades
+# to "no surfaces" rather than to a broken hook.
 
 use config.nu
 use store.nu
@@ -38,105 +42,100 @@ use ../surfaces/zellij.nu
 use ../surfaces/sketchybar.nu
 
 # ── the shipped surfaces ─────────────────────────────────────────────────────
-# One entry per surface, written by hand: four things each — what it is, how it
-# reads its own settings, the pure projection, and the side effect. The order is
-# the order a repaint touches them.
+# One entry per surface, written by hand because nushell has no first-class
+# modules. `observe` is optional: only a surface that can see something about its
+# own process needs it.
 export def shipped []: nothing -> record {
     { zellij: {info: $zellij.INFO
-               settings: {|given, me| zellij settings $given $me }
+               settings: {|given| zellij settings $given }
+               observe: {|| zellij observe }
                project: {|recs, s| zellij project $recs $s }
-               apply: {|desired, prev, s| zellij apply $desired $prev $s }}
+               apply: {|changed, removed, s| zellij apply $changed $removed $s }}
       sketchybar: {info: $sketchybar.INFO
-                   settings: {|given, me| sketchybar settings $given $me }
+                   settings: {|given| sketchybar settings $given }
                    project: {|recs, s| sketchybar project $recs $s }
-                   apply: {|desired, prev, s| sketchybar apply $desired $prev $s }} }
+                   apply: {|changed, removed, s| sketchybar apply $changed $removed $s }} }
 }
 
 export def known []: nothing -> list<string> { shipped | columns }
 
-# Project the store onto every enabled surface, skipping the ones whose output
-# would not change. Returns what it did, per surface, so a human can ask.
+# Two maps in, two maps out: what to write, and what to undo.
+def diff [had: record, want: record]: nothing -> record {
+    let want_keys = $want | columns
+    mut changed = {}
+    for k in $want_keys {
+        if ($had | get -o $k) != ($want | get $k) { $changed = ($changed | upsert $k ($want | get $k)) }
+    }
+    mut removed = {}
+    for k in ($had | columns) {
+        if ($k not-in $want_keys) { $removed = ($removed | upsert $k ($had | get $k)) }
+    }
+    {changed: $changed, removed: $removed}
+}
+
+def verdict [name: string, action: string, wrote: int, undid: int, why: string]: nothing -> record {
+    {surface: $name, action: $action, wrote: $wrote, undid: $undid, why: $why}
+}
+
+# Project two snapshots of the store onto every enabled surface.
 #
-# `--force` skips the gate and repaints everything: the recovery command after a
-# config edit, and what a periodic trigger will call.
-#
-# Named `project`, not `run`: `run` is a PARSER KEYWORD and cannot be a command
-# name at all — a different failure from builtin shadowing, and a louder one (§10).
+# `--force` writes every key whether or not it moved — the recovery command after
+# a config edit, and what the clock uses. It does NOT mean "there was nothing
+# before": removals are still worked out from `before`, which is how an agent the
+# clock has just pruned gets its pane handed back.
 export def project [
-    before: any = null      # the record as it was, or null if it is new
-    after: any = null       # the record as it is, or null if it was dropped
+    before: list<record>    # the store as it was
+    after: list<record>     # the store as it is
+    --force                 # write every key, not only the ones that moved
     --table: record         # override the shipped surfaces (tests)
-    --force                 # repaint even when the projection is unchanged
-    --me: string            # who we are, when there is no event to say so
-    --gone: list<record>    # records that have just been removed (see `was` below)
 ]: nothing -> list<record> {
     let surfaces = $table | default (shipped)
     if ($surfaces | is-empty) { return [] }
 
     let cfg = config load
-    let asked = ($cfg.surfaces? | default [])
+    let asked = $cfg.surfaces? | default []
     let on = if (($asked | describe) | str starts-with "list") {
         $asked | where {|n| $n in ($surfaces | columns) }
     } else { [] }
     if ($on | is-empty) { return [] }
 
-    # TWO DIFFERENT QUESTIONS, and conflating them wrote a title onto the wrong
-    # pane once already:
-    #
-    #   subject  whose event is this?          — the record that just changed
-    #   me       whose environment is this?    — the agent we are running INSIDE
-    #
-    # For a hook they are the same agent, which is why the difference hid. For a
-    # write typed at the command line about some OTHER agent they are not: the
-    # environment belongs to whoever typed it. `subject` decides what the store
-    # looked like before; `me` is what a surface may believe about its
-    # surroundings, and where anything it learns is recorded.
-    let subject = $after | default $before | get -o id
-    let told = $me | default ""
-    let me = if ($told | is-not-empty) { $told } else {
-        let who = try { identity resolve } catch { null }
-        if ($who == null) { "" } else { $who.id? | default "" }
-    }
-    let now = store list | sort-by id
-
-    # What the store looked like a moment ago. A surface needs it to work out what
-    # has DISAPPEARED, and `--force` does not mean "pretend nothing was there
-    # before" — it means "paint whether or not anything changed". A forced repaint
-    # that follows a prune is told what the prune removed, or an agent killed in a
-    # pane that outlived it would keep its title for good.
-    let was = if $force {
-        (($gone | default []) ++ $now) | sort-by id
-    } else {
-        if $subject == null { return [] }
-        (($now | where id != $subject) ++ (if $before == null { [] } else { [$before] })) | sort-by id
-    }
+    # Which agent's environment this is. Only `observe` needs it, and only a
+    # command typed about some OTHER agent makes it differ from the subject of the
+    # change — for a hook they are the same.
+    let who = try { identity resolve } catch { null }
+    let me = if ($who == null) { "" } else { $who.id? | default "" }
 
     $on | each {|name|
         let s = $surfaces | get $name
         try {
-            let settings = do $s.settings ($cfg | get -o $name | default {}) $me
-            let desired = do $s.project $now $settings
-            # The previous projection is computed for the gate anyway, so `apply`
-            # is handed it too: it is the only way a surface can know what has
-            # DISAPPEARED. Without it an agent that ends leaves its glyph on a pane
-            # forever, because a pane nobody projects onto is a pane nobody touches.
-            let previous = do $s.project $was $settings
-            if (not $force) and ($previous == $desired) {
-                {surface: $name, action: "skipped"}
-            } else {
-                # A surface never writes the store. It may REPORT what it learned
-                # about this agent — where its pane is, which item it was given —
-                # and that is recorded here, in its own namespace, by the one
-                # module that owns writing. `patch` commits nothing when the facts
-                # are unchanged, so the steady state is a read and a comparison.
-                let learned = do $s.apply $desired $previous $settings
-                if ($me | is-not-empty) and (($learned | describe) | str starts-with "record") {
-                    store patch $me $learned | ignore
-                }
-                {surface: $name, action: "applied"}
+            let settings = do $s.settings ($cfg | get -o $name | default {})
+
+            # What this process can see about itself that the store does not know
+            # yet — which pane it is in, say. Recorded in the surface's own
+            # namespace, and folded into the snapshot so that `project` can stay a
+            # plain function of records. `patch` commits nothing when the facts are
+            # unchanged, so the steady state is a read and a comparison.
+            let seen = if ($s.observe? == null) or ($me | is-empty) { {} } else {
+                let f = do $s.observe
+                if (($f | describe) | str starts-with "record") { $f } else { {} }
             }
-        } catch {|e|
-            {surface: $name, action: "failed", why: $e.msg}
-        }
+            let now = if ($seen | is-empty) { $after } else {
+                store patch $me {($name): $seen} | ignore
+                $after | each {|r|
+                    if ($r.id? != $me) { $r } else {
+                        $r | upsert $name (($r | get -o $name | default {}) | merge $seen)
+                    }
+                }
+            }
+
+            let d = diff (do $s.project $before $settings) (do $s.project $now $settings)
+            if (not $force) and ($d.changed | is-empty) and ($d.removed | is-empty) {
+                verdict $name "skipped" 0 0 ""
+            } else {
+                let write = if $force { do $s.project $now $settings } else { $d.changed }
+                do $s.apply $write $d.removed $settings
+                verdict $name "applied" ($write | columns | length) ($d.removed | columns | length) ""
+            }
+        } catch {|e| verdict $name "failed" 0 0 $e.msg }
     }
 }

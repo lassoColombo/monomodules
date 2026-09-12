@@ -24,10 +24,10 @@
 #
 # THE SECOND: WE ALREADY KNOW WHERE WE ARE. Dispatch runs inside the agent's own
 # process, so `$env.ZELLIJ_SESSION_NAME` and `$env.ZELLIJ_PANE_ID` are simply
-# there — no lookup. `settings` collects them, which is why it takes the config
-# AND the environment: both are "what this surface needs to know before it
-# thinks", and gathering them once is what keeps `project` pure enough to run
-# twice per event.
+# there — no lookup. That is what `observe` reports, and dispatch writes it into
+# this surface's namespace on the record before projecting. So `project` never
+# reads the environment and never has to ask "is this record me?": by the time it
+# runs, where we are is just another fact in the store.
 #
 # TABS ARE NOT HERE. A tab's name belongs to you, not to us, so a tab title
 # cannot be computed from the store alone — it has to be read, stripped and put
@@ -54,15 +54,11 @@ const DEFAULT_GLYPHS = {
     idle: ""                      # nothing: a quiet agent shows only its name
 }
 
-# The config namespace, strictly, plus who and where we are.
+# The config namespace, strictly. Nothing else — where we are is `observe`'s job.
 #
 # Strict HERE rather than in `core/config.nu` because these are our fields: the
 # core must never have to learn what a surface's settings look like.
-#
-# `me` is the id of the agent this event is about, handed down by dispatch — which
-# already knows it, and knows it exactly, where asking the environment would be a
-# guess. The pane is ours to find: dispatch runs inside the agent's process.
-export def settings [given: record, me: any]: nothing -> record {
+export def settings [given: record]: nothing -> record {
     for k in ($given | columns | where {|k| $k not-in ["glyphs" "binary"] }) {
         error make --unspanned {msg: $"zellij: '($k)' is not a setting \(try: glyphs, binary\)"}
     }
@@ -80,10 +76,15 @@ export def settings [given: record, me: any]: nothing -> record {
     }
 
     { binary: (resolve-binary ($given.binary? | default ""))
-      glyphs: ($DEFAULT_GLYPHS | merge $g)
-      me: { id: ($me | default "")
-            session: ($env.ZELLIJ_SESSION_NAME? | default "")
-            pane_id: ($env.ZELLIJ_PANE_ID? | default "") } }
+      glyphs: ($DEFAULT_GLYPHS | merge $g) }
+}
+
+# What this process can see about itself: which pane it is running in. Empty when
+# we are not in zellij at all, which is how a bare terminal costs nothing.
+export def observe []: nothing -> record {
+    let session = $env.ZELLIJ_SESSION_NAME? | default ""
+    let pane = $env.ZELLIJ_PANE_ID? | default ""
+    if ($session | is-empty) or ($pane | is-empty) { {} } else { {session: $session, pane_id: $pane} }
 }
 
 # The title one record deserves. Empty means "we have nothing to say", which
@@ -123,43 +124,38 @@ def title-for [rec: record, glyphs: record]: nothing -> string {
     [$glyph (base-for $rec)] | where {|x| $x | is-not-empty } | str join " "
 }
 
-# PURE: which panes should say what.
+# PURE: which pane should say what, keyed by pane.
 #
-# Where a pane comes from, in order: the ENVIRONMENT for the agent we are running
-# inside — authoritative, and true before the store has ever heard of this pane —
-# and the `zellij` namespace of the record for everybody else, which `apply`
-# wrote when that agent last painted itself. An agent in no pane projects to
-# nothing, which is how a bare terminal costs zero.
-export def project [records: list<record>, settings: record]: nothing -> list<record> {
-    let me = $settings.me
-    $records
-    | each {|r|
-        let here = ($me.id | is-not-empty) and ($r.id? == $me.id) and ($me.pane_id | is-not-empty)
-        let session = if $here { $me.session } else { $r.zellij?.session? | default "" }
-        let pane = if $here { $me.pane_id } else { $r.zellij?.pane_id? | default "" }
-        if ($session | is-empty) or ($pane | is-empty) {
-            null
-        } else {
-            # `base` is the title WITHOUT the glyph: what the pane should say once
-            # this agent is gone. Carried in the projection so releasing a pane
-            # needs no lookup — see `renames`.
-            {session: $session, pane_id: $pane
-             title: (title-for $r $settings.glyphs)
-             base: (base-for $r)}
+# The key is only an identity for dispatch to diff on — everything apply needs is
+# in the value. `base` is the title WITHOUT the glyph: what the pane should say
+# once this agent is gone, carried here so that releasing one needs no lookup.
+#
+# An agent whose pane the store does not know projects to nothing, which is how a
+# bare terminal, and an agent that has not painted yet, both cost zero.
+export def project [records: list<record>, settings: record]: nothing -> record {
+    mut out = {}
+    for r in $records {
+        let session = $r.zellij?.session? | default ""
+        let pane = $r.zellij?.pane_id? | default ""
+        if ($session | is-not-empty) and ($pane | is-not-empty) {
+            $out = ($out | upsert $"($session)|($pane)" {
+                session: $session, pane_id: $pane
+                title: (title-for $r $settings.glyphs)
+                base: (base-for $r)
+            })
         }
-      }
-    | compact
-    | sort-by session pane_id
+    }
+    $out
 }
 
 # A blank title DROPS our name instead of writing one, so zellij falls back to
 # what it would have shown anyway (the running command). A projection with
 # nothing to say must never blank a pane.
-def rename [binary: string, session: string, pane_id: string, name: string] {
+def argv [binary: string, session: string, pane_id: string, name: string]: nothing -> list<string> {
     if ($name | str trim | is-empty) {
-        ^$binary --session $session action undo-rename-pane --pane-id $pane_id | complete | ignore
+        [$binary "--session" $session "action" "undo-rename-pane" "--pane-id" $pane_id]
     } else {
-        ^$binary --session $session action rename-pane --pane-id $pane_id $name | complete | ignore
+        [$binary "--session" $session "action" "rename-pane" "--pane-id" $pane_id $name]
     }
 }
 
@@ -176,37 +172,34 @@ def rename [binary: string, session: string, pane_id: string, name: string] {
 # No title is read back before writing. The gate in core/dispatch.nu has already
 # established that the projection changed; asking zellij to confirm would cost a
 # second subprocess to learn something we decided ourselves.
-# Exactly which panes to write, and what to write on them — as DATA, so the
-# decision can be read and asserted without a zellij to rename (D34).
+# Write what moved; hand back what we no longer own.
 #
-# Two kinds. The panes whose title MOVED: the gate proved that something changed,
-# but with several agents open most of them did not, and each rename is ~11ms of
-# subprocess. And the panes we have RELEASED: an agent that ended must not leave
-# its glyph behind, and nothing else would ever clear it, because a pane nobody
-# projects onto is a pane nobody touches.
-#
-# A released pane gets its `base` — the same title with the glyph taken off. NOT
-# a blank one, which would mean undo-rename-pane, and undo POPS ONE RENAME off a
-# stack rather than clearing our name: after a session's worth of state changes
-# it would leave the second-to-last agent title sitting there. Verified the hard
-# way on a real pane. Blank still means undo, and is still right for an agent that
+# A released pane gets its `base` — the same title with the glyph taken off. NOT a
+# blank one, which would mean undo-rename-pane, and undo POPS ONE RENAME off a
+# stack rather than clearing our name: after a session's worth of state changes it
+# would leave the second-to-last agent title sitting there. Verified the hard way
+# on a real pane. A blank still means undo, and is still right for an agent that
 # never had a name to show.
-export def renames [desired: list<record>, previous: any]: nothing -> list<record> {
-    let before = $previous | default []
-    let moved = $desired | where {|p|
-        let was = $before | where {|b| ($b.session == $p.session) and ($b.pane_id == $p.pane_id) } | get -o 0
-        ($was == null) or ($was.title != $p.title)
+#
+# No title is read back before writing. Dispatch has already established which
+# keys moved; asking zellij to confirm would cost a subprocess to learn something
+# we decided ourselves.
+# As DATA first — one argv per pane — so what would be run can be read and
+# asserted without a zellij to rename (D34), exactly as SketchyBar's `message` is.
+export def commands [changed: record, removed: record, settings: record]: nothing -> list<list<string>> {
+    let writes = $changed | columns | each {|k|
+        let p = $changed | get $k
+        argv $settings.binary $p.session $p.pane_id $p.title
     }
-    let released = $before
-        | where {|b| not ($desired | any {|p| ($p.session == $b.session) and ($p.pane_id == $b.pane_id) }) }
-        | each {|b| {session: $b.session, pane_id: $b.pane_id, title: ($b.base? | default "")} }
-    $moved ++ $released
+    let undos = $removed | columns | each {|k|
+        let p = $removed | get $k
+        argv $settings.binary $p.session $p.pane_id ($p.base? | default "")
+    }
+    $writes ++ $undos
 }
 
-export def apply [desired: list<record>, previous: any, settings: record]: nothing -> any {
-    for r in (renames $desired $previous) {
-        try { rename $settings.binary $r.session $r.pane_id $r.title }
+export def apply [changed: record, removed: record, settings: record]: nothing -> nothing {
+    for c in (commands $changed $removed $settings) {
+        try { ^($c | first) ...($c | skip 1) | complete | ignore }
     }
-    let me = $settings.me
-    if ($me.pane_id | is-empty) { null } else { {zellij: {session: $me.session, pane_id: $me.pane_id}} }
 }

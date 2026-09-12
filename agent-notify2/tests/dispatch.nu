@@ -1,14 +1,15 @@
-# Step 3 — the config file and the dispatch gate.
+# Step 3, rewritten for the contract of step 7b — the config file, and the diff.
 #
-# The gate is the whole point of this step, and section B is the part to read: a
-# change that does not alter what a surface would show must not reach that
-# surface. Everything here runs against a real store and a real config file, with
+# The section to read is B. A surface says what should be shown, as a map; this is
+# where "what changed" is worked out, once, for every surface that will ever
+# exist. Everything here runs against a real store and a real config file, with
 # `tests/fake.nu` standing in for zellij.
 
 use ../../agent-notify2
 use ../core/config.nu
 use ../core/dispatch.nu
 use ../core/event.nu
+use ../core/store.nu
 use fake.nu
 use assert.nu *
 
@@ -16,18 +17,17 @@ const TMP = ($nu.temp-dir | path join "agent-notify2-tests-dispatch")
 const LOG = ($nu.temp-dir | path join "agent-notify2-tests-dispatch" "surface.log")
 const CFG = ($nu.temp-dir | path join "agent-notify2-tests-dispatch" "config.yaml")
 
-# The shipped table's shape, built by hand — exactly what `core/dispatch.nu` will
-# hold once zellij exists. `boom` is here to prove one surface cannot take another
-# down with it.
+# The shipped table's shape, by hand — exactly what `core/dispatch.nu` holds.
+# `boom` proves one surface cannot take another down with it.
 def surfaces []: nothing -> record {
     { boom: {info: {name: "boom", title: "always fails"}
-             settings: {|given, me| $given }
-             project: {|recs, s| $recs | length }
-             apply: {|desired, prev, s| error make --unspanned {msg: "boom: no such display"} }}
+             settings: {|given| $given }
+             project: {|recs, s| {all: ($recs | length)} }
+             apply: {|changed, removed, s| error make --unspanned {msg: "boom: no such display"} }}
       fake: {info: $fake.INFO
-             settings: {|given, me| fake settings $given $me }
+             settings: {|given| fake settings $given }
              project: {|recs, s| fake project $recs $s }
-             apply: {|desired, prev, s| fake apply $desired $prev $s }} }
+             apply: {|changed, removed, s| fake apply $changed $removed $s }} }
 }
 
 def write-config [cfg: record] { $cfg | to yaml | save --force $CFG }
@@ -64,7 +64,6 @@ export def main [] {
         (check "…and the message says which one"
                (config problems ["fake"] | first | str contains "'zellij'") true)
     ]
-
     write-config {surfaces: ["fake"], colours: {working: "blue"}, fake: {log: $LOG}}
     let a4 = [
         (check "a top-level key that owns nothing is rejected"
@@ -72,7 +71,8 @@ export def main [] {
     ]
     write-config {surfaces: "fake", fake: {log: $LOG}}
     let a5 = [
-        (check "`surfaces` must be a list" (config problems ["fake"] | first | str contains "must be a list") true)
+        (check "`surfaces` must be a list"
+               (config problems ["fake"] | first | str contains "must be a list") true)
     ]
     write-config {surfaces: ["fake"], fake: "nope"}
     let a6 = [
@@ -80,60 +80,62 @@ export def main [] {
                (config problems ["fake"] | first | str contains "must be a map") true)
     ]
 
-    # ── B. the gate ──────────────────────────────────────────────────────────
+    # ── B. the diff, which is the whole idea ─────────────────────────────────
     write-config {surfaces: ["fake"], fake: {log: $LOG}}
 
-    let created = agent-notify2 store patch "a1" {client: "claude", state: "working"}
-    let b1 = dispatch project $created.before $created.after --table (surfaces)
+    let one = {id: "a1", client: "claude", state: "working"}
+    let two = {id: "a2", client: "claude", state: "awaiting"}
+
+    let b1 = dispatch project [] [$one] --table (surfaces)
     let b = [
-        (check "a new agent reaches the surface" ($b1 | where surface == "fake" | get action) ["applied"])
-        (check "…once" (log-lines) 1)
-        (check "…showing the state" (last-line) "Wa1")
+        (check "a new agent is written" ($b1 | where surface == "fake" | get action) ["applied"])
+        (check "…one key" ($b1 | where surface == "fake" | get wrote) [1])
+        (check "…and the line says so" (last-line) "Wa1")
     ]
 
-    # The whole point: a turn that only changes the message must not repaint.
-    let msg = agent-notify2 store patch "a1" {message: "a long answer"}
-    let b2 = dispatch project $msg.before $msg.after --table (surfaces)
+    # The whole point: a change the surface cannot show must not reach it.
+    let b2 = dispatch project [$one] [($one | upsert message "a long answer")] --table (surfaces)
     let b_gate = [
-        (check "the store did change" $msg.changed true)
-        (check "…but the surface does not show messages, so it is skipped"
+        (check "a change this surface does not show is skipped"
                ($b2 | where surface == "fake" | get action) ["skipped"])
         (check "…and nothing was written" (log-lines) 1)
     ]
 
-    let moved = agent-notify2 store patch "a1" {state: "awaiting"}
-    let b3 = dispatch project $moved.before $moved.after --table (surfaces)
-    let b_move = [
-        (check "a state change does repaint" ($b3 | where surface == "fake" | get action) ["applied"])
-        (check "…with the new glyph" (last-line) "Aa1")
+    # And a change it CAN show reaches it — but only the key that moved.
+    let b3 = dispatch project [$one $two] [($one | upsert state "awaiting") $two] --table (surfaces)
+    let b_key = [
+        (check "a state change is written" ($b3 | where surface == "fake" | get action) ["applied"])
+        (check "…and ONLY the agent that moved — not the one that did not"
+               ($b3 | where surface == "fake" | get wrote) [1])
+        (check "…which is the one in the line" (last-line) "Aa1")
     ]
 
-    let forced = dispatch project --force --table (surfaces)
+    let b4 = dispatch project [$one $two] [$one] --table (surfaces)
+    let b_gone = [
+        (check "an agent that vanished is undone, not merely forgotten"
+               ($b4 | where surface == "fake" | get undid) [1])
+        (check "…and the undo names it" (last-line) "-a2")
+    ]
+
+    let n = log-lines
+    let b5 = dispatch project [$one] [$one] --table (surfaces) --force
     let b_force = [
-        (check "--force repaints regardless" ($forced | where surface == "fake" | get action) ["applied"])
-        (check "…and wrote again" (log-lines) 3)
-    ]
-
-    agent-notify2 store patch "a2" {client: "codex", state: "idle"} | ignore
-    let gone = agent-notify2 store drop "a2"
-    let b4 = dispatch project {id: "a2", client: "codex", state: "idle"} null --table (surfaces)
-    let b_drop = [
-        (check "an agent that vanished changes the picture"
-               ($b4 | where surface == "fake" | get action) ["applied"])
-        (check "…and is no longer in it" (last-line) "Aa1")
+        (check "--force writes even when nothing moved"
+               ($b5 | where surface == "fake" | get action) ["applied"])
+        (check "…and wrote again" (log-lines) ($n + 1))
     ]
 
     # ── C. what the config turns on, and failure isolation ───────────────────
     let before_off = log-lines
     write-config {surfaces: [], fake: {log: $LOG}}
-    let c1 = dispatch project $created.before $created.after --table (surfaces)
+    let c1 = dispatch project [] [$one] --table (surfaces)
     let c = [
         (check "a surface not listed is never called" $c1 [])
         (check "…and wrote nothing" (log-lines) $before_off)
     ]
 
     write-config {surfaces: ["boom", "fake"], fake: {log: $LOG}}
-    let c2 = dispatch project $moved.before $moved.after --table (surfaces) --force
+    let c2 = dispatch project [] [$one] --table (surfaces) --force
     let c_iso = [
         (check "a surface that throws is reported, not raised"
                ($c2 | where surface == "boom" | get action) ["failed"])
@@ -144,7 +146,7 @@ export def main [] {
     ]
 
     write-config {surfaces: ["fake"], fake: {}}
-    let c3 = dispatch project $moved.before $moved.after --table (surfaces) --force
+    let c3 = dispatch project [] [$one] --table (surfaces) --force
     let c_settings = [
         (check "a surface whose settings are wrong fails alone"
                ($c3 | where surface == "fake" | get action) ["failed"])
@@ -153,25 +155,23 @@ export def main [] {
     ]
 
     rm --force $CFG
-    let c4 = dispatch project $moved.before $moved.after --table (surfaces)
+    let c4 = dispatch project [] [$one] --table (surfaces)
     let c_nofile = [ (check "no config file means no surfaces, not an error" $c4 []) ]
 
     # ── D. the seam in event.nu ──────────────────────────────────────────────
-    # Nothing is shipped in `surfaces/` yet, so the link can only be proved the
-    # other way round: the event path must be unchanged by dispatch existing.
     let d1 = event apply {op: "patch", id: "d1", changes: {client: "claude", state: "working"}}
     let d2 = event apply {op: "drop", id: "d1"}
     let d = [
         (check "a write still reports what it did" $d1.changed true)
         (check "dispatch cannot break a store write" ($d1.after.state) "working")
-        (check "a drop now carries what vanished, so a surface can compare"
+        (check "a drop carries what vanished, so a surface can undo it"
                ($d2.before.id) "d1")
         (check "…and reports that it happened" $d2.changed true)
         (check "dropping nothing is still nothing"
                (event apply {op: "drop", id: "d1"} | get changed) false)
     ]
 
-    let all = ($a ++ $a2 ++ $a3 ++ $a4 ++ $a5 ++ $a6 ++ $b ++ $b_gate ++ $b_move
-               ++ $b_force ++ $b_drop ++ $c ++ $c_iso ++ $c_settings ++ $c_nofile ++ $d)
+    let all = ($a ++ $a2 ++ $a3 ++ $a4 ++ $a5 ++ $a6 ++ $b ++ $b_gate ++ $b_key
+               ++ $b_gone ++ $b_force ++ $c ++ $c_iso ++ $c_settings ++ $c_nofile ++ $d)
     summarise $all --title "config + dispatch"
 }

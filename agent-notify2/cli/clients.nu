@@ -18,7 +18,7 @@ export def main []: nothing -> table {
         name: $c.name
         agent: $c.title
         transport: $c.transport
-        states: ($c.states | str join " ")
+        states: $c.states
     }}
 }
 
