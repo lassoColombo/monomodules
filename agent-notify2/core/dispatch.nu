@@ -34,15 +34,21 @@
 use config.nu
 use store.nu
 use ../surfaces/zellij.nu
+use ../surfaces/sketchybar.nu
 
 # ── the shipped surfaces ─────────────────────────────────────────────────────
-# Step 5 adds SketchyBar here. Each entry is four things: what it is, how it reads
-# its own settings, the pure projection, and the side effect.
+# One entry per surface, written by hand: four things each — what it is, how it
+# reads its own settings, the pure projection, and the side effect. The order is
+# the order a repaint touches them.
 export def shipped []: nothing -> record {
     { zellij: {info: $zellij.INFO
                settings: {|given, me| zellij settings $given $me }
                project: {|recs, s| zellij project $recs $s }
-               apply: {|desired, s| zellij apply $desired $s }} }
+               apply: {|desired, s| zellij apply $desired $s }}
+      sketchybar: {info: $sketchybar.INFO
+                   settings: {|given, me| sketchybar settings $given $me }
+                   project: {|recs, s| sketchybar project $recs $s }
+                   apply: {|desired, s| sketchybar apply $desired $s }} }
 }
 
 export def known []: nothing -> list<string> { shipped | columns }

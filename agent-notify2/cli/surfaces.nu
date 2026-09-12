@@ -6,6 +6,7 @@ use ../core/config.nu
 use ../core/dispatch.nu
 use ../core/identity.nu
 use ../core/janitor.nu
+use ../surfaces/sketchybar.nu
 
 @search-terms agent notify surfaces integrations zellij sketchybar list enabled
 @example "what can show the store?" { agent-notify2 surfaces }
@@ -32,4 +33,34 @@ export def refresh []: nothing -> table {
     # path, so importing identity here costs the hot path nothing.
     let who = try { identity resolve } catch { null }
     dispatch project --force --me (if ($who == null) { "" } else { $who.id? | default "" })
+}
+
+# Create a surface's items on the bar. Unlike `clients wiring`, this one ACTS:
+# SketchyBar items are runtime state, not a file in someone's config directory,
+# and creating them is the only way a fixed pool can exist at all. What goes in
+# your `sketchybarrc` is still only printed — see `surfaces wiring`.
+@search-terms agent notify surfaces install scaffold sketchybar items pool
+@example "create the bar items" { agent-notify2 surfaces install sketchybar }
+export def install [name: string]: nothing -> nothing {
+    let cfg = config load
+    match $name {
+        "sketchybar" => {
+            sketchybar install (sketchybar settings ($cfg | get -o sketchybar | default {}) null)
+            print $"(ansi green)installed(ansi reset) the SketchyBar counters"
+        }
+        "zellij" => { print "zellij needs no installation — it renames panes directly." }
+        _ => { error make --unspanned {msg: $"agent-notify: no surface named '($name)' \(try: zellij, sketchybar\)"} }
+    }
+}
+
+# What to put in the surface's own config so it survives a restart. Printed, never
+# applied (D20).
+@search-terms agent notify surfaces wiring setup sketchybarrc config
+@example "how do I keep the bar items?" { agent-notify2 surfaces wiring sketchybar }
+export def wiring [name: string]: nothing -> string {
+    match $name {
+        "sketchybar" => (sketchybar wiring)
+        "zellij" => "zellij needs no wiring — agent-notify renames panes itself."
+        _ => { error make --unspanned {msg: $"agent-notify: no surface named '($name)' \(try: zellij, sketchybar\)"} }
+    }
 }

@@ -554,6 +554,12 @@ core ever hearing the word zellij. A daemon would have to be told.
 module at runtime. Passing a different table is what lets the tests exercise all
 of it with nothing installed (`tests/fake.nu`).
 
+**A side effect is built as data first.** `project` returns what should be shown;
+a surface that talks to a program also exposes the *message* it would send as a
+pure function, and `apply` is then two lines that send it. The SketchyBar suite
+runs 33 checks with no bar installed and not one subprocess, and asserts the exact
+arguments the daemon would receive.
+
 **A surface never writes the store.** It returns what it learned — where its pane
 is, which item it was given — and dispatch records that in the surface's own
 namespace. The store stays the one thing that owns writing, and the surface stays
@@ -618,6 +624,9 @@ is an error, because that is a typo.
 | D30 | Liveness is the agent's PROCESS, recorded once at SessionStart | **LOCKED** | §4.6b — the only signal that is proof rather than a proxy; replaces v1's zellij scan and janitor outright |
 | D31 | Cannot tell ⇒ delete nothing | **LOCKED** | §4.6b — one unreadable `ps` must never wipe a live store |
 | D32 | The client declares how to find its own process | **LOCKED** | §4.6b — same rule as every other agent-specific fact (D18) |
+| D33 | The hook paints the bar itself; no trigger, no daemon round trip | **LOCKED** | step 5 — dispatch already holds the store; v1's path cost a second nu (~47ms) and a glue script |
+| D34 | A side effect is built as DATA first (`message`), then sent | **LOCKED** | step 5 — it is what lets the bar be tested exactly, with no bar installed and no subprocess |
+| D35 | A fixed item pool, created once, never added to or removed from | **INHERITED** | v1's most expensive lesson; re-measured at 17.51ms per add+remove against 6.5ms per message |
 | D15 | Replace pandoc with a nu-native flattener | **OPEN** | 25.1ms on the event path, and a dependency |
 | D16 | Where the bench harness lives | **OPEN** | ~350 lines of documented nu; §8 |
 | D17 | Final promoted name/location (top-level `agent-notify`?) | **OPEN** | v1 is `ai/agent-notify`; v2 is top-level |
@@ -786,8 +795,27 @@ its own bar item names so both can be live at once.
    user, so a tab title cannot be computed from the store alone: it has to be
    read, stripped and put back. The real question is who owns the tab name, and
    that deserves an answer rather than a guess.
-5. **SketchyBar integration** — model, one-message paint, install owning its own
-   glue and item pool. Re-measure the `--add`/`--remove` claim here.
+5. **SketchyBar integration** — ✅ done, the three counters.
+   `surfaces/sketchybar.nu`, 233/233 across seven suites, +0.82ms of parse (the
+   whole surface machinery is now +4.69ms).
+   Measured first, because the numbers chose the design: `--query bar` 5.98ms,
+   `--set` one property 6.59ms, **`--set` TEN properties in one message 6.54ms**,
+   `--add` + `--remove` one item 17.51ms. So a message costs what a process costs
+   and almost nothing per property — a whole repaint is ONE call — and v1's
+   fixed-pool rule holds, since adding items is ~3× setting them.
+   The big deletion is the paint path. v1 went `hook → --trigger → daemon →
+   render.sh → a fresh nu → load the module → read the store → --set`: a second
+   process, ~47ms, and a glue script in the bar's config. v2 goes `hook → --set`,
+   ~6.5ms, because dispatch already runs inside the agent with the store in hand.
+   **v1's `render/cache.nu` disappears too** — it existed to answer "has the model
+   changed?", which is what the gate answers with nothing stored. The gate bites
+   harder here than for zellij: a counter shows only a NUMBER, so a new message, a
+   rename and a directory change all project identically and never reach the bar.
+   `~/.config/sketchybar` keeps ONE line, which creates the pool and a hidden 30s
+   item that prunes then repaints — the backstop and the janitor in one.
+5b. **Bar drawers** — deferred to step 6. The rows a counter opens are the same
+   rows the picker lists, so they are built once, on the shared view, and used by
+   both.
 6. **Picker + jump** — the terminal surface and the actions, on the shared `view/`.
 7. **Cutover** — store migration, hook flip, delete v1, rename, update
    `settings.json` / `sketchybarrc` / `config.kdl`.
