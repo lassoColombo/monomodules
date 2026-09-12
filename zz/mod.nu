@@ -6,14 +6,6 @@
 #  internal
 # ------------
 
-# decorate a picker prompt with starry-cat accents. Uses ANSI names so the
-# rendered colors come from alacritty's palette (yellow → base0A star
-# yellow, blue → base0D sky-swirl blue), keeping the palette as the single
-# source of truth.
-def styled-prompt [text: string]: nothing -> string {
-  $"(ansi yellow_bold)▸(ansi reset) (ansi blue_bold)($text)(ansi reset)"
-}
-
 # completion source listing layouts in ~/.config/zellij/layouts/.
 def layout-completer [] {
   ls ($env.HOME | path join ".config/zellij/layouts/*.kdl" | into glob)
@@ -95,16 +87,13 @@ def git-block [path: string]: nothing -> string {
 # `sync` are for), so this has to survive a missing path.
 #
 # Returned as a STRING, not a table: three stacked sections only fit in one, and
-# skim renders a string with its ANSI intact. It is also why `width` is a
-# parameter rather than something measured here — see `preview-width`.
+# a picker renders a string with its ANSI intact. `width` is the pane's, handed
+# over by the picker that owns it — this closure runs wherever that picker runs,
+# which may be somewhere with no terminal to measure.
 def dir-preview [width: int]: record -> string {
   let dir = $in
   let entries = (try { ls --all $dir.path } catch { null })
   if ($entries == null) { return $"(ansi red)— ($dir.path) is gone —(ansi reset)" }
-
-  # `use_ansi_coloring: auto` reads as "no" wherever this closure runs — inside
-  # the plugin, with no terminal attached — and the listing would arrive grey.
-  $env.config.use_ansi_coloring = true
 
   [
     $"(ansi blue_bold)(short $dir.path)(ansi reset) (ansi dark_gray)· ($entries | length) entries · frecency ($dir.score | math round)(ansi reset)"
@@ -118,88 +107,32 @@ def dir-preview [width: int]: record -> string {
   ] | where {|s| $s | is-not-empty } | str join "\n\n"
 }
 
-# Where the preview goes and how wide its table may be. One function, because the
-# width follows from the split and the two must not disagree.
-#
-# The listing is the tallest thing in the pane and ROWS are what it runs out of.
-# A `right:` pane is the FULL height of the terminal where a `down:` one is only
-# a share of it, so a wide terminal hands the preview the side; a narrow one puts
-# it back underneath, where the columns are. The rows lose nothing either way — a
-# row is one path, and it was never the thing you were reading.
-#
-# Under MIN_ROWS there is room for neither, and skim reads a zero-height pane as
-# "no preview at all".
-#
-# The width is measured HERE and captured by the closure that uses it: that
-# closure runs inside the plugin, which has no terminal to measure and would
-# answer skim's fallback 80. Two columns come off so the widest row never lands
-# on the pane's own edge.
-const MIN_ROWS = 16
-const WIDE_COLS = 120
-const SIDE = 62   # % of a wide terminal the preview takes on the right
-const UNDER = 75  # % of a narrow one it takes underneath
-
-def preview-pane []: nothing -> record<window: string, width: int, label: int> {
-  let t = (term size)
-  let beside = ($t.rows >= $MIN_ROWS and $t.columns >= $WIDE_COLS)
-  let preview_cols = if $beside { $t.columns * $SIDE // 100 } else { $t.columns }
-  let list_cols = if $beside { $t.columns - $preview_cols } else { $t.columns }
-  {
-    window: (
-      if $t.rows < $MIN_ROWS { "down:0" } else if $beside { $"right:($SIDE)%" } else { $"down:($UNDER)%" }
-    )
-    width: ([($preview_cols - 2) 40] | math max)
-    label: ([($list_cols - 2) 20] | math max)
-  }
-}
-
-# A row, trimmed from the LEFT to fit `budget` columns: a path is worth more from
-# its tail than its head, and the heading of the preview shows the whole of it
-# anyway. `…/` marks a row that lost something.
-#
-# Only rows that DO NOT fit are touched, which is the whole design. Clamping
-# every row to a fixed number of components instead — `path split | last 4` —
-# rewrites 120 of these 173 to spare the 17 that overflow, and charges every one
-# of them the `~` that says where it lives. skim matches on the row, so a
-# component dropped here is a component you can no longer type at: a fair price
-# for a row that was going to be cut regardless, and a bad one otherwise.
-def label [path: string, budget: int]: nothing -> string {
-  let parts = (short $path | path split)
-  # `1..0` counts DOWN in nushell, so a one-component path must build no tails.
-  let tails = if ($parts | length) < 2 { [] } else {
-    1..(($parts | length) - 1) | each {|n| $"…/($parts | skip $n | path join)" }
-  }
-  # the whole path first, then ever-shorter tails: the first that fits wins, and
-  # a basename too long for the pane is as short as this gets.
-  ([($parts | path join)] | append $tails | where { ($in | str length) <= $budget } | get 0?)
-  | default ($parts | last)
-}
-
 # Choosing goes through ONE hook: `$env.zz_config.picker`, a closure that takes
 # the items as pipeline input and an options record {prompt, display, preview,
-# multi, window}. With nothing configured this is Nushell's built-in `input list`, which
-# is why zz needs no plugin; an engine that has a preview pane is handed a way to
-# render one, and shows you what is inside a directory before you cd into it.
+# multi} — see ~/.config/nushell/module-hooks.nu. zz says what there is to choose
+# from and what each item says; the frame, the sizing, the preview pane and every
+# key belong to the picker, which is why nothing handed over here is a number.
+#
+# With nothing configured that picker is Nushell's built-in `input list`, which
+# is why zz needs no plugin. It has no preview pane and drops `preview` on the
+# floor; an engine that has one is handed the width to fill it, and shows you
+# what is inside a directory before you cd into it.
 def choose [opts: record] {
   let items = $in
   let custom = $env.zz_config?.picker?
   if ($custom != null) { return ($items | do $custom $opts) }
-  # `default` would EVALUATE a closure handed to it, so spell the fallback out.
-  let display = if ($opts.display? == null) { {|| $in | to text } } else { $opts.display }
-  let prompt = styled-prompt ($opts.prompt? | default "")
   if ($opts.multi? | default false) {
-    $items | input list --fuzzy --multi --display $display $prompt
+    $items | input list --fuzzy --multi --display $opts.display $opts.prompt
   } else {
-    $items | input list --fuzzy --display $display $prompt
+    $items | input list --fuzzy --display $opts.display $opts.prompt
   }
 }
 
 # single-select picker over zoxide entries. "" when nothing was chosen.
 def pick [prompt: string, query?: string] {
-  let pane = (preview-pane)
   let chosen = (
     candidates $query
-    | choose {prompt: $prompt, display: {|| label $in.path $pane.label }, preview: {|| dir-preview $pane.width }, window: $pane.window}
+    | choose {prompt: $prompt, display: {|| short $in.path }, preview: {|width| dir-preview $width }}
   )
   if ($chosen == null) { "" } else { $chosen.path }
 }
@@ -254,12 +187,13 @@ export def --env main [query?: string] {
 # If no layout is given, prompt over available layouts.
 export def tab [layout?: string@layout-completer, query?: string] {
   let layout = if ($layout | is-empty) {
-    let pane = (preview-pane)
     layout-completer
     | choose {
       prompt: "zellij layout"
-      preview: {|| open ([$env.HOME ".config" "zellij" "layouts" $"($in).kdl"] | path join) }
-      window: $pane.window
+      display: {|| $in }
+      # --raw: a layout is KDL, and `open` would hand back a parsed value that
+      # the preview pane has no use for — the point here is to read the file.
+      preview: {|| open --raw ([$env.HOME ".config" "zellij" "layouts" $"($in).kdl"] | path join) }
     }
     | default ""
   } else {
@@ -276,15 +210,13 @@ export def cp [query?: string] {
 
 # Remove zoxide entries (multi-select).
 export def remove [query?: string] {
-  let pane = (preview-pane)
   let picks = (
     candidates $query
     | choose {
       prompt: "zoxide remove"
-      display: {|| label $in.path $pane.label }
-      preview: {|| dir-preview $pane.width }
+      display: {|| short $in.path }
+      preview: {|width| dir-preview $width }
       multi: true
-      window: $pane.window
     }
     | default []
   )

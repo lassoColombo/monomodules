@@ -15,41 +15,19 @@
 
 use view.nu *
 
-# The preview pane, for an engine that has one (see `choose`). A message is prose,
-# so it sits UNDER the list, spans the full width, and wraps — a picker with a
-# preview pane scrolls it when the message outgrows it.
-#
-# Its size is what is LEFT once the list has what it needs: skim's own chrome is
-# two rows (the prompt and the count), one row goes to each agent, and everything
-# below — the rule that divides them included — is preview. `term size` reports
-# the pane the picker is running in, so the floating drawer and an in-pane run
-# each get their own honest arithmetic, and a message gets the whole screen when
-# there are only two agents to choose between.
-const PV_MIN = 8              # below this a message is not worth showing at all
-const LIST_MIN = 3            # ...and the list is never squeezed below this to feed it
-const PV_FALLBACK = "down:55%:wrap"   # no tty to measure: a share is all one can say
-
-def preview-window [rows: int] {
-    let h = (term size).rows
-    if $h < 1 { return $PV_FALLBACK }
-    # What the list leaves over, floored so a message stays readable — then capped,
-    # because a pane too short for both is a pane where the LIST comes first.
-    let want = [($h - 2 - $rows) $PV_MIN] | math max
-    let pv = [$want ($h - 2 - $LIST_MIN)] | math min
-    if $pv < 1 { return $PV_FALLBACK }
-    $"down:($pv):wrap"
-}
-
 # Choosing goes through ONE hook: `$env.ai_config.picker`, a closure that takes
 # the rows as pipeline input and an options record {prompt, display, preview,
-# query, window} — see ~/.config/nushell/module-hooks.nu. With nothing configured
-# this is Nushell's built-in `input list`, which is why nothing here depends on a
-# plugin; an engine with a preview pane is handed the rendered message, and one
-# that can prefill a filter is handed the query.
+# query} — see ~/.config/nushell/module-hooks.nu. This file says what a row and a
+# preview HOLD and nothing about how either looks: the frame, the sizing, the
+# preview pane and every key are the picker's, which is why nothing handed over
+# here is a number.
 #
-# `input list` can do neither, so the fallback does the filtering itself — a
-# query that reaches an engine which ignores it would silently show you the whole
-# fleet, which is worse than no query at all.
+# With nothing configured the picker is Nushell's built-in `input list`, which is
+# why nothing here depends on a plugin. It has no preview pane and drops
+# `preview` on the floor, and it cannot prefill a filter — so the ONE thing this
+# fallback does for itself is apply the query, because a query that reaches an
+# engine which ignores it would silently show you the whole fleet, which is worse
+# than no query at all.
 def choose [opts: record] {
     let rows = $in
     let custom = $env.ai_config?.picker?
@@ -63,9 +41,7 @@ def choose [opts: record] {
         print $"(ansi dark_gray)no agent matches ($q)(ansi reset)"
         return null
     }
-    # `default` would EVALUATE a closure handed to it, so spell the fallback out.
-    let display = if ($opts.display? == null) { {|| $in | to text } } else { $opts.display }
-    $matching | input list --fuzzy --display $display ($opts.prompt? | default "")
+    $matching | input list --fuzzy --display $opts.display $opts.prompt
 }
 
 # state → terminal colour: the palette-facing half of the mapping the bar makes
@@ -138,7 +114,6 @@ export def pick [recs: list<any>, query?: string] {
             prompt: "agent"
             display: {|| $in.row }
             preview: {|| message-of $in }
-            window: (preview-window ($rows | length))
             query: ($query | default "")
         }
     )
