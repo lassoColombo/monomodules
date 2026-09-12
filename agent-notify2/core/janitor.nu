@@ -48,11 +48,11 @@ export def prune []: nothing -> table {
 
     let doomed = $gone ++ $superseded
     for d in $doomed { store remove $d.id | ignore }
-    $doomed | each {|d| {
-        id: $d.id
-        client: ($d.client? | default "")
-        state: ($d.state? | default "")
-        pid: $d.proc.pid
-        why: (if ($d.proc.pid in $living) { "superseded — /clear left it behind" } else { "process gone" })
-    }}
+    # The WHOLE record, not a summary: a surface has to be told what vanished in
+    # order to undo it — a pane cannot be handed back by its id alone.
+    $doomed | each {|d|
+        $d | merge {why: (if ($d.proc.pid in $living) {
+            "superseded — /clear left it behind"
+        } else { "process gone" })}
+    }
 }

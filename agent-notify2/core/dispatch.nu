@@ -68,6 +68,7 @@ export def project [
     --table: record         # override the shipped surfaces (tests)
     --force                 # repaint even when the projection is unchanged
     --me: string            # who we are, when there is no event to say so
+    --gone: list<record>    # records that have just been removed (see `was` below)
 ]: nothing -> list<record> {
     let surfaces = $table | default (shipped)
     if ($surfaces | is-empty) { return [] }
@@ -97,7 +98,15 @@ export def project [
         if ($who == null) { "" } else { $who.id? | default "" }
     }
     let now = store list | sort-by id
-    let was = if $force { null } else {
+
+    # What the store looked like a moment ago. A surface needs it to work out what
+    # has DISAPPEARED, and `--force` does not mean "pretend nothing was there
+    # before" — it means "paint whether or not anything changed". A forced repaint
+    # that follows a prune is told what the prune removed, or an agent killed in a
+    # pane that outlived it would keep its title for good.
+    let was = if $force {
+        (($gone | default []) ++ $now) | sort-by id
+    } else {
         if $subject == null { return [] }
         (($now | where id != $subject) ++ (if $before == null { [] } else { [$before] })) | sort-by id
     }
@@ -111,7 +120,7 @@ export def project [
             # is handed it too: it is the only way a surface can know what has
             # DISAPPEARED. Without it an agent that ends leaves its glyph on a pane
             # forever, because a pane nobody projects onto is a pane nobody touches.
-            let previous = if $force { null } else { do $s.project $was $settings }
+            let previous = do $s.project $was $settings
             if (not $force) and ($previous == $desired) {
                 {surface: $name, action: "skipped"}
             } else {

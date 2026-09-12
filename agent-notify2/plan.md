@@ -514,8 +514,15 @@ runs one session at a time, so among records sharing a live pid only the most
 recently updated survives.
 
 Never on a hook: `ps` costs ~13ms and a hook could do nothing with the answer. It
-runs from `store prune`, from `surfaces refresh` (so the bar's timer pays for it),
-and later from the picker.
+runs from `store prune`, from `surfaces refresh`, and later from the picker.
+
+**The prune hands its casualties to the repaint.** `janitor prune` returns the
+WHOLE records it removed, and `surfaces refresh` passes them to dispatch as
+`--gone`, which folds them into "what the store looked like a moment ago". Without
+that, `--force` meant "pretend nothing was there before" and a surface could not
+tell what had disappeared: an agent killed in a pane that OUTLIVED it kept its
+title for good. SketchyBar never noticed the bug — a counter is recomputed whole
+every time — which is exactly why it had to be found on zellij.
 
 What it deliberately cannot do: a **hung** agent stays, which is correct — it
 really is still there. And an agent whose `SessionStart` we missed has no `proc`

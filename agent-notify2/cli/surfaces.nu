@@ -22,12 +22,12 @@ export def main []: nothing -> table {
 @search-terms agent notify surfaces refresh repaint redraw force
 @example "repaint after editing the config" { agent-notify2 surfaces refresh }
 export def refresh []: nothing -> table {
-    # PRUNE FIRST. A repaint should not spend a zellij call on an agent that is
-    # not there, and this is the one path that runs often enough to be the system's
-    # janitor without ever touching a hook — step 5's bar timer calls it.
-    janitor prune | ignore
+    # PRUNE FIRST, and hand the casualties to the repaint. A pruned agent is the
+    # one thing no hook will ever report, so this is the only chance to undo what
+    # it left on screen — its pane title outlives it otherwise.
+    let gone = janitor prune
 
-    dispatch project --force
+    dispatch project --force --gone $gone
 }
 
 # Create a surface's items on the bar. Unlike `clients wiring`, this one ACTS:

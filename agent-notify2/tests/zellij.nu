@@ -226,6 +226,28 @@ export def main [] {
                [{pane_id: "1", title: "A changed"} {pane_id: "2", title: "two"}])
     ]
 
-    let all = ($a ++ $b ++ $c ++ $d ++ $e ++ $f ++ $g ++ $h)
+    # ── a forced repaint after a prune ───────────────────────────────────────
+    # The clock is the only thing that ever notices a killed agent, and it repaints
+    # with --force. If a forced repaint pretended nothing was there before, a pane
+    # that outlived its agent would keep the agent's title for good.
+    let ghost = {id: "ghost-1", client: "demo", state: "working", name: "ghost"
+                 zellij: {session: "agent-notify2-tests-no-such-session", pane_id: "99"}}
+    let capture = ($TMP | path join "previous")
+    let spy2 = {zellij: {info: $zellij.INFO
+                         settings: {|given, me| zellij settings $given $me }
+                         project: {|recs, st| zellij project $recs $st }
+                         apply: {|desired, prev, st|
+                             $"((zellij renames $desired $prev) | to json --raw)\n"
+                             | save --append $capture }}}
+    dispatch project --force --gone [$ghost] --table $spy2 | ignore
+    let written = open --raw $capture | lines | last | from json
+    let i = [
+        (check "a forced repaint is told what the prune removed, and hands its pane back"
+               ($written | where pane_id == "99" | get title) ["ghost"])
+        (check "…because a pruned agent is the one thing no hook will ever report"
+               ($written | any {|r| $r.pane_id == "99" }) true)
+    ]
+
+    let all = ($a ++ $b ++ $c ++ $d ++ $e ++ $f ++ $g ++ $h ++ $i)
     summarise $all --title "zellij surface"
 }

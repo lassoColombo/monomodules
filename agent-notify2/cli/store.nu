@@ -95,4 +95,6 @@ export def "store drop" [id: string]: nothing -> bool {
 # is dead is not the same as knowing that it is. See core/janitor.nu.
 @search-terms agent notify store prune clean stale dead gc janitor
 @example "clean up agents that were killed" { agent-notify2 store prune }
-export def "store prune" []: nothing -> table { janitor prune }
+export def "store prune" []: nothing -> table {
+    janitor prune | select id client state why
+}
