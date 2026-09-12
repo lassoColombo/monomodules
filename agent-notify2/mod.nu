@@ -11,9 +11,16 @@
 # other way round. Everything, logic and graphics alike, lives in this module; no
 # glue scripts in anyone else's config directory.
 #
-# BUILD STATE — step 5 of 7 (see plan.md §9). The store, its command surface, the
-# Claude and Codex clients, the config file, the dispatch gate, the zellij pane
-# titles and the SketchyBar counters all exist. Turn them on with a config file:
+# BUILD STATE — everything but the picker (plan.md §9). The store and its command
+# surface, the Claude and Codex clients, liveness by process, the config file,
+# dispatch, zellij pane and tab titles, the SketchyBar counters, and the launchd
+# clock. **v1 was dismissed on 2026-09-12** while this was still incomplete, on
+# purpose: `ai/agent-notify/` is untouched on disk and nothing invokes it.
+#
+# What is missing is step 6 — the picker and the jump — so Alt-a still opens v1's,
+# over a store that no longer updates.
+#
+# Turn the surfaces on with ~/.config/agent-notify/config.yaml:
 #
 #   surfaces: [zellij, sketchybar]
 #

@@ -742,6 +742,40 @@ agent-notify2/tests/      nu agent-notify2/tests/store.nu        (no -I needed)
 
 ---
 
+## 8b. Working together — what this project has settled
+
+**Explain simply, and slowly.** Short sentences. Examples before the concept. Plain
+words. Density is a bug here, not a sign of rigour — "I am not getting it" has
+meant *go more concrete*, never *write more*. A diagram of five lines has beaten
+three paragraphs every time.
+
+**One step at a time, each discussed before it is built.** Propose the shape, name
+which decisions are mine and which are yours, then implement. Steps that were
+merged (config + dispatch) went fine; steps that were split (panes before tabs,
+counters before drawers) went better.
+
+**Measure before designing, when performance is the question.** The numbers chose
+the design at least four times: parse cost chose the file layout, the event rate
+chose all-nushell, `--set` batching chose the one-message paint, and the import
+diamond chose the surface contract.
+
+**Prefer proof to heuristics.** Liveness went through a zellij pane check and a
+heartbeat before landing on the process — because those two were proxies, and each
+was wrong in a case that actually happens. *No proof, no action* is the rule that
+came out of it.
+
+**One mechanism, not three layers.** "Why do we have a separate pruning process on
+the bar?" was the right question, and the answer — that there was only ever one
+prune, and the bar owned a clock that should not have been its — made the design
+smaller.
+
+**Dropping a constraint beats adding machinery to preserve it.** Tab names cost a
+subprocess per repaint to respect; giving that up cost one sentence and removed a
+third of the work.
+
+**Cut over early and use it.** The table in step 7 is the argument: seven defects
+that 250+ tests could not have found, all within a few hours of real use.
+
 ## 9. Steps
 
 Each step: discuss the design → implement → verify against a stated done-when, and
@@ -818,17 +852,6 @@ its own bar item names so both can be live at once.
    leaf/report rules above), and Private Use Area glyphs do not survive ordinary
    tooling — written as literals they arrived as empty strings, and the suite
    caught it as "every state has the same title".
-4c. **Liveness** — ✅ done. `core/proc.nu` (find the agent's process, ask `ps`
-   which are still running) and `core/janitor.nu` (the two rules), reached by
-   `agent-notify2 store prune` and by `surfaces refresh`, which now prunes before
-   it repaints. 198/198 across six suites.
-   Two earlier proposals were **dropped** on the way, both correctly: a zellij
-   pane check (a killed agent can leave its pane open, so it proves the wrong
-   thing) and a heartbeat (it existed only because I had no proof and needed a
-   hint — with proof available, guessing has no job). One mechanism replaced
-   three layers.
-   Costs: `SessionStart` 27ms → 38.6ms for the one-time walk, every other event
-   unchanged, `proc.nu` free to parse, `prune` 13ms of `ps` on a cold path.
 4b. **zellij tab aggregates** — ✅ done. A tab wears one glyph per agent living in
    it, most urgent first, in front of its own name:
 
@@ -862,6 +885,17 @@ its own bar item names so both can be live at once.
 
    Cost: `list-panes` 11ms once per session; a state change is rename-pane +
    rename-tab. 265/265 across eight suites.
+4c. **Liveness** — ✅ done. `core/proc.nu` (find the agent's process, ask `ps`
+   which are still running) and `core/janitor.nu` (the two rules), reached by
+   `agent-notify2 store prune` and by `surfaces refresh`, which now prunes before
+   it repaints. 198/198 across six suites.
+   Two earlier proposals were **dropped** on the way, both correctly: a zellij
+   pane check (a killed agent can leave its pane open, so it proves the wrong
+   thing) and a heartbeat (it existed only because I had no proof and needed a
+   hint — with proof available, guessing has no job). One mechanism replaced
+   three layers.
+   Costs: `SessionStart` 27ms → 38.6ms for the one-time walk, every other event
+   unchanged, `proc.nu` free to parse, `prune` 13ms of `ps` on a cold path.
 5. **SketchyBar integration** — ✅ done, the three counters.
    `surfaces/sketchybar.nu`, 233/233 across seven suites, +0.82ms of parse (the
    whole surface machinery is now +4.69ms).
@@ -883,35 +917,38 @@ its own bar item names so both can be live at once.
 5b. **Bar drawers** — deferred to step 6. The rows a counter opens are the same
    rows the picker lists, so they are built once, on the shared view, and used by
    both.
-6. **Picker + jump** — the terminal surface and the actions, on the shared `view/`.
-7. **Cutover** — ⏳ **v1 dismissed early, on purpose** (2026-09-12). v1's hooks are
-   out of `settings.json`, its bar block is out of `sketchybarrc` (one line in its
-   place), `CLAUDE.md`'s session-naming rule now calls `agent-notify2 name`, and
-   both surfaces are on in `~/.config/agent-notify/config.yaml`. **`ai/agent-notify/`
-   is still on disk and still complete** — nothing invokes it, so reverting is one
-   settings file away. Alt-a still points at v1's picker and will until step 6.
-   Knowingly given up in the meantime: the picker and jump, tab glyphs, the bar
-   drawers and hover previews.
-   The cutover paid for itself in the first ten minutes by exposing three defects
-   no test had reason to look for:
-   - **A CLI write skipped the dispatch seam.** `store patch|set|drop` wrote
-     straight at the store, so an agent reporting through the PUBLIC API (P5) would
-     update the store and never appear on any surface. `event.nu` gained a `set`
-     op and all three now go through it.
-   - **`apply` could not know what had VANISHED.** A pane nobody projects onto is a
-     pane nobody touches, so an agent that ended left its glyph on its pane
-     forever. Dispatch already computes the previous projection for the gate, so it
-     is handed to `apply` too — which also lets a surface skip the panes that did
-     not move (~11ms each, and with several agents open most of them do not).
-   - **`undo-rename-pane` POPS ONE RENAME off a stack**; it does not clear our name.
-     After a session's worth of state changes it leaves the second-to-last agent
-     title sitting there. A released pane now gets its `base` — the same title with
-     the glyph removed, which is what v1 did and why v1 was right.
-   And one conflation, which wrote a title onto the wrong pane before it was
-   caught: **"whose event is this" and "whose environment is this" are different
-   questions.** They are the same agent for a hook, which is how it hid; they are
-   not for a command typed about some other agent. `core/dispatch.nu` now answers
-   both separately.
+6. **Picker + jump** — ⏳ NEXT, and the one thing the early cutover cost you.
+   Alt-a still opens v1's picker over a store that no longer updates. Needs: the
+   rows (shared with 5b's bar drawers), the jump action (session + pane are in the
+   store already), and the keybinding in `config.kdl` flipped — once, when it
+   works, rather than twice.
+7. **Cutover** — ⏳ **v1 dismissed early, on purpose** (2026-09-12), while
+   incomplete. v1's hooks are out of `settings.json`, its bar block is out of
+   `sketchybarrc` (one line in its place), `CLAUDE.md`'s session-naming rule calls
+   `agent-notify2 name`, both surfaces are on in
+   `~/.config/agent-notify/config.yaml`, and the clock is a launchd job.
+   **`ai/agent-notify/` is still on disk and complete** — nothing invokes it, so
+   reverting is one settings file away. Knowingly given up until step 6: the
+   picker and jump, and the bar drawers.
+
+   **Running it for real is what found the remaining defects.** Every one of these
+   was invisible to 250+ passing tests, because each needed a real machine, a real
+   agent, or a real clock:
+
+   | found by | defect |
+   |---|---|
+   | the cutover | a CLI write skipped the dispatch seam, so an agent using the PUBLIC API (P5) never reached a surface |
+   | the cutover | `apply` could not know what had VANISHED — an agent that ended left its glyph on its pane forever |
+   | a demo pane | `undo-rename-pane` POPS ONE RENAME off a stack; it does not clear our name |
+   | a demo pane | "whose event is this" and "whose environment is this" were conflated — identical for a hook, different for a CLI write about another agent |
+   | the clock | a launchd job's PATH is `/usr/bin:/bin`, so `^sketchybar` was silently not found: the clock pruned correctly and never painted, while dispatch reported "applied" |
+   | the clock | `--force` passed "there was nothing before", so a forced repaint could not release what the prune had just removed |
+   | the user | a missing pid was PERMANENT — one failed lookup blinded us to that agent for its whole life |
+
+   Left for the real end: delete `ai/agent-notify/` and its bar plugins, decide
+   D17 (the promoted name and location), migrate or discard v1's store, and flip
+   the Alt-a keybinding.
+
 
 > **Reordered after step 1** (was: write API → config → zellij → client). Two
 > reasons. The old step 2 largely landed inside step 1 — `patch`, `changed` and
@@ -1038,3 +1075,57 @@ every surface down with it.
 
 **Intermediate pipelines print nothing under `nu -c`** — only the final one — so
 anything a script means to show needs an explicit `print`.
+
+---
+
+## 11. Platform notes (hard-won)
+
+Not nushell — the programs underneath. Same rule as §10: cost time once, not twice.
+
+**zellij**
+
+- `undo-rename-pane` / `undo-rename-tab` **pop one rename off a stack**. They do
+  not clear our name. After a session's worth of state changes, an undo leaves the
+  second-to-last agent title sitting there. Write the name you want instead;
+  blank-means-undo is right only for a pane that never had one.
+- **There is no tab environment variable.** `ZELLIJ`, `ZELLIJ_PANE_ID` and
+  `ZELLIJ_SESSION_NAME`, and nothing else — so learning which tab a pane is in
+  costs a `list-panes`.
+- `action list-panes -t -j` is the one call worth making: a flat list of panes with
+  `id`, `title`, `tab_id`, `tab_name`, `tab_position`, `pane_command`, `pane_cwd`,
+  `is_plugin`, `exited`. It answers pane→tab, tab names and liveness at once.
+- **`tab_id` is not `tab_position`.** `rename-tab --tab-id` wants the id; ids are
+  not renumbered when tabs move, and `query-tab-names` returns names in POSITION
+  order with no ids, so it cannot be used for renaming.
+- `--session <name>` on every action makes it work from anywhere, including a
+  process with no ambient `$ZELLIJ`.
+
+**SketchyBar**
+
+- A message costs what a process costs and almost nothing per property: `--set`
+  with one property 6.59ms, with ten 6.54ms. **Batch everything into one call.**
+- `--add` + `--remove` of a single item is 17.51ms, ~3× a whole repaint. Create the
+  item pool ONCE and never touch it again — v1 learned this by pinning the daemon
+  near 40% CPU.
+- `--query <item>` returns JSON with `update_freq` under `scripting`, not at the
+  top level.
+
+**launchd**
+
+- `StartInterval` IS a clock: no daemon, no lock file, no pid to supervise, and it
+  survives logout and reboot.
+- **A job's PATH is `/usr/bin:/bin`.** Every program a job calls needs an absolute
+  path — this silently broke the clock's repaint while its prune worked fine.
+- `bootstrap gui/$UID <plist>` to load, `bootout gui/$UID/<label>` to unload;
+  bootout first when reinstalling, and ignore its failure when nothing is loaded.
+- `launchctl list | grep <label>` gives pid and last exit status — the only cheap
+  way to notice a tick that fails every 30 seconds. Set `StandardErrorPath`.
+
+**macOS `ps`**
+
+- `ps -o ppid=,lstart=,comm= -p <pid>` is one line: ppid, then `lstart` as FIVE
+  whitespace-separated tokens, then the command.
+- `ps -o pid= -p a,b,c` returns only the pids that are alive and exits 1 when none
+  are — but it also exits 1, **with something on stderr**, when a pid is
+  out of range. Stderr is what tells "none alive" from "the question was wrong".
+- A pid alone is not an identity: pids are recycled. Store the start time with it.
