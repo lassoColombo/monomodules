@@ -48,7 +48,7 @@ use ../surfaces/sketchybar.nu
 export def shipped []: nothing -> record {
     { zellij: {info: $zellij.INFO
                settings: {|given| zellij settings $given }
-               observe: {|| zellij observe }
+               observe: {|known, s| zellij observe $known $s }
                project: {|recs, s| zellij project $recs $s }
                apply: {|changed, removed, s| zellij apply $changed $removed $s }}
       sketchybar: {info: $sketchybar.INFO
@@ -116,7 +116,11 @@ export def project [
             # plain function of records. `patch` commits nothing when the facts are
             # unchanged, so the steady state is a read and a comparison.
             let seen = if ($s.observe? == null) or ($me | is-empty) { {} } else {
-                let f = do $s.observe
+                # Handed what the store already holds for this surface, so it can
+                # skip a lookup it has already paid for.
+                let mine = $after | where {|r| $r.id? == $me } | get -o 0
+                let known = if ($mine == null) { {} } else { $mine | get -o $name | default {} }
+                let f = do $s.observe $known $settings
                 if (($f | describe) | str starts-with "record") { $f } else { {} }
             }
             let now = if ($seen | is-empty) { $after } else {

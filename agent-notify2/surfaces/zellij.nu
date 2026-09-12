@@ -29,9 +29,19 @@
 # reads the environment and never has to ask "is this record me?": by the time it
 # runs, where we are is just another fact in the store.
 #
-# TABS ARE NOT HERE. A tab's name belongs to you, not to us, so a tab title
-# cannot be computed from the store alone — it has to be read, stripped and put
-# back. That is a different problem with its own answer, and it gets its own step.
+# TABS. A tab shows one glyph per agent living in it, in front of its own name:
+#
+#      root        one agent working
+#      root      one working, one waiting
+#
+# A tab's name is not ours, so it has to be read at least once. The cost is kept
+# to ONCE PER SESSION by folding it into the read we already need: the environment
+# says which PANE we are in but not which TAB, so `observe` runs one `list-panes`
+# the first time — and that same call returns the tab's name. Both are recorded,
+# and after that a tab title is computed from the store like everything else.
+#
+# The price is that a tab renamed LATER is overwritten on the next state change,
+# the same bargain already struck for pane names: the store owns the name.
 
 use ../core/schema.nu
 
@@ -79,12 +89,48 @@ export def settings [given: record]: nothing -> record {
       glyphs: ($DEFAULT_GLYPHS | merge $g) }
 }
 
-# What this process can see about itself: which pane it is running in. Empty when
-# we are not in zellij at all, which is how a bare terminal costs nothing.
-export def observe []: nothing -> record {
+# Remove a leading run of our own glyphs from a title. The only place stripping
+# happens — once, when a tab's name is first learned, rather than on every write
+# as v1 did. A title that is glyphs and nothing else strips to "", which is our
+# own leftover and not a name.
+def strip-glyphs [name: string, glyphs: record]: nothing -> string {
+    let marks = $glyphs | values | where {|g| ($g | str trim) != "" }
+    $name | str trim | split row " " | skip while {|t| $t in $marks } | str join " " | str trim
+}
+
+def pane-info [binary: string, session: string, pane: string]: nothing -> any {
+    let r = try { ^$binary --session $session action list-panes -t -j | complete } catch { null }
+    if ($r == null) or ($r.exit_code != 0) { return null }
+    let ps = try { $r.stdout | from json } catch { null }
+    if $ps == null { return null }
+    $ps | where {|p| ($p.id | into string) == $pane } | get -o 0
+}
+
+# What this process can see about itself. Empty when we are not in zellij at all,
+# which is how a bare terminal costs nothing.
+#
+# `known` is what the store already holds for us, and it exists so this can be
+# CHEAP: the environment gives the pane for free, but the tab needs a
+# `list-panes` — so that call is made only when the tab is unknown or the pane has
+# moved. Once per session, the same shape as the pid walk. The same call also
+# returns the tab's NAME, which is why a tab title never has to be read again.
+export def observe [known: record, settings: record]: nothing -> record {
     let session = $env.ZELLIJ_SESSION_NAME? | default ""
     let pane = $env.ZELLIJ_PANE_ID? | default ""
-    if ($session | is-empty) or ($pane | is-empty) { {} } else { {session: $session, pane_id: $pane} }
+    if ($session | is-empty) or ($pane | is-empty) { return {} }
+
+    let here = {session: $session, pane_id: $pane}
+    # Bound in two, because a boolean expression does not continue across lines
+    # with the operator at either end (§10).
+    let same_pane = (($known.session? | default "") == $session) and (($known.pane_id? | default "") == $pane)
+    if $same_pane and ($known.tab_id? != null) { return $here }
+
+    let info = pane-info $settings.binary $session $pane
+    if $info == null { return $here }
+    $here | merge {
+        tab_id: ($info.tab_id | into string)
+        tab_base: (strip-glyphs ($info.tab_name? | default "") $settings.glyphs)
+    }
 }
 
 # The title one record deserves. Empty means "we have nothing to say", which
@@ -124,39 +170,82 @@ def title-for [rec: record, glyphs: record]: nothing -> string {
     [$glyph (base-for $rec)] | where {|x| $x | is-not-empty } | str join " "
 }
 
-# PURE: which pane should say what, keyed by pane.
+# PURE: what every pane and every tab should say.
 #
-# The key is only an identity for dispatch to diff on — everything apply needs is
-# in the value. `base` is the title WITHOUT the glyph: what the pane should say
-# once this agent is gone, carried here so that releasing one needs no lookup.
+# Two kinds of key, and the value carries everything `apply` needs — the key is
+# only an identity for dispatch to diff on. `base` is the title WITHOUT the
+# glyphs: what the pane or tab should say once its agents are gone, carried here
+# so that releasing one needs no lookup.
 #
 # An agent whose pane the store does not know projects to nothing, which is how a
 # bare terminal, and an agent that has not painted yet, both cost zero.
 export def project [records: list<record>, settings: record]: nothing -> record {
     mut out = {}
+
     for r in $records {
         let session = $r.zellij?.session? | default ""
         let pane = $r.zellij?.pane_id? | default ""
         if ($session | is-not-empty) and ($pane | is-not-empty) {
-            $out = ($out | upsert $"($session)|($pane)" {
-                session: $session, pane_id: $pane
+            $out = ($out | upsert $"pane|($session)|($pane)" {
+                kind: "pane", session: $session, pane_id: $pane
                 title: (title-for $r $settings.glyphs)
                 base: (base-for $r)
             })
         }
     }
+
+    # One glyph per agent, most urgent first, in front of the tab's own name.
+    let placed = $records | where {|r|
+        (($r.zellij?.session? | default "") != "") and ($r.zellij?.tab_id? != null)
+    }
+    for t in ($placed | each {|r| $"($r.zellij.session)|($r.zellij.tab_id)" } | uniq) {
+        let members = $placed | where {|r| $"($r.zellij.session)|($r.zellij.tab_id)" == $t }
+        let glyphs = aggregate $members $settings.glyphs
+        # Two agents in one tab could disagree about its name, but only if it was
+        # renamed between them starting. Lowest id wins: arbitrary, and stable, so
+        # the title cannot flicker between two answers.
+        let named = $members | sort-by id | where {|m| ($m.zellij.tab_base? | default "") != "" } | get -o 0
+        let base = if ($named == null) { "" } else { $named.zellij.tab_base }
+        let first = $members | first
+        $out = ($out | upsert $"tab|($t)" {
+            kind: "tab", session: $first.zellij.session, tab_id: $first.zellij.tab_id
+            title: ([$glyphs $base] | where {|x| $x | is-not-empty } | str join " ")
+            base: $base
+        })
+    }
+
     $out
 }
 
-# A blank title DROPS our name instead of writing one, so zellij falls back to
-# what it would have shown anyway (the running command). A projection with
-# nothing to say must never blank a pane.
-def argv [binary: string, session: string, pane_id: string, name: string]: nothing -> list<string> {
-    if ($name | str trim | is-empty) {
-        [$binary "--session" $session "action" "undo-rename-pane" "--pane-id" $pane_id]
+# The glyphs a tab wears: one per agent that has something to say, ordered by
+# urgency so the line reads the same way every time — which also keeps the diff
+# from firing on a reordering that means nothing.
+def aggregate [members: list<record>, glyphs: record]: nothing -> string {
+    let order = ["needs-attention" "awaiting" "working"]
+    $order
+    | each {|state|
+        let g = $glyphs | get -o $state | default ""
+        if ($g | is-empty) { [] } else {
+            $members | where {|m| ($m.state? | default "idle") == $state } | each {|_| $g }
+        }
+      }
+    | flatten
+    | str join " "
+}
+
+# A blank name means UNDO rather than writing an empty title, so zellij falls back
+# to what it would have shown anyway.
+def argv [binary: string, v: record, name: string]: nothing -> list<string> {
+    let tab = $v.kind == "tab"
+    let verb = if ($name | str trim | is-empty) {
+        if $tab { "undo-rename-tab" } else { "undo-rename-pane" }
     } else {
-        [$binary "--session" $session "action" "rename-pane" "--pane-id" $pane_id $name]
+        if $tab { "rename-tab" } else { "rename-pane" }
     }
+    let flag = if $tab { "--tab-id" } else { "--pane-id" }
+    let id = if $tab { $v.tab_id } else { $v.pane_id }
+    let head = [$binary "--session" $v.session "action" $verb $flag $id]
+    if ($name | str trim | is-empty) { $head } else { $head ++ [$name] }
 }
 
 # The only impure half — and it does NOT touch the store. A surface reports what
@@ -187,14 +276,8 @@ def argv [binary: string, session: string, pane_id: string, name: string]: nothi
 # As DATA first — one argv per pane — so what would be run can be read and
 # asserted without a zellij to rename (D34), exactly as SketchyBar's `message` is.
 export def commands [changed: record, removed: record, settings: record]: nothing -> list<list<string>> {
-    let writes = $changed | columns | each {|k|
-        let p = $changed | get $k
-        argv $settings.binary $p.session $p.pane_id $p.title
-    }
-    let undos = $removed | columns | each {|k|
-        let p = $removed | get $k
-        argv $settings.binary $p.session $p.pane_id ($p.base? | default "")
-    }
+    let writes = $changed | columns | each {|k| argv $settings.binary ($changed | get $k) ($changed | get $k | get title) }
+    let undos = $removed | columns | each {|k| argv $settings.binary ($removed | get $k) (($removed | get $k).base? | default "") }
     $writes ++ $undos
 }
 

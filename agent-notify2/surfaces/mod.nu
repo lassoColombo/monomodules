@@ -8,10 +8,12 @@
 #   settings  strict: validate this surface's namespace from the config file, fill
 #             in its defaults, and resolve any program it calls to an ABSOLUTE
 #             path. Settings only — nothing about the world.
-#   observe   OPTIONAL: what this process can see about ITSELF that the store does
-#             not know yet — which pane it is in, say. Dispatch records it in this
-#             surface's own namespace, so `project` can stay a plain function of
-#             records.
+#   observe   OPTIONAL: (known, settings) → what this process can see about ITSELF
+#             that the store does not know yet — which pane and tab it is in, say.
+#             `known` is what the store already holds for this surface, so a
+#             lookup already paid for is not repeated. Dispatch records the answer
+#             in this surface's own namespace, which is what lets `project` stay a
+#             plain function of records.
 #   project   PURE: (records, settings) → a MAP of key → what that key should
 #             show. Run against the store as it was and as it is; dispatch diffs
 #             the two.

@@ -58,20 +58,29 @@ export def main [] {
     ]
 
     # ── observe: the one thing that looks at the world ───────────────────────
+    # `known` is what the store already holds. When it already knows the tab, no
+    # lookup happens at all — which is what keeps the `list-panes` to once per
+    # session. (The session here does not exist, so a lookup returns nothing extra
+    # rather than inventing a tab.)
+    let settled = {session: $FAKE, pane_id: "3", tab_id: "1", tab_base: "root"}
     let b = [
-        (check "it reports the pane this process is in" (zellij observe)
-               {session: $FAKE, pane_id: "3"})
-        (check "…and nothing at all outside zellij"
-               (with-env {ZELLIJ_PANE_ID: ""} { zellij observe }) {})
+        (check "knowing the tab already, it looks at nothing and says where we are"
+               (zellij observe $settled $s) {session: $FAKE, pane_id: "3"})
+        (check "not knowing it, it goes and asks"
+               (zellij observe {} $s) {session: $FAKE, pane_id: "3"})
+        (check "a pane that has MOVED is looked up again"
+               (zellij observe ($settled | update pane_id "99") $s) {session: $FAKE, pane_id: "3"})
+        (check "…and outside zellij there is nothing to say"
+               (with-env {ZELLIJ_PANE_ID: ""} { zellij observe {} $s }) {})
     ]
 
     # ── project: a map, keyed by pane ────────────────────────────────────────
     let m = zellij project [(rec)] $s
-    let key = $"($FAKE)|3"
+    let key = $"pane|($FAKE)|3"
     let c = [
         (check "one key per pane" ($m | columns) [$key])
         (check "the value carries everything apply needs"
-               ($m | get $key | columns | sort) ["base" "pane_id" "session" "title"])
+               ($m | get $key | columns | sort) ["base" "kind" "pane_id" "session" "title"])
         (check "the title is glyph then name"
                ($m | get $key | get title) $"($s.glyphs.working) monomodules")
         (check "the base is the same title without the glyph"
@@ -114,8 +123,35 @@ export def main [] {
         (check "…because a blank would mean undo-rename-pane, which pops one rename"
                ("rename-pane" in $undos) true)
         (check "an agent with no name to keep really is handed back blank"
-               (zellij commands {} {k: {session: $FAKE, pane_id: "9", title: "x", base: ""}} $s
+               (zellij commands {} {k: {kind: "pane", session: $FAKE, pane_id: "9", title: "x", base: ""}} $s
                 | first | last) "9")
+    ]
+
+    # ── tabs: one glyph per agent, in front of the tab's own name ────────────
+    def placed [id: string, state: string, name: string, pane: string]: nothing -> record {
+        {id: $id, client: "claude", state: $state, name: $name
+         zellij: {session: $FAKE, pane_id: $pane, tab_id: "1", tab_base: "root"}}
+    }
+    let t1 = zellij project [(placed "a" "working" "gg" "3")] $s
+    let t2 = zellij project [(placed "a" "working" "gg" "3") (placed "b" "awaiting" "snip" "9")] $s
+    let tabkey = $"tab|($FAKE)|1"
+    let t = [
+        (check "a tab gets a key of its own" ($t1 | columns | where {|k| $k | str starts-with "tab|" }) [$tabkey])
+        (check "one agent, one glyph, then the tab's own name"
+               ($t1 | get $tabkey | get title) $"($s.glyphs.working) root")
+        (check "two agents, two glyphs — most urgent first"
+               ($t2 | get $tabkey | get title)
+               $"($s.glyphs.awaiting) ($s.glyphs.working) root")
+        (check "the base is the tab's name alone, for when they all leave"
+               ($t2 | get $tabkey | get base) "root")
+        (check "agents with nothing to say leave the tab as it was"
+               (zellij project [(placed "a" "idle" "gg" "3")] $s | get $tabkey | get title) "root")
+        (check "an agent in no known tab contributes no tab key"
+               (zellij project [(rec)] $s | columns | where {|k| $k | str starts-with "tab|" }) [])
+        (check "a tab is renamed by id, not by position"
+               ("--tab-id" in (zellij commands $t1 {} $s | last)) true)
+        (check "…and when the last agent leaves, its name comes back alone"
+               (zellij commands {} $t1 $s | last | last) "root")
     ]
 
     # ── end to end, with a stub for the one impure call ──────────────────────
@@ -126,7 +162,7 @@ export def main [] {
     let painted = $TMP | path join "painted"
     let spy = {zellij: {info: $zellij.INFO
                         settings: {|given| zellij settings $given }
-                        observe: {|| zellij observe }
+                        observe: {|known, st| zellij observe $known $st }
                         project: {|recs, st| zellij project $recs $st }
                         apply: {|changed, removed, st|
                             $"((zellij commands $changed $removed $st) | to json --raw)\n"
@@ -172,6 +208,6 @@ export def main [] {
                (agent-notify2 store drop "cli-1") true)
     ]
 
-    let all = ($a ++ $b ++ $c ++ $d ++ $e ++ $f ++ $f_gate ++ $f_gone ++ $g)
+    let all = ($a ++ $b ++ $c ++ $d ++ $e ++ $t ++ $f ++ $f_gate ++ $f_gone ++ $g)
     summarise $all --title "zellij surface"
 }

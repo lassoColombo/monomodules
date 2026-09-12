@@ -664,6 +664,7 @@ committed. Each surface is wrapped alone, so one failing cannot stop the next.
 | D40 | `project` returns a MAP; dispatch owns the diff | **LOCKED** | §4.7 — one correct implementation instead of one per surface, and the gate falls out of it |
 | D41 | Dispatch takes two store SNAPSHOTS, not a delta | **LOCKED** | §4.7 — one spelling for "a moment ago", whether a hook or the clock is calling |
 | D42 | `observe` reports the environment; it is not smuggled through `settings` or `apply` | **LOCKED** | §4.7 — it is what lets `project` be a plain function of records |
+| D43 | A tab's name is learned ONCE, in the read we already need for its id | **LOCKED** | step 4b — a third subprocess per state change to respect later renames was not worth it |
 | D15 | Replace pandoc with a nu-native flattener | **OPEN** | 25.1ms on the event path, and a dependency |
 | D16 | Where the bench harness lives | **OPEN** | ~350 lines of documented nu; §8 |
 | D17 | Final promoted name/location (top-level `agent-notify`?) | **OPEN** | v1 is `ai/agent-notify`; v2 is top-level |
@@ -828,10 +829,39 @@ its own bar item names so both can be live at once.
    three layers.
    Costs: `SessionStart` 27ms → 38.6ms for the one-time walk, every other event
    unchanged, `proc.nu` free to parse, `prune` 13ms of `ps` on a cold path.
-4b. **zellij tab aggregates** — deferred deliberately. A tab's name belongs to the
-   user, so a tab title cannot be computed from the store alone: it has to be
-   read, stripped and put back. The real question is who owns the tab name, and
-   that deserves an answer rather than a guess.
+4b. **zellij tab aggregates** — ✅ done. A tab wears one glyph per agent living in
+   it, most urgent first, in front of its own name:
+
+   ```
+    root        one agent working
+    root      one working, one waiting
+   ```
+
+   It fits the step-7b contract without new machinery: `project` simply emits a
+   second kind of key. When the last agent leaves a tab that key DISAPPEARS, and
+   `removed` already means "undo this", so the glyphs come off by themselves.
+
+   The question that had it deferred was who owns the tab's name. The answer is
+   the one already settled for panes — **the store does** — and what makes it
+   affordable is that the name is folded into a read we already needed. The
+   environment says which PANE we are in but not which TAB, so `observe` runs one
+   `list-panes`; that same call returns the tab's name. Both are recorded, ONCE
+   per session, and a tab title is computed from the store ever after.
+
+   Rejected: reading the live tab name on every write, which is correct but costs
+   a third subprocess per state change. The price paid instead is that a tab
+   renamed LATER is overwritten — the same bargain as pane names (D28).
+
+   Stripping our own glyphs happens exactly once, when a tab's name is first
+   learned, rather than on every write as v1 did — a tab may already carry glyphs
+   written by an agent that got there first.
+
+   Two agents in one tab could disagree about its name, but only if it was renamed
+   between them starting. Lowest id wins: arbitrary, and stable, so the title
+   cannot flicker between two answers.
+
+   Cost: `list-panes` 11ms once per session; a state change is rename-pane +
+   rename-tab. 265/265 across eight suites.
 5. **SketchyBar integration** — ✅ done, the three counters.
    `surfaces/sketchybar.nu`, 233/233 across seven suites, +0.82ms of parse (the
    whole surface machinery is now +4.69ms).
