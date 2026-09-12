@@ -95,13 +95,13 @@ export def main [] {
     # ── the item pool, created once ──────────────────────────────────────────
     let inst = sketchybar install-message $s
     let e = [
-        (check "three counters, a bracket and a hidden tick are added"
-               ($inst | where {|x| $x == "--add" } | length) 5)
+        (check "three counters and a bracket are added, and nothing else"
+               ($inst | where {|x| $x == "--add" } | length) 4)
         (check "the counters are bracketed into one pill" ("bracket" in $inst) true)
-        (check "the tick runs every 30 seconds" ("update_freq=30" in $inst) true)
-        (check "…and is the janitor: it prunes before it repaints"
-               ($inst | any {|x| $x | str contains "surfaces refresh" }) true)
-        (check "…without being visible" ("drawing=off" in $inst) true)
+        (check "the bar owns NO timer — the clock is not a surface's job"
+               ($inst | any {|x| $x | str contains "update_freq" }) false)
+        (check "…and no item of ours runs anything at all"
+               ($inst | any {|x| $x | str starts-with "script=" }) false)
         (check "the glyphs survived being written as escapes"
                ($inst | any {|x| ($x | str starts-with "icon=") and (($x | str length) > 5) }) true)
         (check "a fresh counter starts at zero" ("label=0" in $inst) true)

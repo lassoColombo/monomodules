@@ -141,9 +141,11 @@ export def apply [desired: record, previous: any, settings: record]: nothing -> 
 # ── installation ─────────────────────────────────────────────────────────────
 # The item pool, created ONCE. Also as data first, for the same reason.
 #
-# The hidden `tick` item is the backstop and the janitor in one line: `surfaces
-# refresh` prunes agents that are provably gone before it repaints, so a killed
-# agent disappears from the bar within 30 seconds without any hook being involved.
+# NO TIMER HERE. An earlier version hung a hidden `update_freq=30` item off this
+# pool to prune dead agents and repaint, which worked and cost nothing — the
+# daemon is already running. It was still wrong: it made a core guarantee depend
+# on one optional surface being installed. The clock is its own thing now
+# (core/clock.nu), and this file is only a surface again.
 export def install-message [s: record]: nothing -> list<string> {
     let counters = $COUNTED | each {|state|
         let item = $"($s.prefix)(item-suffix $state)"
@@ -159,18 +161,10 @@ export def install-message [s: record]: nothing -> list<string> {
 
     let names = $COUNTED | each {|state| $"($s.prefix)(item-suffix $state)" }
     let group = $"($s.prefix)group"
-    let tick = $"($s.prefix)tick"
 
     ($counters
      ++ ["--add" "bracket" $group ...$names
-         "--set" $group "background.drawing=on" $"background.color=($s.background)"]
-     ++ ["--add" "item" $tick $s.position
-         "--set" $tick "drawing=off" "update_freq=30" $"script=(tick-command)"])
-}
-
-def tick-command []: nothing -> string {
-    let root = $SELF | path dirname | path dirname
-    $"($nu.current-exe) -n --no-std-lib -c 'use ($root); agent-notify2 surfaces refresh'"
+         "--set" $group "background.drawing=on" $"background.color=($s.background)"])
 }
 
 export def install [s: record]: nothing -> nothing {
@@ -184,8 +178,12 @@ export def wiring []: nothing -> string {
        ""
        $"  ($nu.current-exe) -n --no-std-lib -c 'use ($root); agent-notify2 surfaces install sketchybar'"
        ""
-       "That creates the three counters, their bracket, and one hidden 30s item"
-       "that prunes dead agents and repaints. Nothing else belongs in your bar's"
-       "config: no plugin script, no glyphs, no colours — they are all in"
-       "agent-notify's own config file." ] | str join "\n")
+       "That creates the three counters and their bracket, and nothing else."
+       "No plugin script, no glyphs, no colours — they are all in agent-notify's"
+       "own config file."
+       ""
+       "The periodic check that removes dead agents is NOT here: it is its own"
+       "thing, so that turning the bar off cannot turn it off too."
+       ""
+       "  agent-notify2 clock install" ] | str join "\n")
 }

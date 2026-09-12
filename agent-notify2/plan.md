@@ -513,6 +513,29 @@ What it deliberately cannot do: a **hung** agent stays, which is correct — it
 really is still there. And an agent whose `SessionStart` we missed has no `proc`
 and can never be pruned.
 
+### 4.6c The clock — who looks when nobody reports
+
+The store is **pushed, never polled**: an agent's hook writes it and paints the
+surfaces in the same breath, which is why a repaint costs 6.5ms and needs no
+daemon. But a dead agent fires no hook — that is what dead means — so its record
+is never revisited and every surface keeps showing it.
+
+So something has to look. **The tick is not a second pruning mechanism**: it runs
+exactly the same pid-based `janitor prune`, then repaints. All it contributes is
+the looking.
+
+Three candidates were tried, in this order:
+
+| clock | why not |
+|---|---|
+| a hidden SketchyBar item, `update_freq=30` | worked, and free — the daemon is already running. But it made a core guarantee depend on one OPTIONAL surface being installed and enabled |
+| `job spawn` | a nushell job is a thread inside its process: it dies when that process exits, and so does anything it starts (both verified). A hook lives ~30ms |
+| **launchd, `StartInterval`** | ✅ launchd *is* a clock. No daemon to keep alive, no lock file, no pid to supervise, no detaching trick — and it survives logout and reboot, which a spawned process would not |
+
+`core/clock.nu` writes the job, `agent-notify2 clock install|status|uninstall`
+drives it, and the tick is `surfaces refresh` — the same command a human types.
+Verified end to end: a record planted with a dead pid was gone in 15 seconds.
+
 ### 4.7 Surfaces — the projection gate
 
 A surface is a pure function from the store to what should be on screen, plus an
@@ -630,6 +653,7 @@ is an error, because that is a typo.
 | D36 | Every write goes through `core/event.nu`, the CLI included | **LOCKED** | step 7 — the command surface IS the public API (P5); a write that skips the seam is a surface that never hears about it |
 | D37 | `apply` receives the previous projection | **LOCKED** | step 7 — the only way a surface can act on what has disappeared, and it makes "skip what did not move" free |
 | D38 | Dispatch answers "whose event" and "whose environment" separately | **LOCKED** | step 7 — identical for a hook, different for a CLI write about another agent |
+| D39 | The clock is its own launchd job, never a surface's item | **LOCKED** | §4.6c — a core guarantee must not depend on an optional surface being installed |
 | D15 | Replace pandoc with a nu-native flattener | **OPEN** | 25.1ms on the event path, and a dependency |
 | D16 | Where the bench harness lives | **OPEN** | ~350 lines of documented nu; §8 |
 | D17 | Final promoted name/location (top-level `agent-notify`?) | **OPEN** | v1 is `ai/agent-notify`; v2 is top-level |
@@ -926,6 +950,17 @@ dispatch cone from +5.28ms to +3.87ms per event.
 written as literal characters arrived in the file as empty strings — silently,
 with no error anywhere. Write them as `"\u{f021}"`. The tests caught it only
 because they asserted a title's exact contents.
+
+**`job spawn` runs a thread INSIDE the process.** It dies when that process
+exits, and so does any external command it started — both verified. Nothing a
+hook spawns can outlive the hook, so nothing spawned can be a clock.
+
+**The builtin-shadowing rule bit a FOURTH time**, and this one was the most
+remote: `tests/mod.nu` exported `def all`, which silently broke `| all { … }`
+inside `tests/clock.nu` — a file that never mentions the name and was written
+weeks later. The runner is `export def main` now, so it is spelled `tests` and
+can poison nothing. When a library command wants a builtin's name, the answer is
+always the same: pick another name, or make it multi-word.
 
 **Some names are PARSER KEYWORDS and cannot be commands at all** — `run` among
 them. A louder failure than builtin shadowing (it names the rule and refuses to

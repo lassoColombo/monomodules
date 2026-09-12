@@ -23,6 +23,7 @@
 #   agent-notify2 clients [wiring <name>]           which agents can report, and how
 #   agent-notify2 config path|show|check            the settings file
 #   agent-notify2 surfaces [refresh|install|wiring] what shows the store, and repaint
+#   agent-notify2 clock install|status              the periodic look for dead agents
 #
 # The command surface is deliberately reachable from outside nushell (plan.md P5):
 #
@@ -34,3 +35,4 @@ export use cli/agent.nu *
 export use cli/clients.nu
 export use cli/config.nu *
 export use cli/surfaces.nu
+export use cli/clock.nu *
