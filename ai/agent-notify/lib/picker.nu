@@ -42,8 +42,8 @@ def preview-window [rows: int] {
 
 # Choosing goes through ONE hook: `$env.ai_config.picker`, a closure that takes
 # the rows as pipeline input and an options record {prompt, display, preview,
-# query, window} — see ~/.config/nushell/pickers.nu. With nothing configured this
-# is Nushell's built-in `input list`, which is why nothing here depends on a
+# query, window} — see ~/.config/nushell/module-hooks.nu. With nothing configured
+# this is Nushell's built-in `input list`, which is why nothing here depends on a
 # plugin; an engine with a preview pane is handed the rendered message, and one
 # that can prefill a filter is handed the query.
 #
@@ -114,14 +114,15 @@ def rows-of [recs: list<any>] {
 }
 
 # The message as the preview pane should show it: the markdown the agent actually
-# wrote, handed to whatever `$env.ai_config.render` is (see the hook above) —
-# `bat`, in this setup. With no renderer configured, or nothing to render, the
-# flattened copy the store already holds is what there is: raw markdown with no
-# styling reads worse than the plain text pandoc made of it.
-def render-message [row: record] {
-    let custom = $env.ai_config?.render?
-    if ($custom == null) or (($row.md | str trim) | is-empty) { return $row.message }
-    $row.md | do $custom {lang: "md"}
+# wrote, or — when the store has no markdown copy — the flattened text it does
+# have. Text, and nothing else.
+#
+# STYLING it is the PICKER'S business (see `choose`), which is why there is no
+# second hook here and nothing in this file knows what `bat` is. A picker that
+# highlights markdown wraps this closure in its own; one that cannot shows the
+# source, which is what an unstyled preview has always been.
+def message-of [row: record] {
+    if (($row.md | str trim) | is-empty) { $row.message } else { $row.md }
 }
 
 # Present the agents, return the picked record (null on cancel / nothing to show).
@@ -136,7 +137,7 @@ export def pick [recs: list<any>, query?: string] {
         | choose {
             prompt: "agent"
             display: {|| $in.row }
-            preview: {|| render-message $in }
+            preview: {|| message-of $in }
             window: (preview-window ($rows | length))
             query: ($query | default "")
         }
