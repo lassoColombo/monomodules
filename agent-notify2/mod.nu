@@ -18,8 +18,9 @@
 # 2026-09-12** while this was still incomplete, on purpose: `ai/agent-notify/` is
 # untouched on disk and nothing invokes it.
 #
-# What is missing is the PICKER — so Alt-a still opens v1's, over a store that no
-# longer updates. The jump it ends in is done: `agent-notify2 jump <who>`.
+# Nothing is missing any more. What v1 did, this does — including the picker and
+# the jump Alt-a ends in. Left over: deleting `ai/agent-notify/`, settling D17
+# (the promoted name), and making a click on a bar row jump too.
 #
 # Turn the surfaces on with ~/.config/agent-notify/config.yaml. That list is what
 # the store is PUSHED to; a tool's COMMANDS run because you ran them, which is
@@ -39,6 +40,8 @@
 #   agent-notify2 config path|show|check            the settings file
 #   agent-notify2 surfaces [refresh|install|wiring] what shows the store, and repaint
 #   agent-notify2 clock install|status              the periodic look for dead agents
+#   agent-notify2 browse [query]                    pick a live agent, land in its pane
+#   agent-notify2 jump <who>                        …or go straight there, by name or id
 #
 # The command surface is deliberately reachable from outside nushell (plan.md P5):
 #
@@ -55,3 +58,4 @@ export use cli/clock.nu *
 # The PULL half of an integration: commands, not a surface. Nothing dispatches to
 # them and `surfaces:` does not turn them on — see integrations/mod.nu.
 export use integrations/zellij/jump.nu
+export use integrations/zellij/browse.nu

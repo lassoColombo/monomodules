@@ -698,6 +698,8 @@ committed. Each surface is wrapped alone, so one failing cannot stop the next.
 | D49 | `surfaces/` → `integrations/`, one directory per tool, one file per half | **LOCKED** | step 6 — the halves must be separate FILES: the push half is in every hook's import cone and the pull half must never be |
 | D50 | The jump names NO window manager and assumes no OS | **LOCKED** | step 6 — raising the terminal's window is only needed by a BAR CLICK; the picker runs inside the terminal, where it is already in front. Deferred with the click |
 | D51 | `jump argv` is the whole decision; `main` only runs it | **LOCKED** | step 6 — the same data-first split as `commands`/`apply`, and here it is what lets the cross-session branch be tested at all: running it moves a real screen |
+| D52 | `browse` runs IN PLACE; the floating pane belongs to the keybinding | **LOCKED** | step 6 — v1 re-launched itself through `zellij run --floating` and needed a `--here` flag to not. Same bargain as `sketchybarrc` and `settings.json`: we print the block, you own the file |
+| D53 | `browse` does not prune | **LOCKED** | step 6 — the clock already does, every 30s. A second mechanism for one guarantee, and all it saves is a jump that says "no session called 'x'" |
 | D15 | Replace pandoc with a nu-native flattener | **OPEN** | 25.1ms on the event path, and a dependency |
 | D16 | Where the bench harness lives | **OPEN** | ~350 lines of documented nu; §8 |
 | D17 | Final promoted name/location (top-level `agent-notify`?) | **OPEN** | v1 is `ai/agent-notify`; v2 is top-level |
@@ -978,7 +980,7 @@ its own bar item names so both can be live at once.
    Markdown is stripped in nushell rather than by pandoc: v1 could afford ~30ms
    because it converted where the preview was STORED, on a path already spawning
    processes; v2's whole paint is 6.5ms, and the picker still wants the markdown.
-6. **Picker + jump** — the jump is ✅ done; the picker is ⏳ NEXT.
+6. **Picker + jump** — ✅ done.
    First the shape changed. `surfaces/` became `integrations/` (D49) because a
    tool has two halves and only one of them is a surface, and the config file
    grew `surface:`/`commands:` to match (D47). The picker's engine is NOT
@@ -999,17 +1001,29 @@ its own bar item names so both can be live at once.
    `jump argv <who>` is the whole decision as data (D51) and `main` is four lines
    that run it. That is what makes the cross-session branch testable: obeying it
    moves a real screen.
-   Still to come: the rows, and the `config.kdl` keybinding flipped — once, when
-   it works, rather than twice. Clicking a bar row stays inert until the raise
-   question is settled.
+   Then the picker. `integrations/zellij/browse.nu`, 25 assertions, 375/375
+   overall. Rows are four columns — state, agent, where, what it last said — most
+   urgent first, with idle last rather than hidden. The preview is the agent's
+   message as the markdown it wrote, over a header saying HOW LONG it has been in
+   this state, which is the question a fleet list is really asking. `bat` styles
+   it when present and is not a dependency; skim is (D48).
+   It runs IN PLACE (D52) and does not prune (D53).
+   The rows are NOT shared with the bar's drawers, which I had assumed they would
+   be. Having built both: the drawer shows one state per drawer, oldest first,
+   with the message STRIPPED of markdown and wrapped to 62×11; the picker shows
+   every state in one list, most urgent first, with the markdown KEPT because
+   skim and bat wrap it themselves. What is genuinely common is the label rule and
+   the glyphs — about fifteen lines, duplicated, as the surfaces already duplicate
+   the glyphs to stay leaves.
+   `config.kdl`'s Alt-a now runs v2, flipped once.
 7. **Cutover** — ⏳ **v1 dismissed early, on purpose** (2026-09-12), while
    incomplete. v1's hooks are out of `settings.json`, its bar block is out of
    `sketchybarrc` (one line in its place), `CLAUDE.md`'s session-naming rule calls
    `agent-notify2 name`, both surfaces are on in
    `~/.config/agent-notify/config.yaml`, and the clock is a launchd job.
    **`ai/agent-notify/` is still on disk and complete** — nothing invokes it, so
-   reverting is one settings file away. Knowingly given up until step 6: the
-   picker and the jump.
+   reverting is one settings file away. Everything it did, v2 now does; what is
+   left is deletion, D17 (the promoted name), and the bar-row click.
 
    **Running it for real is what found the remaining defects.** Every one of these
    was invisible to 250+ passing tests, because each needed a real machine, a real
