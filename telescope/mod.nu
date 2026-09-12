@@ -9,14 +9,13 @@
 # List: fuzzy-find over items directly.
 #
 # The previews are the whole point of this module, and they are the one thing
-# Nushell's built-in picker cannot draw — so telescope still WORKS on the default
-# picker (you drill in blind, by key or by column value) and comes alive on one
-# that has a preview pane. Which picker it gets is the SK switch at the top of
-# picker.nu; what a value looks like in the pane is preview.nu's.
+# Nushell's built-in picker cannot draw — which is why telescope does not fall
+# back to it. skim (nu_plugin_skim) is a hard dependency, checked once at each
+# entry point; see picker.nu. What a value looks like in the pane is preview.nu's.
 #
 # This file is the drilling itself: what there is to choose from at each step,
 # and what each row reads as.
-use picker.nu choose
+use picker.nu [choose require-picker]
 use preview.nu preview-of
 
 # Recursively search a data structure for a pattern in keys or primitive values
@@ -76,10 +75,15 @@ export def find [
   query: string    # Pattern to search for (regex)
   file?: path      # File to open and search
 ]: any -> any {
+  # `$in` first, always: any command run before it — `require-picker` included —
+  # replaces the pipeline input with its own, and what is piped here is the whole
+  # point of the call.
+  let piped = $in
+  require-picker
   let data = if ($file | is-not-empty) { 
     open $file 
-  } else if ($in | is-not-empty) {
-    $in 
+  } else if ($piped | is-not-empty) {
+    $piped 
   } else {
     error make --unspanned "you must either specify a file or pipe something to stdin"
   }
@@ -105,10 +109,15 @@ export def explore [
   file?: path                 # File to open and explore
   --primary-key (-k): string  # Column to use as display key for tables (skips prompt)
 ]: any -> any {
+  # `$in` first, always: any command run before it — `require-picker` included —
+  # replaces the pipeline input with its own, and what is piped here is the whole
+  # point of the call.
+  let piped = $in
+  require-picker
   mut current = if ($file | is-not-empty) {
     open $file 
-  } else if ($in | is-not-empty) {
-    $in 
+  } else if ($piped | is-not-empty) {
+    $piped 
   } else {
     error make --unspanned "you must either specify a file or pipe something to stdin"
   }

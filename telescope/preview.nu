@@ -1,5 +1,5 @@
-# What a VALUE looks like in a preview pane. Nothing here runs under the built-in
-# picker, which has no pane — see picker.nu, and the SK switch at the top of it.
+# What a VALUE looks like in a preview pane — the thing telescope exists to show
+# you, which is why picker.nu has no fallback to a picker that cannot draw one.
 
 # Render a value for the preview pane. Records are transposed to a key/value
 # table so wide rows don't get column-truncated; tables and lists render as-is.

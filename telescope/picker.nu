@@ -1,55 +1,39 @@
-# telescope's two pickers, and the one switch between them.
+# telescope's picker: skim, and only skim.
 #
-# `sk` (the nu_plugin_skim command) has a preview pane; Nushell's own `input
-# list` does not. For telescope that is not a cosmetic difference — the preview
-# is the module's whole reason to exist, and on the built-in you drill in blind,
-# by key or by column value. It still works. It is just not the same tool.
+# There is no built-in fallback here on purpose. `input list` cannot draw a
+# preview pane, and the preview IS this module — without one you are fuzzy-
+# matching on keys you can already see, to drill into a value you cannot. That is
+# not a degraded telescope, it is a worse `get`. So skim (the `sk` command from
+# nu_plugin_skim) is a hard dependency, and `require-picker` says so in as many
+# words rather than letting `sk` fail as an unknown external command.
 #
-# Flip SK to false and telescope is on the built-in, with preview.nu left
-# unreachable. Nothing outside this module is consulted: telescope is nobody's
-# library — nothing imports it and it is not published — so it makes its own
-# choice rather than reading it from a config hook.
-#
-# The plugin check is the same switch thrown on telescope's behalf. `sk` parses
-# fine without the plugin registered and only fails when called, and a `nu -n`
-# has no plugin registry at all — the built-in is the right answer there rather
-# than a crash.
-const SK = true
+# This is the one module where that trade is right. zz's list of paths is worth
+# choosing from either way, so zz carries both pickers on a switch; telescope has
+# nothing to offer without a pane.
 
-def ready []: nothing -> bool {
-  $SK and (plugin list | where name == "skim" | is-not-empty)
+# Checked at the ENTRY points — `explore` and `find` — not here, because every
+# `choose` in this module sits inside a `try` that turns an error into "the user
+# pressed Esc". A missing plugin would be swallowed as a cancel and telescope
+# would hand your value straight back, which is the one failure worth being loud
+# about.
+export def require-picker [] {
+  if (plugin list | where name == "skim" | is-empty) {
+    error make --unspanned {msg: "telescope needs nu_plugin_skim — `plugin add ~/.cargo/bin/nu_plugin_skim` then `plugin use skim`"}
+  }
 }
-
-# Both pickers take the items as pipeline input and one record:
-#
-#   {prompt: string, display: closure, preview: closure}
-#
-# `display` renders one item as its row, the item on `$in`. `preview` renders it
-# into the pane — the item on `$in` again, the pane's WIDTH as a parameter — and
-# is simply never called by the picker that has no pane.
-#
-# No `multi` and no `query`: telescope drills one step at a time, and each step
-# starts from a list it has just built. Neither picker is asked for what this
-# module has never wanted.
-export def choose [opts: record] {
-  if (ready) { $in | sk-pick $opts } else { $in | builtin-pick $opts }
-}
-
-# ---------------
-#  sk
-# ---------------
 
 # Where the preview goes and how wide its content may render.
 #
 # SIDE is generous — the pane holds a `table --expand` of whatever you are
-# drilling through, and a value tree would rather have columns than a list of
-# keys it has already shown you. zz splits the same terminal 62/38 because its
+# drilling through, and a value tree would rather have columns than a longer list
+# of keys it has already shown you. zz splits the same terminal 62/38 because its
 # rows are paths worth reading; telescope's rows are keys, and the answer is on
 # the other side.
 #
 # Below WIDE_COLS there are not enough columns to split at all, so the preview
 # goes underneath and takes the width instead. Under MIN_ROWS there is room for
-# neither, and skim reads a zero-height pane as "no preview at all".
+# neither — and since a telescope with no preview is not telescope, that is the
+# one case where the pane is simply too small for the tool.
 #
 # The width is measured HERE and handed over, because the closure that uses it
 # runs inside the plugin, which has no terminal to measure and would answer `term
@@ -83,6 +67,9 @@ def pane []: nothing -> record<window: string, width: int> {
 # `--bind` REPLACES a default rather than layering over it, and those two keys
 # had defaults worth knowing about: ctrl-d was a second Abort (esc, ctrl-c and
 # ctrl-g still are), and ctrl-u cleared the query (ctrl-w still rubs out a word).
+#
+# The palette is skim's own, from $env.SKIM_DEFAULT_OPTIONS, so nothing here
+# names a colour.
 const KEYS = {
   ctrl-down: "preview-down"
   ctrl-up: "preview-up"
@@ -90,9 +77,16 @@ const KEYS = {
   ctrl-u: "preview-page-up"
 }
 
-# The palette is skim's own, from $env.SKIM_DEFAULT_OPTIONS, so nothing here
-# names a colour.
-def sk-pick [opts: record] {
+# Items in as pipeline input, one record of what they are:
+#
+#   {prompt: string, display: closure, preview: closure}
+#
+# `display` renders one item as its row, the item on `$in`. `preview` renders it
+# into the pane — the item on `$in` again, the pane's WIDTH as a parameter.
+#
+# No `multi` and no `query`: telescope drills one step at a time, and each step
+# starts from a list it has just built.
+export def choose [opts: record] {
   let items = $in
   let p = (pane)
   # Wrapped to hand the closure the two things it cannot find out for itself:
@@ -105,15 +99,4 @@ def sk-pick [opts: record] {
     $item | do $opts.preview $p.width
   }
   $items | sk --format $opts.display --preview $preview --preview-window $p.window --bind $KEYS --layout reverse --prompt $"($opts.prompt) "
-}
-
-# ---------------
-#  input list
-# ---------------
-
-# No preview pane, so `opts.preview` is never called and preview.nu never runs.
-# This is telescope with its eyes shut: the keys and column values are still
-# there to fuzzy-match on, and Enter still drills.
-def builtin-pick [opts: record] {
-  $in | input list --fuzzy --display $opts.display $opts.prompt
 }
