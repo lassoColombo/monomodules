@@ -18,8 +18,8 @@
 # 2026-09-12** while this was still incomplete, on purpose: `ai/agent-notify/` is
 # untouched on disk and nothing invokes it.
 #
-# What is missing is step 6 — the picker and the jump — so Alt-a still opens v1's,
-# over a store that no longer updates.
+# What is missing is the PICKER — so Alt-a still opens v1's, over a store that no
+# longer updates. The jump it ends in is done: `agent-notify2 jump <who>`.
 #
 # Turn the surfaces on with ~/.config/agent-notify/config.yaml. That list is what
 # the store is PUSHED to; a tool's COMMANDS run because you ran them, which is
@@ -51,3 +51,7 @@ export use cli/clients.nu
 export use cli/config.nu *
 export use cli/surfaces.nu
 export use cli/clock.nu *
+
+# The PULL half of an integration: commands, not a surface. Nothing dispatches to
+# them and `surfaces:` does not turn them on — see integrations/mod.nu.
+export use integrations/zellij/jump.nu

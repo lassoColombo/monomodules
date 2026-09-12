@@ -44,6 +44,7 @@
 # the same bargain already struck for pane names: the store owns the name.
 
 use ../../core/schema.nu
+use program.nu
 
 export const INFO = {name: "zellij", title: "zellij pane and tab titles"}
 
@@ -85,7 +86,7 @@ export def settings [given: record]: nothing -> record {
         }
     }
 
-    { binary: (resolve-binary ($given.binary? | default ""))
+    { binary: (program resolve ($given.binary? | default ""))
       glyphs: ($DEFAULT_GLYPHS | merge $g) }
 }
 
@@ -135,30 +136,6 @@ export def observe [known: record, settings: record]: nothing -> record {
 
 # The title one record deserves. Empty means "we have nothing to say", which
 # `apply` turns into dropping our name rather than writing a blank one.
-# An ABSOLUTE path to the program, because a hook's PATH is not your shell's PATH
-# and a LAUNCHD JOB's is smaller still: the clock runs with /usr/bin:/bin and
-# nothing else, so a bare `^zellij` silently does nothing there. Resolved once, in
-# `settings`, so a missing program is a loud configuration error rather than a
-# surface that reports "applied" and paints nothing — which is exactly how this
-# was found.
-# No `-> string` signature: a def annotated that way cannot END in `error make`
-# (§10).
-def resolve-binary [given: string] {
-    if ($given | is-not-empty) {
-        if not ($given | path exists) {
-            error make --unspanned {msg: $"zellij: no program at '($given)'"}
-        }
-        return $given
-    }
-    let found = which "zellij" | get -o 0.path | default ""
-    if ($found | is-not-empty) { return $found }
-    for d in ["/opt/homebrew/bin" "/usr/local/bin" "/usr/bin"] {
-        let p = $d | path join "zellij"
-        if ($p | path exists) { return $p }
-    }
-    error make --unspanned {msg: ("zellij: not found. Set `zellij.binary: <path>` in the config "
-        + "file if it lives somewhere unusual.")}
-}
 
 def base-for [rec: record]: nothing -> string {
     let named = $rec.name? | default "" | str trim

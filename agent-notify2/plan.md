@@ -696,6 +696,8 @@ committed. Each surface is wrapped alone, so one failing cannot stop the next.
 | D47 | A tool's config has two halves, `surface` (push) and `commands` (pull) | **LOCKED** | §4.7 — `surfaces:` must not read as "which integrations exist"; splitting it in the FILE is what stops removing a surface from taking its picker away |
 | D48 | The picker has NO configurable engine — skim is a dependency | **LOCKED** | step 6 — the same call `telescope` made in `f90d448`; a swappable picker was a hook nobody but us used |
 | D49 | `surfaces/` → `integrations/`, one directory per tool, one file per half | **LOCKED** | step 6 — the halves must be separate FILES: the push half is in every hook's import cone and the pull half must never be |
+| D50 | The jump names NO window manager and assumes no OS | **LOCKED** | step 6 — raising the terminal's window is only needed by a BAR CLICK; the picker runs inside the terminal, where it is already in front. Deferred with the click |
+| D51 | `jump argv` is the whole decision; `main` only runs it | **LOCKED** | step 6 — the same data-first split as `commands`/`apply`, and here it is what lets the cross-session branch be tested at all: running it moves a real screen |
 | D15 | Replace pandoc with a nu-native flattener | **OPEN** | 25.1ms on the event path, and a dependency |
 | D16 | Where the bench harness lives | **OPEN** | ~350 lines of documented nu; §8 |
 | D17 | Final promoted name/location (top-level `agent-notify`?) | **OPEN** | v1 is `ai/agent-notify`; v2 is top-level |
@@ -976,12 +978,30 @@ its own bar item names so both can be live at once.
    Markdown is stripped in nushell rather than by pandoc: v1 could afford ~30ms
    because it converted where the preview was STORED, on a path already spawning
    processes; v2's whole paint is 6.5ms, and the picker still wants the markdown.
-6. **Picker + jump** — ⏳ NEXT, and the one thing the early cutover still costs
-   you. Alt-a still opens v1's picker over a store that no longer updates. Needs:
-   the rows, the jump action (session + pane are in the store already), and the
-   keybinding in `config.kdl` flipped — once, when it works, rather than twice.
-   Clicking a bar row is deliberately inert until then: the jump is the same
-   action from both surfaces and wants deciding once.
+6. **Picker + jump** — the jump is ✅ done; the picker is ⏳ NEXT.
+   First the shape changed. `surfaces/` became `integrations/` (D49) because a
+   tool has two halves and only one of them is a surface, and the config file
+   grew `surface:`/`commands:` to match (D47). The picker's engine is NOT
+   configurable — skim is a dependency, as it is for `telescope` (D48).
+   `integrations/zellij/jump.nu`, 16 assertions, 350/350 overall. `program.nu`
+   holds the one thing both halves share: which zellij.
+   **It names no window manager and assumes no operating system** (D50). v1
+   raised the terminal through aerospace, fell back to `open -a Ghostty`, and
+   read the attached session out of the WINDOW TITLE. None of that is needed
+   here: raising a window matters only to a BAR CLICK, and the picker runs inside
+   the terminal, where the window is already in front. Running inside zellij also
+   turns "which session is asking?" into `$env.ZELLIJ_SESSION_NAME`.
+   Probing zellij first paid for itself three times: it **exits 0 on failure**
+   and puts the reason on stderr; it uses stderr for successes too ("already
+   focused"); and **`switch-session` CREATES a session it cannot find** — a stale
+   record would have spawned an empty session and gone there, which the probe
+   demonstrated by leaving an orphan server behind.
+   `jump argv <who>` is the whole decision as data (D51) and `main` is four lines
+   that run it. That is what makes the cross-session branch testable: obeying it
+   moves a real screen.
+   Still to come: the rows, and the `config.kdl` keybinding flipped — once, when
+   it works, rather than twice. Clicking a bar row stays inert until the raise
+   question is settled.
 7. **Cutover** — ⏳ **v1 dismissed early, on purpose** (2026-09-12), while
    incomplete. v1's hooks are out of `settings.json`, its bar block is out of
    `sketchybarrc` (one line in its place), `CLAUDE.md`'s session-naming rule calls
@@ -1159,6 +1179,24 @@ Not nushell — the programs underneath. Same rule as §10: cost time once, not 
   order with no ids, so it cannot be used for renaming.
 - `--session <name>` on every action makes it work from anywhere, including a
   process with no ambient `$ZELLIJ`.
+- **It exits 0 whether or not the action worked.** The reason arrives on STDERR:
+  `Pane with id Terminal(99999) not found`, `Session 'x' not found`. The exit code
+  is worthless; stderr is the whole answer — the same shape as macOS `ps` below.
+- …and stderr is not only for failures. `Pane Terminal(3) is already focused` is a
+  jump that SUCCEEDED. So the benign messages have to be named and everything else
+  raised; the other way round makes a real failure silent.
+- **`switch-session` CREATES a session it cannot find**, so a stale name does not
+  fail — it spawns an empty session and takes you there. Check `list-sessions
+  --short --no-formatting` before switching. (`--short` prints one bare name per
+  line, which is the only parseable form.)
+- A pane is `terminal_7` to `switch-session --pane-id` and either `terminal_7` or
+  `7` to `focus-pane-id`. The store holds the short form.
+- `zellij action list-clients` shows which clients are attached and which pane each
+  one has focused — the only way to tell whether a session is being LOOKED at, as
+  opposed to merely running. `ps` cannot: a client's argv still says `zellij attach
+  <original>` after it has switched sessions.
+- `delete-session <name> --force` removes a running session; without `--force` it
+  refuses and says so.
 
 **SketchyBar**
 

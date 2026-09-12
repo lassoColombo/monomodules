@@ -12,6 +12,7 @@
 #   nu agent-notify2/tests/proc.nu
 #   nu agent-notify2/tests/sketchybar.nu
 #   nu agent-notify2/tests/clock.nu
+#   nu agent-notify2/tests/jump.nu
 #
 # Not part of the module — nothing in ../mod.nu imports this, so `use agent-notify2`
 # never parses a byte of it.
@@ -23,6 +24,7 @@ export use zellij.nu
 export use proc.nu
 export use sketchybar.nu
 export use clock.nu
+export use jump.nu
 
 # Run everything; returns false if any suite had a failure.
 #
@@ -31,6 +33,6 @@ export use clock.nu
 # tests/clock.nu, in a file that never mentions the name. Exporting `main` means
 # the runner is spelled `tests`, and no suite can be poisoned by it (§10).
 export def main []: nothing -> bool {
-    let results = [(store) (claude) (codex) (dispatch) (zellij) (proc) (sketchybar) (clock)]
+    let results = [(store) (claude) (codex) (dispatch) (zellij) (proc) (sketchybar) (clock) (jump)]
     ($results | where {|ok| not $ok } | is-empty)
 }
