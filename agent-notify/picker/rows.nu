@@ -13,7 +13,7 @@
 #    place: "home/root"         from the locator; "" when nothing claims it
 #    match: "awaiting monomodules home/root"
 #    rec:   {…}                 the record, for the locator and for the caller
-#    via:   {claims, place, screen, go} | null}
+#    via:   {info, owns, location-label, go} | null}
 #
 # `match` IS EXACTLY WHAT THE ROW SHOWS, and it was not always: the first
 # version folded the agent's last message in too, so that a phrase you
