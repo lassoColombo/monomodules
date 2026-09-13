@@ -31,11 +31,11 @@ export def main [] {
     # A config that does not exist: nothing here may reach a real display.
     $env.AGENT_NOTIFY_CONFIG = ($TMP | path join "no-config.yaml")
 
-    session-store patch "1111aaaa-0000" {client: "claude", state: "working", name: "alpha"
+    session-store patch "1111aaaa-0000" {agent: "claude", state: "working", name: "alpha"
                                  zellij: {session: "home", pane_id: "7"}}
-    session-store patch "2222bbbb-0000" {client: "claude", state: "awaiting", name: "beta"
+    session-store patch "2222bbbb-0000" {agent: "claude", state: "awaiting", name: "beta"
                                  zellij: {session: "elsewhere", pane_id: "terminal_9"}}
-    session-store patch "2222cccc-0000" {client: "claude", state: "idle", name: "gamma"}
+    session-store patch "2222cccc-0000" {agent: "claude", state: "idle", name: "gamma"}
 
     # ── which agent you meant ─────────────────────────────────────────────────
     # An id is a uuid. Nobody types one, so neither should this command insist.

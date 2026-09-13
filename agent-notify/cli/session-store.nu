@@ -67,7 +67,7 @@ export def "session-store list" [
 # reading the rest; a null value deletes its key. The return value says whether
 # anything actually moved — `changed: false` means nothing was written at all.
 @search-terms agent notify session-store write update merge
-@example "report a state change" { agent-notify session-store patch abc {client: "claude", state: "working"} }
+@example "report a state change" { agent-notify session-store patch abc {agent: "claude", state: "working"} }
 @example "update one namespaced field" { agent-notify session-store patch abc {zellij: {tab_id: 4}} }
 @example "delete a field" { agent-notify session-store patch abc {message: null} }
 export def "session-store patch" [
@@ -83,7 +83,7 @@ export def "session-store patch" [
     operation apply {operation-kind: "patch", id: $id, changes: (body $changes $stdin)}
 }
 
-# Replace an agent's record wholesale — the escape hatch for a client rebuilding
+# Replace an agent's record wholesale — the escape hatch for an agent rebuilding
 # its own state from scratch. Prefer `session-store patch`.
 @search-terms agent notify session-store replace overwrite
 export def "session-store set" [
@@ -112,5 +112,5 @@ export def "session-store end" [id: string]: nothing -> bool {
 @search-terms agent notify session-store sweep clean stale dead gc store-garbage-collector
 @example "clean up agents that were killed" { agent-notify session-store sweep }
 export def "session-store sweep" []: nothing -> table {
-    store-garbage-collector sweep-dead-sessions | select id client state why
+    store-garbage-collector sweep-dead-sessions | select id agent state why
 }

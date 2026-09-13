@@ -1,4 +1,4 @@
-# Step 2 — the Claude client: the payload mapping, and the hook entry end to
+# Step 2 — the Claude agent: the payload mapping, and the hook entry end to
 # end.
 #
 # The mapping is a pure function, so most of this needs no session-store, no
@@ -7,12 +7,12 @@
 # the only way to know that the thing Claude Code will actually execute works.
 
 use ../../agent-notify
-use ../clients/claude.nu
+use ../agents/claude.nu
 use ../core/operation.nu
 use assert.nu *
 
 const TMP = ($nu.temp-dir | path join "agent-notify-tests-claude")
-const CLIENT = path self ../clients/claude.nu
+const AGENT = path self ../agents/claude.nu
 
 # A payload with the fields every hook carries, plus whatever the event adds.
 def hook-input [extra: record = {}]: nothing -> record {
@@ -21,10 +21,10 @@ def hook-input [extra: record = {}]: nothing -> record {
 }
 
 # Exactly the command line settings.json carries — the module imported with
-# `-c`, not the file run as a script (see clients/claude/hook.nu for why that
+# `-c`, not the file run as a script (see agents/claude/hook.nu for why that
 # matters).
 def hook-cmd [event: string]: nothing -> list<string> {
-    ["-n" "--no-std-lib" "-c" $"use ($CLIENT | to nuon); claude ($event)"]
+    ["-n" "--no-std-lib" "-c" $"use ($AGENT | to nuon); claude ($event)"]
 }
 
 def run-hook [event: string, body: record] {
@@ -42,7 +42,7 @@ export def main [] {
     let m = [
         (check "SessionStart carries current-session, not state"
                (claude to-operation "SessionStart" (hook-input) | get changes | columns | sort)
-               ["claude" "client" "cwd"])
+               ["agent" "claude" "cwd"])
         (check "…and offers idle only as a create-time default"
                (claude to-operation "SessionStart" (hook-input) | get defaults) {state: "idle"})
         (check "SessionStart keeps the transcript path in its own namespace"
@@ -91,8 +91,8 @@ export def main [] {
                (claude to-operation "PreCompact" (hook-input) | get operation-kind) "ignore")
         (check "a payload with no session_id is ignored"
                (claude to-operation "Stop" {} | get operation-kind) "ignore")
-        (check "every patch names its client"
-               (claude to-operation "Stop" (hook-input) | get changes.client) "claude")
+        (check "every patch names its agent"
+               (claude to-operation "Stop" (hook-input) | get changes.agent) "claude")
     ]
 
     # ── create-only defaults, through the real sequence ───────────────────────
@@ -127,13 +127,13 @@ export def main [] {
 
     # ── what an agent says about itself, resolved from the environment ────────
     $env.AGENT_NOTIFY_ID = "self-test-1"
-    $env.AGENT_NOTIFY_CLIENT = "nightly"
+    $env.AGENT_NOTIFY_AGENT = "nightly"
     agent-notify report --state working
     agent-notify name "build-the-thing"
     let self_rec = agent-notify session-store get "self-test-1"
     let s = [
         (check "an agent can report itself with no id at all" $self_rec.state "working")
-        (check "…under the client it declared" $self_rec.client "nightly")
+        (check "…under the agent it declared" $self_rec.agent "nightly")
         (check "…and name itself" $self_rec.name "build-the-thing")
         (check "naming again with the same name changes nothing"
                (agent-notify name "build-the-thing" | get changed) false)
@@ -180,5 +180,5 @@ export def main [] {
     hide-env AGENT_NOTIFY_PID
 
     let all = ($m ++ $d ++ $e ++ $f ++ $s ++ $s2 ++ $p)
-    summarise $all --title "claude client"
+    summarise $all --title "claude agent"
 }

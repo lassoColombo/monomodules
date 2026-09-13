@@ -17,7 +17,7 @@
 #
 # We cannot take the parent (that shell dies the moment the hook returns) and we
 # cannot count steps (an agent that runs the command directly has one fewer). So
-# we climb until we meet the name the CLIENT declares — `clients/claude.nu` says
+# we climb until we meet the name the AGENT declares — `agents/claude.nu` says
 # `process: "claude"`, which is where agent-specific knowledge already lives.
 # `$env.AGENT_NOTIFY_PID` short-circuits all of it, the same escape hatch
 # `AGENT_NOTIFY_ID` gives for current-session.

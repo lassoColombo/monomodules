@@ -2,7 +2,7 @@
 #
 # It exists so the gate and the diff can be tested for real — two session-store
 # snapshots, a config file, a map in and a map out — on a machine with no zellij
-# and no bar. Same move as `clients/codex.nu`: prove the contract on something
+# and no bar. Same move as `agents/codex.nu`: prove the contract on something
 # we can actually run.
 #
 # It is a complete display, deliberately: the four parts, the pure/impure split,

@@ -18,7 +18,7 @@ export def main [] {
     mut r = []
 
     # ── create ────────────────────────────────────────────────────────────────
-    let c = agent-notify session-store patch "abc-123" {client: "claude", state: "working", cwd: "/tmp"}
+    let c = agent-notify session-store patch "abc-123" {agent: "claude", state: "working", cwd: "/tmp"}
     $r = $r ++ [(check "create reports changed" $c.changed true)]
     $r = $r ++ [(check "create has no before" $c.before null)]
     $r = $r ++ [(check "create stores state" $c.after.state "working")]
@@ -56,33 +56,33 @@ export def main [] {
     # ── strictness ────────────────────────────────────────────────────────────
     $r = $r ++ [(check-err "unknown state is rejected" "unknown state" {||
         agent-notify session-store patch "abc-123" {state: "busy"} })]
-    $r = $r ++ [(check-err "a record with no client is rejected" "missing required field 'client'" {||
-        agent-notify session-store patch "no-client" {state: "idle"} })]
+    $r = $r ++ [(check-err "a record with no agent is rejected" "missing required field 'agent'" {||
+        agent-notify session-store patch "no-agent" {state: "idle"} })]
     $r = $r ++ [(check-err "a non-record namespace is rejected" "must be a namespace" {||
         agent-notify session-store patch "abc-123" {zellij: 5} })]
     $r = $r ++ [(check-err "a mistyped core field is rejected" "must be a string" {||
         agent-notify session-store patch "abc-123" {name: 42} })]
     $r = $r ++ [(check "a rejected write leaves nothing behind"
-                       (agent-notify session-store get "no-client") null)]
+                       (agent-notify session-store get "no-agent") null)]
 
     # ── opaque ids ────────────────────────────────────────────────────────────
-    agent-notify session-store patch "../../etc/passwd" {client: "evil", state: "idle"}
+    agent-notify session-store patch "../../etc/passwd" {agent: "evil", state: "idle"}
     let escaped = ls ($"($TMP)/agent-notify/agents/*.json" | into glob) | get name | path basename
     $r = $r ++ [(check "a traversing id cannot escape the session-store"
                        ($escaped | any {|f| $f | str contains ".." }) false)]
     $r = $r ++ [(check "no id can produce a hidden (unlistable) file"
                        ($escaped | any {|f| $f | str starts-with "." }) false)]
     $r = $r ++ [(check "an awkward id is still readable by id"
-                       (agent-notify session-store get "../../etc/passwd" | get client) "evil")]
-    agent-notify session-store patch "a/b" {client: "x", state: "idle"}
-    agent-notify session-store patch "a_b" {client: "y", state: "idle"}
+                       (agent-notify session-store get "../../etc/passwd" | get agent) "evil")]
+    agent-notify session-store patch "a/b" {agent: "x", state: "idle"}
+    agent-notify session-store patch "a_b" {agent: "y", state: "idle"}
     $r = $r ++ [(check "ids that v1 would collide stay distinct"
-                       [(agent-notify session-store get "a/b" | get client) (agent-notify session-store get "a_b" | get client)]
+                       [(agent-notify session-store get "a/b" | get agent) (agent-notify session-store get "a_b" | get agent)]
                        ["x" "y"])]
 
     # ── list, set, drop ───────────────────────────────────────────────────────
     $r = $r ++ [(check "list sees every record" (agent-notify session-store list | length) 4)]
-    let s = agent-notify session-store set "abc-123" {client: "claude", state: "idle"}
+    let s = agent-notify session-store set "abc-123" {agent: "claude", state: "idle"}
     $r = $r ++ [(check "set replaces rather than merges"
                        ("zellij" in ($s.after | columns)) false)]
     $r = $r ++ [(check "drop files it away" (agent-notify session-store end "abc-123") true)]
@@ -95,7 +95,7 @@ export def main [] {
     # here: everything else in a record is re-supplied by the next event, and a
     # name is authored once and then never said again by anybody.
     agent-notify session-store patch "resume-me" {
-        client: "claude", state: "working", name: "the-name", cwd: "/tmp/proj"
+        agent: "claude", state: "working", name: "the-name", cwd: "/tmp/proj"
         message: "last thing", proc: {pid: 99999, started: "2026-01-01"}
         zellij: {session: "home", pane_id: "7"}
     } | ignore
@@ -111,7 +111,7 @@ export def main [] {
     # `--fork-session` exists to opt out of it. Shaped like a SessionStart: a
     # write that CREATES and carries defaults, which is the only write that can
     # be a resume.
-    agent-notify report --id "resume-me" --client "claude" --cwd "/tmp/proj" | ignore
+    agent-notify report --id "resume-me" --agent "claude" --cwd "/tmp/proj" | ignore
     let back = agent-notify session-store get "resume-me"
     $r = $r ++ [
         (check "RESUMING A SESSION BRINGS ITS NAME BACK" $back.name "the-name")
@@ -125,14 +125,14 @@ export def main [] {
         (check "…and the filed copy is consumed, not left in both places"
                (agent-notify session-store list --ended | where id == "resume-me") [])
         (check "a session nobody filed away is created, not reopened"
-               (agent-notify report --id "brand-new" --client "claude" | get after.state) "idle")
+               (agent-notify report --id "brand-new" --agent "claude" | get after.state) "idle")
     ]
 
     # ── naming, and not re-naming ─────────────────────────────────────────────
     # `--if-unnamed` is what lets CLAUDE.md say "run this at every session start"
     # without qualification: on a resumed session the name is already back, and
     # re-deriving one would make the stable thing unstable.
-    agent-notify report --id "namer" --client "claude" | ignore
+    agent-notify report --id "namer" --agent "claude" | ignore
     let first = agent-notify name "chosen" --id "namer" --if-unnamed
     let second = agent-notify name "something-else" --id "namer" --if-unnamed
     $r = $r ++ [
@@ -148,12 +148,12 @@ export def main [] {
     # On ending, the only moment the directory can grow, and by MTIME — so the
     # scan opens nothing. `touch` fakes the age, which is the whole point of
     # using mtime: no field to write, and nothing to parse to read it back.
-    agent-notify session-store patch "old-one" {client: "claude", state: "idle", name: "ancient"} | ignore
+    agent-notify session-store patch "old-one" {agent: "claude", state: "idle", name: "ancient"} | ignore
     agent-notify session-store end "old-one" | ignore
     # Older than the 7-day keep window, faked with `touch` — which is the point
     # of using mtime: no field to write, and nothing to parse to read it back.
     ^touch -mt 202001010000 ($TMP | path join "agent-notify" "ended" "old-one.json")
-    agent-notify session-store patch "fresh-one" {client: "claude", state: "idle", name: "recent"} | ignore
+    agent-notify session-store patch "fresh-one" {agent: "claude", state: "idle", name: "recent"} | ignore
     agent-notify session-store end "fresh-one" | ignore
     $r = $r ++ [
         (check "an ended session past the keep window expires when the next ends"

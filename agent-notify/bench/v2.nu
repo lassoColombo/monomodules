@@ -12,7 +12,7 @@
 
 use harness.nu *
 
-const CLIENT = path self ../clients/claude.nu
+const AGENT = path self ../agents/claude.nu
 const TMP = ($nu.temp-dir | path join "agent-notify-bench-v2")
 
 def hook-input [extra: record = {}]: nothing -> string {
@@ -22,9 +22,9 @@ def hook-input [extra: record = {}]: nothing -> string {
 
 # The invocation as it actually ships: the module IMPORTED via `-c`, not the
 # file run as a script. Measuring the script form instead would overstate every
-# number here by ~9ms (see the note in clients/claude.nu).
+# number here by ~9ms (see the note in agents/claude.nu).
 def hook [event: string]: nothing -> list<string> {
-    [$NU "-n" "--no-std-lib" "-c" $"use ($CLIENT | to nuon); claude ($event)"]
+    [$NU "-n" "--no-std-lib" "-c" $"use ($AGENT | to nuon); claude ($event)"]
 }
 
 export def main [] {

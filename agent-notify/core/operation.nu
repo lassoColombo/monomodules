@@ -1,14 +1,14 @@
 # The sequence every entry point runs, and the one place displays will be told
 # that something happened.
 #
-# It exists so that the sequence is written once rather than once per client: an
+# It exists so that the sequence is written once rather than once per agent: an
 # adapter's whole job is to turn its own native payload into one of the three
 # operations below, and this decides what that means. A write typed at the
 # command line therefore goes through exactly what a hook goes through — which
 # is what keeps the session-store and the displays from ever disagreeing.
 #
 # THE DISPATCH SEAM is marked below. Step 3 adds `use dispatch.nu` and one call;
-# nothing else in the module changes, and no client ever learns that a display
+# nothing else in the module changes, and no agent ever learns that a display
 # exists.
 #
 # An operation is one of:

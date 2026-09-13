@@ -33,7 +33,7 @@ export def refresh []: nothing -> table {
     dispatch repaint ($gone ++ $now) $now --force
 }
 
-# Create a display's items on the bar. Unlike `clients help-setup`, this one
+# Create a display's items on the bar. Unlike `agents help-setup`, this one
 # ACTS: SketchyBar items are runtime state, not a file in someone's config
 # directory, and creating them is the only way a fixed pool can exist at all.
 # What goes in your `sketchybarrc` is still only printed — see `displays

@@ -1,5 +1,5 @@
 # The integrations: the other programs this module knows how to work with.
-# Clients WRITE the session-store; integrations read it.
+# Agents WRITE the session-store; integrations read it.
 #
 # AN INTEGRATION HAS TWO TOOL_SECTIONS, and they are not the same kind of thing.
 # That is the whole reason this directory is called `integrations/` and not

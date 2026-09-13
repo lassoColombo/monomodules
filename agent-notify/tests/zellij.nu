@@ -16,7 +16,7 @@ const CFG = ($nu.temp-dir | path join "agent-notify-tests-zellij" "config.yaml")
 const FAKE = "agent-notify-tests-no-such-session"
 
 def rec [extra: record = {}]: nothing -> record {
-    {id: "me-1", client: "claude", state: "working", name: "monomodules"
+    {id: "me-1", agent: "claude", state: "working", name: "monomodules"
      zellij: {session: $FAKE, pane_id: "3"}} | merge $extra
 }
 
@@ -26,7 +26,7 @@ export def main [] {
     $env.XDG_DATA_HOME = $TMP
     $env.AGENT_NOTIFY_CONFIG = $CFG
     $env.AGENT_NOTIFY_ID = "me-1"
-    $env.AGENT_NOTIFY_CLIENT = "claude"
+    $env.AGENT_NOTIFY_AGENT = "claude"
     # A session name that cannot exist: this suite turns the display ON, and a
     # rename aimed at a real session would retitle a pane the user is using.
     $env.ZELLIJ_SESSION_NAME = $FAKE
@@ -129,7 +129,7 @@ export def main [] {
 
     # ── tabs: one glyph per agent, in front of the tab's own name ─────────────
     def placed [id: string, state: string, name: string, pane: string]: nothing -> record {
-        {id: $id, client: "claude", state: $state, name: $name
+        {id: $id, agent: "claude", state: $state, name: $name
          zellij: {session: $FAKE, pane_id: $pane, tab_id: "1", tab_base: "root"}}
     }
     let t1 = zellij render-items [(placed "a" "working" "gg" "3")] $s
@@ -157,7 +157,7 @@ export def main [] {
     # ── end to end, with a stub for the one impure call ───────────────────────
     # The record first, while no config exists and therefore no display runs — so
     # that the dispatch below really is this agent's FIRST paint.
-    agent-notify session-store patch "me-1" {client: "claude", state: "working", name: "monomodules"} | ignore
+    agent-notify session-store patch "me-1" {agent: "claude", state: "working", name: "monomodules"} | ignore
     {displays: ["zellij"]} | to yaml | save --force $CFG
     let painted = $TMP | path join "painted"
     let spy = {zellij: {info: $zellij.INFO
@@ -169,7 +169,7 @@ export def main [] {
                             | save --append $painted }}}
 
     let one = agent-notify session-store get "me-1"
-    let two = {id: "other", client: "claude", state: "awaiting", name: "gg"
+    let two = {id: "other", agent: "claude", state: "awaiting", name: "gg"
                zellij: {session: $FAKE, pane_id: "9"}}
 
     # `one` has no pane recorded — discovery is what gives it one.
@@ -199,7 +199,7 @@ export def main [] {
     # (P5). When it wrote straight at the store, such an agent updated it and
     # never appeared.
     agent-notify session-store patch "me-1" {zellij: null} | ignore
-    agent-notify session-store patch "cli-1" {client: "other", state: "working", name: "from-the-cli"} | ignore
+    agent-notify session-store patch "cli-1" {agent: "other", state: "working", name: "from-the-cli"} | ignore
     let g = [
         (check "a CLI write goes through the seam: the display ran and observed"
                (agent-notify session-store get "me-1" | get -o zellij | is-not-empty) true)

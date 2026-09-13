@@ -26,7 +26,7 @@ const LADDER = [
     ["(nothing)"                     ""]
     ["leaf core/paths.nu"            "use agent-notify/core/paths.nu"]
     ["leaf core/session-store.nu"            "use agent-notify/core/session-store.nu"]
-    ["the HOT cone (what a hook pays)" "use agent-notify/clients/claude.nu"]
+    ["the HOT cone (what a hook pays)" "use agent-notify/agents/claude.nu"]
     ["the whole module (what a human pays)" "use agent-notify"]
 ]
 
@@ -58,7 +58,7 @@ export def main [] {
         (cpu "/bin/bash -c ''" ["/bin/bash" "-c" ""])
         (cpu "nu -c '' (no std lib)" (nu-args ""))
         (cpu "nu -c 'use core/session-store.nu'" (nu-args "use agent-notify/core/session-store.nu"))
-        (cpu "nu -c 'use clients/claude.nu'  (the hook)" (nu-args "use agent-notify/clients/claude.nu"))
+        (cpu "nu -c 'use agents/claude.nu'  (the hook)" (nu-args "use agent-notify/agents/claude.nu"))
         (cpu "nu -c 'use agent-notify'      (the CLI)" (nu-args "use agent-notify"))
     ] | fmt-cpu | table)
 }

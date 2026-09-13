@@ -1,8 +1,8 @@
 # Claude Code. One file, one agent — the whole integration, and the only place
 # in the module that knows this agent exists.
 #
-# Every client exposes the same three things:
-#   INFO     what it is, for `agent-notify clients`
+# Every agent module exposes the same three things:
+#   INFO     what it is, for `agent-notify agents`
 #   to-operation
 #            PURE: (event, hook_input) → a session-store operation. Where the
 #            thinking is, and what the tests exercise — no session-store, no
@@ -12,7 +12,7 @@
 #            exit code to leave behind.
 #
 # Nothing registers this file. Claude's own settings.json names it directly, so
-# a client works the moment it exists (clients/mod.nu lists it for discovery
+# an agent module works the moment it exists (agents/mod.nu lists it for discovery
 # only).
 #
 # WHAT MAPS TO WHAT, and the three judgements that are not obvious:
@@ -85,7 +85,7 @@ def failure-message [hook_input: record]: nothing -> string {
 }
 
 def patch [id: string, changes: record, defaults?: record]: nothing -> record {
-    { operation-kind: "patch", id: $id, changes: ({client: "claude"} | merge $changes)
+    { operation-kind: "patch", id: $id, changes: ({agent: "claude"} | merge $changes)
       defaults: ($defaults | default {}) }
 }
 

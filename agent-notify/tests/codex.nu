@@ -1,22 +1,22 @@
-# The Codex client: the payload mapping, and the hook entry end to end.
+# The Codex agent: the payload mapping, and the hook entry end to end.
 #
 # Codex is not installed on this machine, so this suite is the only thing
-# holding the client honest — it exercises the documented payloads rather than
+# holding the agent honest — it exercises the documented payloads rather than
 # observed ones. What it CAN prove is everything on our side of the line: that
 # the mapping is right, that the entry survives whatever arrives on its stdin,
 # and that the session-store ends up saying what it should.
 #
-# The transport-swap checks are the point of the middle section: this client
+# The transport-swap checks are the point of the middle section: this agent
 # used to read argv and key on `thread-id`, and a leftover of that would be
 # invisible except as an agent that never appears.
 
 use ../../agent-notify
-use ../clients/codex.nu
+use ../agents/codex.nu
 use ../core/operation.nu
 use assert.nu *
 
 const TMP = ($nu.temp-dir | path join "agent-notify-tests-codex")
-const CLIENT = path self ../clients/codex.nu
+const AGENT = path self ../agents/codex.nu
 
 # The fields every Codex hook carries, plus whatever the event adds.
 def hook-input [extra: record = {}]: nothing -> record {
@@ -29,7 +29,7 @@ def hook-input [extra: record = {}]: nothing -> record {
 const HOOK_CMD = ["-n" "--no-std-lib" "-c"]
 
 def hook-cmd []: nothing -> list<string> {
-    $HOOK_CMD ++ [$"use ($CLIENT | to nuon); codex"]
+    $HOOK_CMD ++ [$"use ($AGENT | to nuon); codex"]
 }
 
 def run-hook [event: string, body: record] {
@@ -47,7 +47,7 @@ export def main [] {
     let m = [
         (check "SessionStart carries current-session, not state"
                (codex to-operation "SessionStart" (hook-input) | get changes | columns | sort)
-               ["client" "codex" "cwd"])
+               ["agent" "codex" "cwd"])
         (check "…and offers idle only as a create-time default"
                (codex to-operation "SessionStart" (hook-input) | get defaults) {state: "idle"})
         (check "SessionStart keeps the transcript path in its own namespace"
@@ -91,13 +91,13 @@ export def main [] {
                (codex to-operation "Stop" (hook-input) | get id) "sess-cx")
         (check "a payload with no session_id is ignored"
                (codex to-operation "Stop" {} | get operation-kind) "ignore")
-        (check "every patch names its client"
-               (codex to-operation "Stop" (hook-input) | get changes.client) "codex")
+        (check "every patch names its agent"
+               (codex to-operation "Stop" (hook-input) | get changes.agent) "codex")
     ]
 
     # ── the transport swap, which nothing else would catch ────────────────────
     # A `notify` payload has a `thread-id` and no `session_id`, so the hooks
-    # client must not recognise it at all: half a client would leave an agent
+    # module must not recognise it at all: half a module would leave an agent
     # that simply never appears.
     let notify_body = { type: "agent-turn-complete", "thread-id": "th-77"
                         "last-assistant-message": "Did the thing." }
@@ -127,7 +127,7 @@ export def main [] {
         (check "…and prints nothing at all" ($e1.stdout + $e1.stderr) "")
         (check "the session-store saw the turn end" $rec.state "awaiting")
         (check "…with the message" $rec.message "Hooks work.")
-        (check "…and under the right client" $rec.client "codex")
+        (check "…and under the right agent" $rec.agent "codex")
         (check "a malformed body cannot break the hook"
                (("not json" | ^$nu.current-exe ...(hook-cmd) | complete).exit_code) 0)
         (check "a body with no hook_event_name cannot break it"
@@ -141,10 +141,10 @@ export def main [] {
         (check "…quietly" $ended.exit_code 0)
     ]
 
-    # One session-store, and a client that names itself in every record it
+    # One session-store, and an agent that names itself in every record it
     # writes.
     let c = [ (check "every record here came from codex"
-                     (agent-notify session-store list | get client | uniq) []) ]
+                     (agent-notify session-store list | get agent | uniq) []) ]
 
-    summarise ($m ++ $t ++ $d ++ $e ++ $f ++ $c) --title "codex client"
+    summarise ($m ++ $t ++ $d ++ $e ++ $f ++ $c) --title "codex agent"
 }

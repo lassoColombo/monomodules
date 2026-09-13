@@ -17,29 +17,29 @@ use ../core/operation.nu
 use ../core/session-store.nu
 
 def target [given: any]: nothing -> record {
-    if ($given != null) { return {id: $given, client: "unknown"} }
+    if ($given != null) { return {id: $given, agent: "unknown"} }
     current-session require
 }
 
 # Report this agent's state. The everyday entry for anything that is not Claude
 # Code — a script, a cron job, another CLI agent.
 #
-# `--client` overrides what current-session resolution guessed, which matters on
+# `--agent` overrides what current-session resolution guessed, which matters on
 # the generic path: `$env.AGENT_NOTIFY_ID` says who you are but not what you
 # are.
 @search-terms agent notify state working awaiting attention report
-@example "a script reporting itself" { agent-notify report --state working --client nightly }
+@example "a script reporting itself" { agent-notify report --state working --agent nightly }
 @example "…and handing back control" { agent-notify report --state awaiting --message "3 files changed" }
 export def report [
     --state: string      # working | awaiting | needs-attention | idle
     --id: string         # override current-session resolution
-    --client: string     # override the client name
+    --agent: string     # override the agent name
     --name: string       # a deliberate, human-meaningful name
     --message: string    # what you want to say to whoever is watching
     --cwd: string
 ]: nothing -> record {
     let me = target $id
-    mut changes = {client: ($client | default $me.client)}
+    mut changes = {agent: ($agent | default $me.agent)}
     if ($state != null) { $changes = ($changes | merge {state: $state}) }
     if ($name != null) { $changes = ($changes | merge {name: $name}) }
     if ($message != null) { $changes = ($changes | merge {message: $message}) }
@@ -78,11 +78,11 @@ export def name [
         let have = ($rec | default {} | get -o name | default "") | str trim
         if ($have | is-not-empty) { return {changed: false, before: $rec, after: $rec} }
     }
-    operation apply {operation-kind: "patch", id: $me.id, changes: {client: $me.client, name: $value}
+    operation apply {operation-kind: "patch", id: $me.id, changes: {agent: $me.agent, name: $value}
                  defaults: {state: "idle"}}
 }
 
-# This agent has stopped — what a client calls when its session ends. The record
+# This agent has stopped — what an agent calls when its session ends. The record
 # is filed away rather than destroyed, so reporting the same id again later
 # brings its name back (core/session-store.nu).
 @search-terms agent notify end session clear forget archive

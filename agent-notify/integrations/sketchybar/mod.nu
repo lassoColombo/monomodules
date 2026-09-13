@@ -175,7 +175,7 @@ def where-of [record: record, settings: record]: nothing -> string {
     let location_label = if ($sess | is-not-empty) {
         $"($sess)/($z.tab_base? | default ($z.tab_id? | default '?'))"
     } else {
-        $record.client? | default "agent"
+        $record.agent? | default "agent"
     }
     let dir = $record.cwd? | default "" | str replace $nu.home-dir "~"
     if ($dir | is-empty) { return (markdown cut-to $location_label $settings.preview_width) }

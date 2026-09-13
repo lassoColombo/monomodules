@@ -130,7 +130,7 @@ export def patch [id: string, changes: record]: nothing -> record {
 }
 
 # Replace this agent's record wholesale. The escape hatch for the rare case
-# where merging is wrong — a client rebuilding its own state from scratch.
+# where merging is wrong — an agent rebuilding its own state from scratch.
 export def set [id: string, rec: record]: nothing -> record {
     write $id (read $id) $rec
 }

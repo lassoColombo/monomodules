@@ -61,10 +61,10 @@ export def main [] {
     ]
 
     # ── the store-garbage-collector ───────────────────────────────────────────
-    agent-notify session-store patch "alive-1" {client: "claude", state: "working", proc: $me} | ignore
-    agent-notify session-store patch "dead-1" {client: "claude", state: "working"
+    agent-notify session-store patch "alive-1" {agent: "claude", state: "working", proc: $me} | ignore
+    agent-notify session-store patch "dead-1" {agent: "claude", state: "working"
                                         proc: {pid: $gone, started: "whenever"}} | ignore
-    agent-notify session-store patch "untracked-1" {client: "claude", state: "awaiting"} | ignore
+    agent-notify session-store patch "untracked-1" {agent: "claude", state: "awaiting"} | ignore
 
     let dropped = store-garbage-collector sweep-dead-sessions
     let left = agent-notify session-store list | get id | sort
@@ -81,8 +81,8 @@ export def main [] {
     # ── /clear: one live process, two records ─────────────────────────────────
     # The same agent started a fresh session in the same process. The older record
     # is finished, even though its pid is genuinely alive.
-    agent-notify session-store patch "cleared-old" {client: "claude", state: "awaiting", proc: $me} | ignore
-    agent-notify session-store patch "cleared-new" {client: "claude", state: "working", proc: $me} | ignore
+    agent-notify session-store patch "cleared-old" {agent: "claude", state: "awaiting", proc: $me} | ignore
+    agent-notify session-store patch "cleared-new" {agent: "claude", state: "working", proc: $me} | ignore
     let dropped2 = store-garbage-collector sweep-dead-sessions
     let left2 = agent-notify session-store list | get id | sort
     let f = [

@@ -1,13 +1,13 @@
-# Codex CLI. The second client, and the one that taught us what a half-wired
-# agent costs — though not in the way it first appeared to.
+# Codex CLI. The second agent, and the one that taught us what a half-wired
+# integration costs — though not in the way it first appeared to.
 #
-# It began as an argv client built on `notify`, which was Codex's only
+# It began as an argv module built on `notify`, which was Codex's only
 # integration point: one program, fired once, when a turn ends. That reached
 # exactly ONE of the four states. A Codex record therefore read `awaiting` from
 # its first turn until its last — true only during the window where it happened
 # to coincide with reality, and wrong every second the agent was actually
 # working. Nothing was malformed: `awaiting` is a legal state written by a legal
-# client, and validation passed. The session-store simply has no way to say "I
+# agent, and validation passed. The session-store simply has no way to say "I
 # don't know", so a one-sided hook writes a confident fact that outlives its
 # truth. A bar reading "2 agents waiting for you" is worth glancing at only if
 # it is true.
@@ -15,7 +15,7 @@
 # Codex has since grown a full hook system, shaped almost exactly like Claude
 # Code's: one JSON object on stdin, `session_id` / `cwd` / `hook_event_name`,
 # event → matcher group → `{type: "command", command}`, exit 2 to block. So this
-# client now uses hooks, and `notify` is GONE rather than kept as a fallback —
+# module now uses hooks, and `notify` is GONE rather than kept as a fallback —
 # the two identify an agent differently (`notify` says `thread-id`, hooks say
 # `session_id`) and nothing establishes that those are the same value. Running
 # both would risk two records for one agent: the same pane counted as working
@@ -27,14 +27,14 @@
 #                argv. Codex puts it on every event, so reading it from the body
 #                gives one command string for all six subscriptions and no way
 #                for an argument to disagree with the key it is registered under.
-#   attention    `PermissionRequest` — which Claude's client deliberately does
+#   attention    `PermissionRequest` — which Claude's module deliberately does
 #                NOT subscribe to, because there `Notification` already covers it
 #                and both would flap. Codex has no `Notification`, so this is the
 #                signal rather than a duplicate of one.
 #   help-setup       `~/.codex/hooks.json`, in matcher groups.
 #
 # WRITTEN FROM DOCUMENTATION, not from observed traffic: Codex is not installed
-# here, so unlike `claude.nu` this client has never seen a real payload. Two
+# here, so unlike `claude.nu` this module has never seen a real payload. Two
 # things to confirm against an install: that `SessionEnd` fires (one docs mirror
 # omits it), and whether a subagent's tool events carry the PARENT's
 # `session_id` the way Claude's do. Both fail ignore-shaped — a `SessionEnd`
@@ -78,7 +78,7 @@ def permission-message [hook_input: record]: nothing -> string {
 }
 
 def patch [id: string, changes: record, defaults?: record]: nothing -> record {
-    { operation-kind: "patch", id: $id, changes: ({client: "codex"} | merge $changes)
+    { operation-kind: "patch", id: $id, changes: ({agent: "codex"} | merge $changes)
       defaults: ($defaults | default {}) }
 }
 
@@ -129,7 +129,7 @@ export def main [] {
     }
 }
 
-# See clients/claude.nu: attached at SessionStart, and looked up again once per
+# See agents/claude.nu: attached at SessionStart, and looked up again once per
 # turn so that a missing one is never permanent.
 def with-proc [operation: record]: nothing -> record {
     if ($operation.operation-kind? != "patch") { return $operation }

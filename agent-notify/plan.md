@@ -22,7 +22,7 @@ Status markers used throughout:
 ## 1. Principles
 
 **P1. Everything lives in the module.** All logic, all graphics, for every tool
-— zellij, SketchyBar, Claude Code, and any client added later. Nothing of
+— zellij, SketchyBar, Claude Code, and any tool added later. Nothing of
 substance may live in `~/.config/sketchybar/plugins/*.sh`, in `sketchybarrc`, or
 in a shell glue script. The bar's config gets exactly one line: a call into the
 module.
@@ -37,12 +37,12 @@ in §4 that trades one cost against another cites a number from §3.
 
 **P4. The on-disk session-store is the core.** Everything else is a projection
 of it. The session-store must offer (a) powerful and precise ways to write it,
-and (b) submodules that integrate clients onto it — zellij, SketchyBar, and
-others — as **opt-in** integrations.
+and (b) submodules that integrate other tools onto it — zellij, SketchyBar,
+and others — as **opt-in** integrations.
 
 **P5. Agent-agnostic.** This is not a Claude Code tool. *Every* agent must be
 able to call the entry points — another CLI agent, a script, a cron job,
-something not yet written. Claude is one client among N, and its payload adapter
+something not yet written. Claude is one agent among N, and its payload adapter
 is a convenience, not the path. Three things follow, and they are design
 constraints rather than aspirations:
 
@@ -238,12 +238,12 @@ closed session-schema would make the core depend on every integration's fields �
 adding an integration would mean editing core — which contradicts P4's opt-in
 requirement. So the core guarantees a handful of fields and owns their policy;
 everything else belongs to a namespace named after its owner, integration or
-client alike.
+agent alike.
 
 ```nu
 { # ── core-owned ──────────────────────────────────────────────────────────
   id: "6923c0bc-…"        # caller-supplied, opaque, unique per agent instance
-  client: "claude"        # who is reporting
+  agent: "claude"        # who is reporting
   state: "awaiting"       # CLOSED vocabulary: working | awaiting |
                           #                    needs-attention | idle
   state_since: <datetime> # stamped only when `state` actually changes
@@ -344,7 +344,7 @@ agent-notify/
     session-store-garbage-collector.nu
                      COLD   liveness + reconciliation (the 30s timer)
   view/                     presentation-neutral derivation shared by all displays
-  clients/
+  agents/
     claude.nu               hook payload → session-store changes
   integrations/
     zellij/
@@ -399,7 +399,7 @@ silent no-op, because a hand-edited file makes typos likelier than an env record
 does. A `config show` command prints the resolved record and the file it came
 from.
 
-### 4.6 Clients — one module per agent
+### 4.6 Agents — one file per agent
 
 The agents that might report into the session-store agree on almost nothing.
 Surveyed before committing to a shape:
@@ -420,13 +420,13 @@ current-session**, **the reply contract**, and **how much of our state
 vocabulary the agent can even reach**. A declarative mapping table could encode
 the first three. It cannot encode the fourth (Gemini must print `{}` where
 Claude must print nothing), and it cannot encode Aider, which supplies no
-current-session at all and needs its client to invent one. Encoding all of it
+current-session at all and needs its module to invent one. Encoding all of it
 would have produced a worse nushell.
 
 So: **one file per agent**, exposing three things.
 
 ```nu
-export const INFO = {name, title, transport, states}  # for `agent-notify clients`
+export const INFO = {name, title, transport, states}  # for `agent-notify agents`
 export def to-operation [event: string, payload: record] -> operation
                                                       # PURE — the thinking
 export def main [...]                                 # the entry; the peculiar parts
@@ -437,26 +437,27 @@ need no session-store, no hook and no agent. `main` owns transport, reply and
 exit code — the parts that are strange per agent, expressed where strange is
 cheap.
 
-**Nothing registers a client.** The agent's own configuration names the file
-directly, so a client works the moment it exists. `clients/mod.nu` lists the
-integration-registry ones for `agent-notify clients` and for nothing else; an
-entry point imports exactly the one client it is for and pays to parse no other.
+**Nothing registers an agent.** The agent's own configuration names the file
+directly, so an agent module works the moment it exists. `agents/mod.nu` lists
+the integration-registry ones for `agent-notify agents` and for nothing else;
+an entry point imports exactly the one agent it is for and pays to parse no
+other.
 
 **A half-wired agent is worse than an unwired one.** Codex integration-registry
-here as a `notify` client first, and `notify` fires once, when a turn ends. That
+here as a `notify` module first, and `notify` fires once, when a turn ends. That
 reached one of the four states, so a Codex record read `awaiting` from its first
 turn to its last — true only where it happened to coincide with reality, and
 wrong every second the agent was working. Nothing was malformed: a legal state,
-a legal client, validation passing. The session-store has no way to say *I don't
+a legal agent name, validation passing. The session-store has no way to say *I don't
 know*, so a one-sided hook writes a confident fact that outlives its truth, and
 the counter a display exists to show — "2 agents waiting for you" — stops being
 worth a glance. The order of preference when an agent under-reports:
 
 1. **Fix the transport.** If a state is reachable at all, carry the fact rather
-   than a guess about it. Codex's hooks reach all four, which is what the client
+   than a guess about it. Codex's hooks reach all four, which is what the module
    uses now.
-2. **Let the display read `INFO.states`.** Every record names its `client`, so a
-   display can join to that client's declared reach and decline to count what it
+2. **Let the display read `INFO.states`.** Every record names its `agent`, so a
+   display can join to that agent's declared reach and decline to count what it
    cannot know. This is what makes the field load-bearing rather than
    decorative, and it is the only answer for an agent like Aider that supplies
    nothing.
@@ -468,10 +469,10 @@ worth a glance. The order of preference when an agent under-reports:
 `notify` and hooks, and they identify an agent differently — `thread-id` against
 `session_id`, with nothing establishing that those are the same value. Running
 both would risk two records for one agent: the same pane counted as working and
-awaiting at once. A client takes the transport that reaches the most states and
+awaiting at once. An agent module takes the transport that reaches the most states and
 ignores the rest.
 
-**Setup help is printed, not applied.** `agent-notify clients help-setup codex`
+**Setup help is printed, not applied.** `agent-notify agents help-setup codex`
 prints the block to paste. Merging into four foreign configs in three formats —
 with backups, pre-existing entries and an uninstall path — is a great deal of
 blast radius for the convenience of not pasting a block yourself.
@@ -504,8 +505,8 @@ makes it a descendant, and a descendant can ask who started it.
 
 The parent is no use (that shell dies when the hook returns) and the number of
 steps is not fixed (an agent running the command directly has one fewer), so we
-climb until we meet the name **the client declares** — `process: "claude"` in
-`clients/claude.nu`, which is where agent-specific knowledge already lives.
+climb until we meet the name **the agent declares** — `process: "claude"` in
+`agents/claude.nu`, which is where agent-specific knowledge already lives.
 `$env.AGENT_NOTIFY_PID` short-circuits the walk, the same escape hatch
 `AGENT_NOTIFY_ID` gives for current-session (P5).
 
@@ -692,28 +693,28 @@ committed. Each display is wrapped alone, so one failing cannot stop the next.
 | D9 | In-process dispatch — no poke, no `render.sh`, no second process | **LOCKED** | step 3 — built and running: `core/dispatch.nu` fans out inside the agent's own process. It removed a whole nu spawn + parse (34.6ms/event measured) and two glue scripts with it |
 | D10 | No daemon | **LOCKED** | held all the way through: at ~1 event/s, saving the 12.9ms floor never justified the lifecycle risk, and the one periodic job that IS needed is a launchd `StartInterval` (D39), not a process we keep alive |
 | D11 | Identity = the agent's session id, opaque and caller-supplied | **LOCKED** | the only way zellij can genuinely be opt-in; opaque because of P5 |
-| D11b | Agent-agnostic: any agent may call the entry points; Claude is one client among N | **LOCKED** | P5 |
+| D11b | Agent-agnostic: any agent may call the entry points; Claude is one agent among N | **LOCKED** | P5 |
 | D11c | Open session-schema — small core + one namespace per owner | **LOCKED** | a closed session-schema would make core depend on every integration |
 | D11d | Closed, core-owned state vocabulary | **LOCKED** | displays cannot render a state they have never heard of |
 | D11e | Injective id → filename encoding (percent-encode outside `[A-Za-z0-9._-]`) | **LOCKED** | opaque ids may contain anything; v1's mapping collides |
 | D12 | Facts not decisions: the session-store holds `name` or nothing | **REVISED** (step 4) | right about the problem, wrong about the answer. `name_auto` was never built and is not wanted: a name the agent did not choose is not a fact, so the session-store holds one field and each display computes its own fallback at paint time (`name` → `cwd` basename → id prefix). v1's base-name ladder and `pane_locked` are gone either way |
 | D13 | Lazy zellij reads via `title_written` and `context_read_at` | **SUPERSEDED** by D23/D40 | never built, and it turned out not to be needed. The projection gate skips the write when nothing moved, and dispatch's per-key diff skips the ones that did not — with no extra fields, no throttle and no staleness to reason about. `discover-own-location` covers the tab read (D43). Two state fields avoided, not optimised |
 | D14 | Store the message as written; derive the flattened form at paint time | **LOCKED** | step 5b — built: `integrations/sketchybar/text.nu` flattens at paint, the session-store keeps the markdown. It is what let the picker later take a different view of the same field, and then stop needing it at all (D57) |
-| D18 | One client MODULE per agent, not a declarative mapping table | **LOCKED** | §4.6 — transport, reply contract and current-session all vary; a map would become a worse nushell |
-| D19 | Clients are discovered by the agent's own config naming the file; no registry | **LOCKED** | adding an agent is one new file |
+| D18 | One FILE per agent, not a declarative mapping table | **LOCKED** | §4.6 — transport, reply contract and current-session all vary; a map would become a worse nushell |
+| D19 | Agents are discovered by the agent's own config naming the file; no registry | **LOCKED** | adding an agent is one new file |
 | D20 | Setup help is printed, never applied | **LOCKED** | four foreign configs in three formats |
-| D21 | A client uses ONE transport, even when its agent offers several | **LOCKED** | §4.6 — Codex's `notify` and hooks key on different ids; running both double-counts one agent |
+| D21 | An agent module uses ONE transport, even when its agent offers several | **LOCKED** | §4.6 — Codex's `notify` and hooks key on different ids; running both double-counts one agent |
 | D22 | Fix an agent's transport before inferring states it does not report | **LOCKED** | §4.6 — the session-store must not hold a confident fact nothing supports |
 | D23 | The projection gate: compare `render-items(before)` with `render-items(after)` | **LOCKED** | §4.7 — replaces v1's bash gate, trigger dedup and session-store-garbage-collector with one comparison, and no state |
 | D24 | Strict config validation in the CLI, never in the hook | **LOCKED** | §4.7 — a YAML typo must not be able to stop the session-store recording facts |
-| D25 | The readers are `displays/`, the writers are `clients/` | **REVISED** (step 6) | half right. The writers are still `clients/`; the readers went back to `integrations/`, because an integration has two halves and only one of them is a display — see D47 |
+| D25 | The readers are `displays/`, the writers are `agents/` (then `clients/`) | **REVISED** (step 6, and again by D65) | half right. The writers are still `agents/`; the readers went back to `integrations/`, because an integration has two halves and only one of them is a display — see D47 |
 | D26 | Displays reach dispatch as a hand-written table of closures | **LOCKED** | `use` is parse-time; it is also what makes them testable with nothing installed |
 | D27 | A display reports what it learned; dispatch writes it | **LOCKED** | §4.7 — one writer, and it keeps displays out of the session-store's import cone |
 | D28 | A pane's name comes from the session-store, never from parsing its old title | **LOCKED** | user decision; deletes ~60 lines of v1 and one zellij call per event. A manual rename is overwritten |
 | D29 | The import cone must be a TREE | **LOCKED** | §10 — a diamond is parsed twice, on every event, forever |
 | D30 | Liveness is the agent's PROCESS, recorded once at SessionStart | **LOCKED** | §4.6b — the only signal that is proof rather than a proxy; replaces v1's zellij scan and session-store-garbage-collector outright |
 | D31 | Cannot tell ⇒ delete nothing | **LOCKED** | §4.6b — one unreadable `ps` must never wipe a live session-store |
-| D32 | The client declares how to find its own process | **LOCKED** | §4.6b — same rule as every other agent-specific fact (D18) |
+| D32 | The agent declares how to find its own process | **LOCKED** | §4.6b — same rule as every other agent-specific fact (D18) |
 | D33 | The hook paints the bar itself; no trigger, no daemon round trip | **LOCKED** | step 5 — dispatch already holds the session-store; v1's path cost a second nu (~47ms) and a glue script |
 | D34 | A side effect is built as DATA first (`message`), then sent | **LOCKED** | step 5 — it is what lets the bar be tested exactly, with no bar installed and no subprocess |
 | D35 | A fixed item pool, created once, never added to or removed from | **INHERITED** | v1's most expensive lesson; re-measured at 17.51ms per add+remove against 6.5ms per message |
@@ -746,6 +747,7 @@ committed. Each display is wrapped alone, so one failing cannot stop the next.
 | D62 | The flattener says WHAT A ROW IS; each display paints it | **LOCKED** | step 10 — the two displays have nothing in common to share a coloured string with. A SketchyBar item has no ANSI and no runs: it has one `label.color`, set over the wire per paint (whether row 4 is a heading depends on what the agent wrote). The picker's frame strips escapes out of every line on purpose, because that text is agent-authored. So a row is `{k, t}` and colour is applied at the far end — in the picker, LAST, after the clip, so the strip stays a defence and the clip still measures what a reader sees |
 | D63 | The preview SCROLLS, and it corrects its own offset | **LOCKED** | step 10 — `pv_top` is the message's first visible row, the preview's `top`. Keys can only ever say "further down": `markdown plain-md` is given a line budget and stops there (D61), so nothing renders a whole message just to count it, and the end is knowable only by asking for one row MORE than the pane holds and getting fewer back. So `preview of` clamps and hands the used offset back, the way `rows keep-in-view` corrects the list's `top` — which is what stops ctrl-d running up a number that then has to be undone before the view moves again. ctrl-j/k by the row, ctrl-d/u by half the pane; PROBED ON A REAL PTY first, because a terminal sends ctrl-j as LF and enter as CR, and had crossterm folded them together the binding would have cost the jump key. Clearing the filter moved to ctrl-w |
 | D64 | The picker's chrome is coloured, and a line is built as PIECES | **LOCKED** | step 10 — closes §9b.2. A line is `{c, t}` pieces, measured in plain text and inked last, which is the only order that works: the width a terminal cares about is the one a reader sees, and a row's name and location are agent-authored so the strip in `clean` has to stay a defence. Two things the list could not say got a home in the bars — a fleet tally on the top, `▾ n` on the bottom when the preview is scrolled — and both are RIGHT-ALIGNED so they drop first on a narrow terminal and never move the caret. One palette gotcha worth keeping: ANSI 8 (`dark_gray`) is Rosé Pine's OVERLAY tone, what a selection is drawn *on*, so as text it is nearly the background; dim chrome is `white_dimmed`, the way cmdprompt draws its box |
+| D65 | The vocabulary is **session / agent / integration**; nothing is a `client` | **LOCKED** | the rename (naming.md 34) — `client` named a role in a protocol this module does not have: there is no server, and zellij reads the store as much as Claude Code writes it, so the word drew no line. The three nouns each name their subject instead — a SESSION is a row in the store, an AGENT is the program a session runs, an INTEGRATION is a tool that shows them — and read/write is a consequence rather than a name. It also removes the ambiguity `agents/` would otherwise have: rows are sessions, so `agents/claude.nu` can only be read as the file about the Claude Code PROGRAM. Carried out as a rename plus a one-shot over the live `client` field, the same treatment the `v` field got |
 | D15 | Replace pandoc with a nu-native flattener | **LOCKED** (step 5b) | done: `integrations/sketchybar/text.nu` does it in nushell. 25.1ms off the event path and a dependency gone. v1 could afford pandoc because it converted where the preview was STORED, on a path already spawning processes; v2's whole paint is 6.5ms. Superseded in part by D60 — the flattener is a parser now, and still no subprocess |
 | D16 | Where the bench harness lives | **OPEN** | the only open row left. ~350 lines of documented nu; §8, and §9b.3 |
 | D17 | Promoted to `monomodules/agent-notify`, a module beside `ai` and the rest | **LOCKED** (2026-09-12) | step 7 — it was never `ai`-shaped: reflecting agent state on a status bar is not provider-agnostic content generation, and being a submodule is what made every hook parse the whole `ai` tree. The directory, the command, the session-store at `~/.local/share/agent-notify/` and the bar prefix `an_` all carry the one name |
@@ -878,20 +880,20 @@ working thing still on the bar.
    *hidden* file — written, readable by id, and invisible to every display; and
    naming a command `get` silently shadows the builtin for every imported module
    (§10).
-2. **Claude client + the entry point** — ✅ built and verified (37/37), not yet
-   wired into `settings.json`. `clients/claude/adapt.nu` is a pure
-   payload→operation mapping; `clients/claude/hook.nu` is the entry;
+2. **Claude agent + the entry point** — ✅ built and verified (37/37), not yet
+   wired into `settings.json`. `agents/claude/adapt.nu` is a pure
+   payload→operation mapping; `agents/claude/hook.nu` is the entry;
    `core/operation.nu` holds the sequence and the dispatch seam;
-   `core/current-session.nu` answers "which agent am I"; `cli/agent.nu` adds
+   `core/current-session.nu` answers "which agent am I"; `cli/self-report.nu` adds
    `report` and `name`. 21.3ms per event. Three findings: subagent tool calls
    carry the PARENT's session id (so they fold in for free, and `SubagentStop`
    must be ignored); `StopFailure` gives us a state v1 could not express; and
    importing the entry with `-c` rather than running it as a script saves ~9ms
    per event (§10).
-2b. **The client contract, proved on a second agent** — ✅ done.
-`clients/claude.nu`
-   and `clients/codex.nu`, one file each; `core/hook-input.nu` holds the two
-   transports; `agent-notify clients [help-setup <name>]` lists and explains them.
+2b. **The agent contract, proved on a second agent** — ✅ done.
+`agents/claude.nu`
+   and `agents/codex.nu`, one file each; `core/hook-input.nu` holds the two
+   transports; `agent-notify agents [help-setup <name>]` lists and explains them.
    85/85 across three suites, 22.8ms per event (unchanged by the refactor). Codex
    was chosen precisely because it shares almost nothing with Claude — argv
    transport, script entry, event name inside the payload, kebab-case fields, one
@@ -901,7 +903,7 @@ working thing still on the bar.
    state, so a Codex record read `awaiting` for its whole life — a confident fact
    that outlived its truth (§4.6). Codex's hook system turns out to be
    Claude-shaped — stdin JSON, `session_id` / `cwd` / `hook_event_name`, matcher
-   groups, exit 2 to block — so the client now subscribes to six events and reaches
+   groups, exit 2 to block — so the agent now subscribes to six events and reaches
    all four states, and `notify` is gone rather than kept as a fallback (D21). The
    one shape difference from Claude: the event name comes from the body rather than
    our argv, which gives a single command string for all six subscriptions and no
@@ -910,7 +912,7 @@ working thing still on the bar.
    `from-args` along with its last caller — an argv agent can read its own argv in
    one line, and untested code in the core is worse than a line rewritten later.
    Written from documentation rather than observed traffic (Codex is not installed
-   here), which the client's header says plainly. The suite immediately found a
+   here), which the agent's header says plainly. The suite immediately found a
    session-store bug no display had reached yet: `list` on an *emptied* session-store errored,
    because a glob that matches nothing is an error (§10).
 3. **Config + dispatch** — ✅ done. `core/config.nu` (the YAML file, strict
@@ -923,7 +925,7 @@ working thing still on the bar.
    so the budget holds through step 5. The hook is 25ms. `integrations/` ships
    EMPTY on purpose: the contract is exercised by `tests/fake.nu`, a complete
    display that writes a line to a file and therefore needs nothing installed —
-   the same move that proved the client contract on Codex. One consequence for
+   the same move that proved the agent contract on Codex. One consequence for
    the core: `drop` now reads the record before removing it, because a display
    cannot say whether its output changed about an agent it never saw.
 4. **zellij integration** — ✅ done, panes only. `integrations/zellij/mod.nu`:
@@ -1184,14 +1186,14 @@ in
    `picker/preview.nu` is pure like everything else in that directory, and
    `picker/mod.nu` is down to three calls that touch the world. 439/439.
 
-> **Reordered after step 1** (was: write API → config → zellij → client). Two
+> **Reordered after step 1** (was: write API → config → zellij → agent). Two
 > reasons. The old step 2 largely landed inside step 1 — `patch`, `changed` and
 > validation are done, and what remains of it (write-once policy, `view/`) belongs
 > to the steps that actually need it. And the old order built a display before
 > anything fed it, so zellij would have been judged against hand-written fixtures.
 > The distinction that settles it: **writers need no opt-in, displays do.** An
 > agent reporting itself just calls the command; there is nothing to enable. So
-> the client can land before config, and config can wait until a display makes it
+> the agent can land before config, and config can wait until a display makes it
 > concrete.
 
 ---
@@ -1434,12 +1436,12 @@ top-level code does not pay it. Measured on the real entry: 29.3ms as a script
 against 20.4ms via `-c 'use <abs path>; hook <Event>'`, which is why the hook
 command line is spelled the second way.
 
-> That rule bit three times in one afternoon while writing the clients: `def
+> That rule bit three times in one afternoon while writing the agents: `def
 > ignore` (shadowing the builtin the next line pipes to), `export def all` in the
 > test runner, and `export def get` in step 1. It is the sharpest edge in the
 > language as far as this module is concerned. A related one: **a module cannot
-> export a command with its own name** — `clients.nu` must export `main`, not
-> `clients`.
+> export a command with its own name** — `agents.nu` must export `main`, not
+> `agents`.
 
 **Reading stdin blocks until the writer closes it.** `open --raw /dev/stdin` in
 an entry point run by hand hangs with no clue why; `is-terminal --stdin` guards

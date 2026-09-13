@@ -23,7 +23,7 @@ use assert.nu *
 def agents [...states: string]: nothing -> list<record> {
     $states | enumerate | each {|x| {
         id: $"a($x.index)"
-        client: "claude"
+        agent: "claude"
         state: $x.item
         name: $"agent-($x.index)"
         state_since: $"2026-09-12T10:0($x.index):00Z"
@@ -122,18 +122,18 @@ export def main [] {
         (check "the first preview line says WHICH agent this is"
                (row-of {id: "x", cwd: "/a/b", zellij: {session: "home", tab_base: "root"}} $settings | get lines | first)
                {k: "where", t: "home/root · /a/b"})
-        (check "…falling back to the client when zellij is not in play"
-               (row-of {id: "x", client: "codex", cwd: "/a/b"} $settings | get lines | first | get t) "codex · /a/b")
+        (check "…falling back to the agent when zellij is not in play"
+               (row-of {id: "x", agent: "codex", cwd: "/a/b"} $settings | get lines | first | get t) "codex · /a/b")
         (check "a home directory is written the short way"
                (row-of {id: "x", cwd: ($nu.home-dir | path join "w")} $settings | get lines | first | get t
                 | str contains "~/w") true)
         # A filter drawer, so the eliding is exercised rather than the 110
         # characters a real one has.
         (check "a directory too long for the row keeps its END, not its beginning"
-               (row-of {id: "x", client: "c", cwd: "/very/long/prefix/that/will/not/fit/anywhere/near/here/at/all/thing"} $filter
+               (row-of {id: "x", agent: "c", cwd: "/very/long/prefix/that/will/not/fit/anywhere/near/here/at/all/thing"} $filter
                 | get lines | first | get t | str ends-with "/thing") true)
         (check "…and the cut lands on a separator rather than mid-word"
-               (row-of {id: "x", client: "c", cwd: "/very/long/prefix/that/will/not/fit/anywhere/near/here/at/all/thing"} $filter
+               (row-of {id: "x", agent: "c", cwd: "/very/long/prefix/that/will/not/fit/anywhere/near/here/at/all/thing"} $filter
                 | get lines | first | get t | str contains "· …/") true)
         (check "an agent with nothing to say says so rather than nothing"
                (row-of {id: "x", cwd: "/a"} $settings | get lines | last | get t) "—")

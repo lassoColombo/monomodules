@@ -5,7 +5,7 @@
 # editing core — which is exactly what opt-in integrations must not require. The
 # core therefore guarantees a small set of fields and owns their policy, and
 # everything else lives in a namespace named after its owner, integration or
-# client alike.
+# agent alike.
 #
 # One thing is deliberately closed: the STATE VOCABULARY. Displays render states
 # — three counters, three glyphs, an urgency order — and a bar cannot draw a
@@ -18,7 +18,7 @@ export const VERSION = 1
 export const STATES = ["working" "awaiting" "needs-attention" "idle"]
 
 # Fields the core knows about. Everything else must be a namespace (a record).
-const CORE_REQUIRED = ["id" "client" "state"]
+const CORE_REQUIRED = ["id" "agent" "state"]
 const CORE_OPTIONAL = ["name" "cwd" "message"]
 
 # Set by the session-store, never by a caller, and EXCLUDED from the `changed`

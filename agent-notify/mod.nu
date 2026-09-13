@@ -15,7 +15,7 @@
 # module; no glue scripts in anyone else's config directory.
 #
 # BUILD STATE — complete (plan.md §9). The session-store and its command set,
-# the Claude and Codex clients, liveness by process, the config file, dispatch,
+# the Claude and Codex agents, liveness by process, the config file, dispatch,
 # zellij pane and tab titles, the SketchyBar counters with their drawers and
 # hover previews, the launchd prune daemon, the jump, and the picker. **v1 was
 # dismissed on 2026-09-12** while this was still incomplete, on purpose, and
@@ -47,7 +47,7 @@
 #   session-store list --ended               sessions that have ended
 #   session-store sweep                      file away agents provably gone
 #   report|name                              what an agent says about itself
-#   clients [help-setup <name>]              which agents can report, and how
+#   agents [help-setup <name>]               which agents can report, and how
 #   config path|show|check                   the settings file
 #   displays [refresh|install|help-setup]    what shows it, and repaint them
 #   prune-daemon install|status              the periodic look for dead agents
@@ -56,12 +56,12 @@
 #
 # The command set is deliberately reachable from outside nushell (plan.md P5):
 #
-#   echo '{"client":"claude","state":"working"}' \
+#   echo '{"agent":"claude","state":"working"}' \
 #     | nu -c 'use agent-notify; agent-notify session-store patch <id> --stdin'
 
 export use cli/session-store.nu *
-export use cli/agent.nu *
-export use cli/clients.nu
+export use cli/self-report.nu *
+export use cli/agents.nu
 export use cli/config.nu *
 export use cli/displays.nu
 export use cli/prune-daemon.nu *

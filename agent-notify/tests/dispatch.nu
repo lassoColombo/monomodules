@@ -131,8 +131,8 @@ export def main [] {
     # ── B. the diff, which is the whole idea ──────────────────────────────────
     write-config {displays: ["fake"], fake: {log: $LOG}}
 
-    let one = {id: "a1", client: "claude", state: "working"}
-    let two = {id: "a2", client: "claude", state: "awaiting"}
+    let one = {id: "a1", agent: "claude", state: "working"}
+    let two = {id: "a2", agent: "claude", state: "awaiting"}
 
     let b1 = dispatch repaint [] [$one] --table (displays)
     let b = [
@@ -207,7 +207,7 @@ export def main [] {
     let c_nofile = [ (check "no config file means no displays, not an error" $c4 []) ]
 
     # ── D. the seam in operation.nu ───────────────────────────────────────────
-    let d1 = operation apply {operation-kind: "patch", id: "d1", changes: {client: "claude", state: "working"}}
+    let d1 = operation apply {operation-kind: "patch", id: "d1", changes: {agent: "claude", state: "working"}}
     let d2 = operation apply {operation-kind: "end", id: "d1"}
     let d = [
         (check "a write still reports what it did" $d1.changed true)
