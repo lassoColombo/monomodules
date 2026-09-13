@@ -39,6 +39,19 @@ export def semantic [rec: record]: nothing -> record {
     $rec | reject --optional ...$BOOKKEEPING
 }
 
+# What describes the SESSION rather than the run that happened to be in it.
+#
+# The line is one the schema already draws and needs no second list: the CORE
+# fields say what this session IS — who owns it, what it is called, where it
+# works, what it last said — and every namespace belongs to one RUN. `proc` is
+# one process. `zellij` is one pane. `claude` is one transcript. None of them
+# survives a restart, and none of them should survive being filed away and taken
+# back out (core/store.nu `restore`).
+export def durable [rec: record]: nothing -> record {
+    let keep = $CORE_REQUIRED ++ $CORE_OPTIONAL
+    $rec | select ...($rec | columns | where {|k| $k in $keep })
+}
+
 # Apply the core's stamps. `state_since` moves only when the state genuinely
 # changes, so "how long has it been waiting?" survives every unrelated write.
 export def stamp [before: any, merged: record]: nothing -> record {

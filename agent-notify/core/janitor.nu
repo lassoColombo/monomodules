@@ -1,14 +1,18 @@
-# Removing records for agents that are gone.
+# Filing away records for agents that are gone.
 #
-# Records are dropped by `SessionEnd`, so the only leaks come from agents that
-# never got to say goodbye: a killed process, a crash, a closed pane, a closed
-# terminal. This is where those are cleaned up, and `core/proc.nu` is what makes
-# it possible to do so on PROOF rather than on a hunch.
+# `SessionEnd` files a session away when it exits cleanly, so the only leaks come
+# from agents that never got to say goodbye: a killed process, a crash, a closed
+# pane, a closed terminal. This is where those are cleaned up, and `core/proc.nu`
+# is what makes it possible to do so on PROOF rather than on a hunch.
+#
+# THE SAME GESTURE AS A CLEAN EXIT. These are archived, not deleted (core/store.nu
+# `archive`): an agent that was killed is no less resumable than one that was
+# quit, and its name is no less worth keeping.
 #
 # TWO RULES, and the second one is the safety rail:
 #
-#   the recorded process is gone          →  drop it
-#   we cannot tell, for any reason        →  drop nothing
+#   the recorded process is gone          →  file it away
+#   we cannot tell, for any reason        →  touch nothing
 #
 # "Cannot tell" covers a record with no `proc` at all (its SessionStart happened
 # before this existed, or its agent could not be located) and a `ps` that failed
@@ -47,7 +51,7 @@ export def prune []: nothing -> table {
     }
 
     let doomed = $gone ++ $superseded
-    for d in $doomed { store remove $d.id | ignore }
+    for d in $doomed { store archive $d.id | ignore }
     # The WHOLE record, not a summary: a surface has to be told what vanished in
     # order to undo it — a pane cannot be handed back by its id alone.
     $doomed | each {|d|

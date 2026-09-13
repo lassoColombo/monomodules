@@ -40,7 +40,8 @@
 #     commands: {}           # pull — how its commands behave
 #
 #   agent-notify store get|list|patch|set|drop     the store itself
-#   agent-notify store prune                      forget agents that are provably gone
+#   agent-notify store list --ended                sessions that have ended
+#   agent-notify store prune                      file away agents provably gone
 #   agent-notify report|name                       what an agent says about itself
 #   agent-notify clients [wiring <name>]           which agents can report, and how
 #   agent-notify config path|show|check            the settings file

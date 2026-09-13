@@ -18,7 +18,7 @@
 # able to answer it. When it comes back false the event ends, having cost the
 # process floor and one read.
 #
-# NAMING — `read`/`remove` rather than the obvious `get`/`drop`: a def named after
+# NAMING — `read` rather than the obvious `get`: a def named after
 # a builtin shadows that builtin for every module this one imports, whatever the
 # order of the `use` statements, and the failure is a parse error somewhere else
 # entirely (`get -o` inside schema.nu, which never mentions our name). Multi-word
@@ -38,10 +38,7 @@ export def read [id: string]: nothing -> any {
     try { open --raw $f | from json } catch { null }
 }
 
-# Every record. No liveness filtering — that is the janitor's job, and doing it
-# here would make every read pay for a zellij scan.
-export def list []: nothing -> list<any> {
-    let dir = agents-dir
+def read-dir [dir: string]: nothing -> list<any> {
     if not ($dir | path exists) { return [] }
     # `ls` on a glob that matches nothing is an ERROR, not an empty list, and a
     # store whose last agent has just ended is exactly that case — the directory
@@ -52,6 +49,19 @@ export def list []: nothing -> list<any> {
     | each {|f| try { open --raw $f.name | from json } catch { null } }
     | compact
 }
+
+# Every LIVE record, and only those. No liveness filtering beyond that — proving
+# an agent dead is the janitor's job, and doing it here would make every read pay
+# for a `ps`.
+#
+# This is the read the whole hot path hangs off, which is why an ended session is
+# in another directory rather than behind a flag here (core/paths.nu).
+export def list []: nothing -> list<any> { read-dir (agents-dir) }
+
+# Sessions that have ended and not yet been reaped. Nothing on the hot path reads
+# this; it is here so `agent-notify store list --ended` can, and so a future
+# "resume a recent session" has somewhere to look.
+export def ended []: nothing -> list<any> { read-dir (ended-dir) }
 
 # ── merging ──────────────────────────────────────────────────────────────────
 
@@ -121,10 +131,68 @@ export def set [id: string, rec: record]: nothing -> record {
     write $id (read $id) $rec
 }
 
-# Forget this agent. Returns whether there was anything to forget.
-export def remove [id: string]: nothing -> bool {
+# ── ending, and coming back ──────────────────────────────────────────────────
+#
+# A SESSION IS NOT DESTROYED WHEN IT STOPS RUNNING. Claude Code does not destroy
+# one — `--resume` hands back the SAME id, and `--fork-session` exists to opt out
+# of that. zellij does not destroy a session when you detach. tmux does not.
+# Every one of them says the same thing: the session is the durable object, and
+# running is a state it is in.
+#
+# This module used to disagree, and the visible cost was the NAME. Everything
+# else in a record is re-supplied by the next event — `cwd` and `state` by any
+# hook, the pane by `observe`, the pid by the walk — but the name is authored,
+# once, by a human or by an agent following an instruction, and nothing ever says
+# it again. Deleting the record deleted the only copy.
+
+# How long an ended session waits before it is really gone.
+const KEEP_ENDED = 30day
+
+# Reap on ARCHIVE, which is the only moment `ended/` can grow — so it costs once
+# per session, never on the hot path, and the clock gains no new job. (On the 30s
+# clock it would be 2,880 scans a day to delete something once a month.)
+#
+# By MTIME, not by a field in the record: `ls` answers without opening anything,
+# so scanning 600 files costs 2.5ms where parsing them costs 36.9ms.
+def reap []: nothing -> nothing {
+    let dir = ended-dir
+    if not ($dir | path exists) { return }
+    let cutoff = (date now) - $KEEP_ENDED
+    let old = try { ls ($"($dir)/*.json" | into glob) | where modified < $cutoff } catch { [] }
+    for f in $old { rm --force $f.name }
+}
+
+# File this session away. What `SessionEnd` means, and what the janitor does to
+# an agent it can prove is gone — the same gesture either way, because a clean
+# exit and an abrupt kill leave the same thing behind.
+#
+# Returns whether there was anything to file, so the caller still learns whether
+# the world moved. A plain rename: nothing is read, parsed or rewritten.
+export def archive [id: string]: nothing -> bool {
     let f = record-file $id
     if not ($f | path exists) { return false }
+    ensure-dir (ended-dir)
+    mv --force $f (ended-file $id)
+    reap
+    true
+}
+
+# Take it back out — what a resume is. Called only when a write would CREATE a
+# record, because that is exactly when an id we already know can come back.
+#
+# WHAT RETURNS IS THE SESSION, NOT THE RUN IT WAS IN: the core fields (name, cwd,
+# what it last said) and not one namespace. That is `schema durable`, and it is
+# the schema's own line rather than a list of exceptions — but it also removes
+# the one way this could do harm. A stale `proc` would let the janitor prove the
+# resumed session dead and file it away again within 30s; a stale `zellij` would
+# rename a pane that has since moved on. Both are facts about a process that has
+# exited, and neither outlives it.
+export def restore [id: string]: nothing -> bool {
+    let f = ended-file $id
+    if not ($f | path exists) { return false }
+    let rec = try { open --raw $f | from json } catch { null }
     rm --force $f
+    if ($rec == null) or (not (is-record $rec)) { return false }
+    commit $id (schema durable $rec)
     true
 }

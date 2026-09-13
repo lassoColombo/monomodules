@@ -60,8 +60,10 @@ export def name [
                  defaults: {state: "idle"}}
 }
 
-# Forget this agent — what a client calls when its session ends.
-@search-terms agent notify end session clear forget
+# This agent has stopped — what a client calls when its session ends. The record
+# is filed away rather than destroyed, so reporting the same id again later
+# brings its name back (core/store.nu).
+@search-terms agent notify end session clear forget archive
 export def "report end" [--id: string]: nothing -> record {
     event apply {op: "drop", id: (target $id | get id)}
 }

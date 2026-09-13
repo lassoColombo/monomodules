@@ -84,9 +84,64 @@ export def main [] {
     let s = agent-notify store set "abc-123" {client: "claude", state: "idle"}
     $r = $r ++ [(check "set replaces rather than merges"
                        ("zellij" in ($s.after | columns)) false)]
-    $r = $r ++ [(check "drop removes" (agent-notify store drop "abc-123") true)]
+    $r = $r ++ [(check "drop files it away" (agent-notify store drop "abc-123") true)]
     $r = $r ++ [(check "drop is idempotent" (agent-notify store drop "abc-123") false)]
-    $r = $r ++ [(check "dropped records are gone" (agent-notify store get "abc-123") null)]
+    $r = $r ++ [(check "a dropped record is off the LIVE store" (agent-notify store get "abc-123") null)]
+
+    # ── a session ends, and is resumed ───────────────────────────────────────
+    # A session is not destroyed when it stops running — Claude Code does not
+    # destroy one, and neither does zellij or tmux. The NAME is why it matters
+    # here: everything else in a record is re-supplied by the next event, and a
+    # name is authored once and then never said again by anybody.
+    agent-notify store patch "resume-me" {
+        client: "claude", state: "working", name: "the-name", cwd: "/tmp/proj"
+        message: "last thing", proc: {pid: 99999, started: "2026-01-01"}
+        zellij: {session: "home", pane_id: "7"}
+    } | ignore
+    agent-notify store drop "resume-me" | ignore
+    $r = $r ++ [
+        (check "ending a session takes it off the live store"
+               (agent-notify store get "resume-me") null)
+        (check "…and files it away rather than destroying it"
+               (agent-notify store list --ended | where id == "resume-me" | get 0.name) "the-name")
+    ]
+
+    # The resume. The SAME id, because that is what `--resume` hands back —
+    # `--fork-session` exists to opt out of it. Shaped like a SessionStart: a
+    # write that CREATES and carries defaults, which is the only write that can
+    # be a resume.
+    agent-notify report --id "resume-me" --client "claude" --cwd "/tmp/proj" | ignore
+    let back = agent-notify store get "resume-me"
+    $r = $r ++ [
+        (check "RESUMING A SESSION BRINGS ITS NAME BACK" $back.name "the-name")
+        (check "…along with what it last said" $back.message "last thing")
+        (check "…and it is idle until you type, not still doing what it was doing"
+               $back.state "idle")
+        (check "THE RUN IT WAS IN DOES NOT COME BACK — a stale pid would let the janitor
+           prove a live session dead within 30s, and a stale pane would rename
+           a pane that has moved on"
+               ($back | columns | where {|c| $c in ["proc" "zellij"] }) [])
+        (check "…and the filed copy is consumed, not left in both places"
+               (agent-notify store list --ended | where id == "resume-me") [])
+        (check "a session nobody filed away is created, not restored"
+               (agent-notify report --id "brand-new" --client "claude" | get after.state) "idle")
+    ]
+
+    # ── reaping ──────────────────────────────────────────────────────────────
+    # On archive, the only moment the directory can grow, and by MTIME — so the
+    # scan opens nothing. `touch` fakes the age, which is the whole point of
+    # using mtime: no field to write, and nothing to parse to read it back.
+    agent-notify store patch "old-one" {client: "claude", state: "idle", name: "ancient"} | ignore
+    agent-notify store drop "old-one" | ignore
+    ^touch -mt 202001010000 ($TMP | path join "agent-notify" "ended" "old-one.json")
+    agent-notify store patch "fresh-one" {client: "claude", state: "idle", name: "recent"} | ignore
+    agent-notify store drop "fresh-one" | ignore
+    $r = $r ++ [
+        (check "an ended session past the keep window is reaped by the next archive"
+               (agent-notify store list --ended | where id == "old-one") [])
+        (check "…and a recent one is left alone"
+               (agent-notify store list --ended | where id == "fresh-one" | get 0.name) "recent")
+    ]
 
     # ── no litter ────────────────────────────────────────────────────────────
     let tmps = ls ($"($TMP)/agent-notify/agents/*" | into glob) | get name | where {|f| $f | str ends-with ".tmp" }
@@ -98,6 +153,9 @@ export def main [] {
     agent-notify store list | get id | each {|id| agent-notify store drop $id } | ignore
     $r = $r ++ [(check "an emptied store lists as nothing, not an error"
                        (agent-notify store list) [])]
+    rm --recursive --force ($TMP | path join "agent-notify" "ended")
+    $r = $r ++ [(check "…and so does an archive that has never been written to"
+                       (agent-notify store list --ended) [])]
 
     summarise $r --title "store"
 }

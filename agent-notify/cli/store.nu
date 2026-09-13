@@ -45,9 +45,19 @@ def body [given: any, stdin: bool]: nothing -> record {
 @example "read a record" { agent-notify store get 6923c0bc }
 export def "store get" [id: string]: nothing -> any { read $id }
 
-# Every agent on record, live or not — liveness is the janitor's business.
-@search-terms agent notify store all
-export def "store list" []: nothing -> list<any> { list }
+# Every agent that is running. `--ended` shows the other directory instead: the
+# sessions that have stopped and not yet been reaped, newest write last.
+#
+# "Running" here means "has not ended", not "provably alive" — proving an agent
+# dead is the janitor's business (`store prune`).
+@search-terms agent notify store all list ended history archive resumable
+@example "what is running?" { agent-notify store list }
+@example "…and what has ended?" { agent-notify store list --ended }
+export def "store list" [
+    --ended     # the archive instead: sessions that have stopped
+]: nothing -> list<any> {
+    if $ended { ended } else { list }
+}
 
 # Merge changes into an agent's record, creating it when absent.
 #
@@ -81,15 +91,17 @@ export def "store set" [
     event apply {op: "set", id: $id, record: (body $record $stdin)}
 }
 
-# Forget an agent. Returns whether there was anything to forget.
-@search-terms agent notify store delete forget
+# The agent has stopped. Takes it off every surface and FILES ITS RECORD AWAY —
+# it is not destroyed, so resuming that session brings its name back (core/store.nu).
+# Returns whether there was anything to file.
+@search-terms agent notify store delete forget end archive
 export def "store drop" [id: string]: nothing -> bool {
     event apply {op: "drop", id: $id} | get changed
 }
 
-# Forget every agent that is provably gone: its recorded process is no longer
+# File away every agent that is provably gone: its recorded process is no longer
 # running (core/proc.nu), or `/clear` left it behind in a process that has since
-# moved on. Prints what it removed and why.
+# moved on. Prints what it took off the surfaces, and why.
 #
 # Records with no recorded process are never touched — not knowing that an agent
 # is dead is not the same as knowing that it is. See core/janitor.nu.

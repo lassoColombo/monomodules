@@ -15,7 +15,9 @@
 #   {op: "patch", id, changes, defaults?}   merge changes; `defaults` apply only
 #                                           when the record is being created
 #   {op: "set",   id, record}               replace the record wholesale
-#   {op: "drop",  id}                       forget the agent
+#   {op: "drop",  id}                       the agent has stopped running. Its
+#                                           record is FILED AWAY, not destroyed
+#                                           — see core/store.nu `archive`
 #   {op: "ignore", why}                     nothing to do, and why — so a hook
 #                                           that fires for an event we do not
 #                                           handle is a deliberate no-op rather
@@ -32,7 +34,19 @@ use dispatch.nu
 def with-defaults [op: record]: nothing -> record {
     let defaults = $op.defaults? | default {}
     if ($defaults | is-empty) { return $op.changes }
-    if ((store read $op.id) == null) { $defaults | merge $op.changes } else { $op.changes }
+    if ((store read $op.id) != null) { return $op.changes }
+
+    # A write that CREATES is also the moment a resumed session comes back, so it
+    # is the one place worth looking in `ended/`. Not a guess: Claude Code hands
+    # back the SAME session id on `--resume` (`--fork-session` exists to opt out),
+    # so an archived record under this id IS this session.
+    #
+    # A restore brings back the core fields and no namespace, so what lands here
+    # is a record with a name and a history and nothing about the process that
+    # exited. The defaults then still apply — which is right, because a session
+    # you have just resumed is idle until you type.
+    store restore $op.id | ignore
+    $defaults | merge $op.changes
 }
 
 # Apply one operation. Returns the store's verdict, `changed` included, so a
@@ -44,11 +58,11 @@ export def apply [op: record]: nothing -> record {
         "patch" => (store patch $op.id (with-defaults $op))
         "set" => (store set $op.id $op.record)
         "drop" => {
-            # Read BEFORE removing. A surface is asked whether its output changes,
-            # and it cannot answer that about an agent it never saw. One extra read
-            # on the rarest event in the system.
+            # Read BEFORE filing it away. A surface is asked whether its output
+            # changes, and it cannot answer that about an agent it never saw. One
+            # extra read on the rarest event in the system.
             let before = store read $op.id
-            {changed: (store remove $op.id), before: $before, after: null}
+            {changed: (store archive $op.id), before: $before, after: null}
         }
         _ => { {changed: false, before: null, after: null} }
     }

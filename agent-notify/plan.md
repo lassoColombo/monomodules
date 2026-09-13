@@ -712,6 +712,7 @@ committed. Each surface is wrapped alone, so one failing cannot stop the next.
 | D56 | Which locator answers is decided by the RECORD, not by the config file | **LOCKED** | step 6b — `surfaces:` says what the store is PUSHED to and nothing else (D47), so switching the zellij surface off must not stop the picker previewing a zellij pane. It also makes a MIXED fleet work with nothing configured |
 | D57 | The preview is the agent's LIVE SCREEN; the filter matches only what the row SHOWS | first half **REVERSED** by D58; second half **LOCKED** | step 6b — the filter half stands and always will: a message is kilobytes of prose, and folding it in made a two-letter query match an agent for an invisible reason, at character 4195 of something it said an hour ago. The preview half lasted until it was lived with — see D58 |
 | D58 | The preview is the agent's STORED MESSAGE, rendered the way the bar renders it | **LOCKED** | step 8 — truer lost to readable. A dump is the bottom of a TUI mid-redraw, half a spinner and a rule cut off at both edges; the agent already wrote the answer to "which of these wants me" in a sentence. It also cost a subprocess on every heartbeat and only ever covered agents that still had a pane — the rest already fell back to exactly this. Markdown rendering comes BACK to the picker, but not as new code: `core/markdown.nu` is the bar's flattener, moved up |
+| D59 | A session that ends is FILED AWAY, not deleted — `ended/`, a directory the hot path never opens | **LOCKED** | step 9 — Claude Code, zellij and tmux all treat a session as durable and *running* as a state it is in; we were the only one destroying it. Keeping ended records in `agents/` behind a flag is the textbook soft delete and would have put **36.9ms on every tool call** at a month of history (measured). A second directory costs nothing, and a restore keeps `schema durable` — the core fields — so no stale pid or pane comes back with it |
 | D15 | Replace pandoc with a nu-native flattener | **LOCKED** (step 5b) | done: `integrations/sketchybar/text.nu` does it in nushell. 25.1ms off the event path and a dependency gone. v1 could afford pandoc because it converted where the preview was STORED, on a path already spawning processes; v2's whole paint is 6.5ms |
 | D16 | Where the bench harness lives | **OPEN** | the only open row left. ~350 lines of documented nu; §8, and §9b.3 |
 | D17 | Promoted to `monomodules/agent-notify`, a module beside `ai` and the rest | **LOCKED** (2026-09-12) | step 7 — it was never `ai`-shaped: reflecting agent state on a status bar is not provider-agnostic content generation, and being a submodule is what made every hook parse the whole `ai` tree. The directory, the command, the store at `~/.local/share/agent-notify/` and the bar prefix `an_` all carry the one name |
@@ -1157,6 +1158,62 @@ the bar.
 
 ---
 
+9. **A session is filed away, not deleted** — ✅ done. The reported symptom was
+   that a resumed session came back nameless. The cause was not what §9b.4 said
+   it was, and checking took three commands:
+
+   ```
+   claude -p …                       → c18dcd01-42cb-405b-bf3a-c128b51ae1a5
+   claude -p … --resume c18dcd01…    → c18dcd01-42cb-405b-bf3a-c128b51ae1a5   same
+   claude -p … --resume … --fork-session
+                                     → 45faab73-2afa-41ef-a888-1bf46d283252   new
+   ```
+
+   **A resume reuses the id.** `--fork-session` exists to opt out of it, and
+   `SessionStart` even says `source: "resume"`. So the id that would have found
+   the name was in the payload all along; what was missing was the thing it
+   pointed at, because `SessionEnd` had unlinked it.
+   **`name` is the only field a record cannot recompute.** `cwd` and `state` come
+   back from the next hook, the pane from `observe`, the pid from the walk, the
+   message from the next `Stop`. A name is authored once — by a human, or by an
+   agent following an instruction — and nothing ever says it again. So `drop` was
+   the one data-loss event in the system, and it fired on every normal exit.
+   The real mistake was one level up: **we modelled a session as a thing that
+   exists while it runs.** Claude Code never destroys one; `zellij ls` shows
+   exited sessions and `attach` resurrects them; tmux does the same. Every tool
+   in the stack says the session is the durable object and *running* is a state
+   it is in. We were the only one disagreeing.
+   So `SessionEnd` now MOVES the record to `ended/` and a create moves it back
+   (D59). The textbook soft delete — a flag on the record, readers filter — was
+   measured and rejected: `store list` runs on every event and costs 0.4ms at 3
+   records, **36.9ms at 600**, so a month of history would have gone straight
+   onto every tool call. A second directory the hot path never opens costs
+   nothing, and the move is a rename: nothing is read, parsed or rewritten.
+   **A restore brings back the SESSION, not the run it was in** — `schema
+   durable`, which is the core fields and not one namespace. That is the
+   schema's own line rather than a list of exceptions, and it closes the one way
+   this could have done harm: a stale `proc` would let the janitor prove the
+   resumed session dead and file it away again within 30s, and a stale `zellij`
+   would rename a pane that had moved on. The defaults still apply on top, so a
+   resumed session is idle until you type.
+   The janitor archives too — an agent that was killed is no less resumable than
+   one that quit. Reaping is by MTIME and runs ON ARCHIVE, the only moment the
+   directory can grow: scanning 600 files costs 2.5ms where parsing them costs
+   36.9ms, and the 30s clock gains no new job. `agent-notify store list --ended`
+   is the way to look.
+   452/452. The hot path is untouched — `ended/` is not in any read it makes.
+   **Also measured, and deliberately not acted on:** SQLite. `nu` has good
+   builtin support, and it beat the JSON store on every axis — 0.12ms to write
+   against 0.46ms, 0.12ms to read the live set against 0.41ms at three records
+   and 36.9ms at six hundred, and eight concurrent writers doing 320 updates with
+   zero failures, which is the contention D8 was locked against. Not taken here:
+   the record is an open schema (D11c) so it would live in a JSON column, `cat
+   agents/<id>.json` stops being how the store is inspected (P5 leans on that),
+   and the cold cost inside a real hook was never measured. Reopening D8 deserves
+   its own step, not a decision made on the way past.
+
+---
+
 ## 9b. Deferred — what is not built, and what each one waits on
 
 Every step in §9 is done. These are not unfinished steps; they are work set aside
@@ -1258,19 +1315,13 @@ is attached to and silently show a stranger's terminal (§11). A dump races the
 redraw. And `browse` runs in place (D52), so a watcher must notice when the pane
 it is asked to show is its OWN — the deleted code did.
 
-### 9b.4 Known and accepted: a resumed session starts nameless
+### 9b.4 ~~Known and accepted: a resumed session starts nameless~~ — FIXED in step 9
 
-Not deferred work — a behaviour, written down so it is not filed as a bug.
-
-`SessionEnd` drops the record, and a resumed session gets a NEW id from Claude
-Code, so it starts with no name. `CLAUDE.md` tells an agent to name itself "once,
-at session start", which a resumed agent may reasonably read as already done.
-
-It is covered rather than broken: the label falls back to the working directory's
-last component, which is usually the right answer anyway. Carrying a name across
-a resume would mean matching on (cwd + pane) — a heuristic, and D12's whole point
-is that the store holds facts rather than guesses. So the fix, if it is ever
-wanted, belongs in `CLAUDE.md`'s wording and not in this module.
+**Wrong, and fixed** (2026-09-13). This said a resumed session gets a NEW id from
+Claude Code and that carrying a name across would need a heuristic. Both halves
+were false, and neither had been checked: `--resume` hands back the SAME id
+(`--fork-session` exists precisely to opt out of it), so the id that would find
+the name is in the payload — we had simply deleted what it pointed at. See step 9.
 
 ---
 
@@ -1498,6 +1549,13 @@ Not nushell — the programs underneath. Same rule as §10: cost time once, not 
   nothing in any log. It takes effect for NEW sessions only.
   Diagnosis: `zellij --session S action list-panes -t -j` and look at `title` —
   a Claude spinner glyph there means the OSC won.
+- **`--resume` REUSES THE SESSION ID.** `--fork-session` exists to opt out and
+  mint a new one. `SessionStart` also carries `source`: `startup`, `resume`,
+  `clear`, `compact`. Probed with `claude -p … --output-format json`, which
+  prints the id it used — the cheapest way to settle any question of this shape.
+- **`--settings <file>` REPLACES the user's settings rather than merging**, which
+  makes it the safe way to probe hook payloads: point a throwaway `SessionStart`
+  hook at `cat >> somewhere` and the real hooks never fire.
 - **Hooks are loaded at session start**, so a `settings.json` edit reaches only
   sessions started after it. Half a fleet on the old wiring is the normal state
   of things for an hour after any change.
