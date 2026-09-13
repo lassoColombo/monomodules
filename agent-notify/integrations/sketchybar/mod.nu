@@ -64,7 +64,7 @@ const DEFAULTS = {
     background: "0xff26233a"
     rows: 10                # agent rows per drawer; the rest are counted, not drawn
     preview_lines: 12       # preview rows, of which the first is the WHERE line
-    preview_width: 110      # characters a preview row may hold; it is NOT wrapped
+    preview_width: 110      # characters a preview row may hold; prose is wrapped to it
     row_width: 40           # characters an agent's name may hold
     # `popup.height` is what a drawer actually spaces its rows by, and it
     # DEFAULTS TO THE BAR HEIGHT — 34px, over twice a 12pt line, which is why an
@@ -75,15 +75,20 @@ const DEFAULTS = {
         working: "0xff9ccfd8"          # foam
         awaiting: "0xfff6c177"         # gold
         needs-attention: "0xffeb6f92"  # love
-        dim: "0xff6e6a86"              # muted
+        dim: "0xff6e6a86"              # muted — the message body
         text: "0xffe0def4"             # text
         row: "0xff26233a"              # overlay — a row's own background
         popup: "0xff1f1d2e"            # surface — the drawer behind them
         border: "0xff403d52"           # highlight med
+        # The preview's two kinds (D62). A drawer's body sits at `dim` on
+        # purpose — it is the second thing you read — so both of these are a
+        # step up from it rather than a different loudness of the same hue.
+        head: "0xffebbcba"             # rose — a heading, the palette's pop
+        code: "0xffc4a7e7"             # iris — the hue that carries code
     }
 }
 
-const EXTRA_COLORS = ["dim" "text" "row" "popup" "border"]
+const EXTRA_COLORS = ["dim" "text" "row" "popup" "border" "head" "code"]
 const NUMBERS = ["rows" "preview_lines" "preview_width" "row_width" "line_height"]
 
 # An ABSOLUTE path to the program, because a hook's PATH is not your shell's PATH
@@ -199,11 +204,15 @@ def label-of [r: record, s: record]: nothing -> string {
 # NOT ESCAPED HERE. `items.nu` makes it safe to single-quote at the moment it
 # writes the quote; a projection says what should be SHOWN, and how one surface
 # gets it onto a wire is not part of that.
-def lines-of [r: record, s: record]: nothing -> list<string> {
-    let source = markdown plain ($r.message? | default "")
-    let body = markdown lay-out $source $s.preview_width ($s.preview_lines - 1)
-    let shown = if ($body | is-empty) { ["—"] } else { $body }
-    [(where-of $r $s)] ++ $shown
+def lines-of [r: record, s: record]: nothing -> list<record> {
+    let rows = $s.preview_lines - 1
+    let source = markdown plain ($r.message? | default "") $s.preview_width ($rows + 1)
+    let body = markdown lay-out $source $s.preview_width $rows
+    let shown = if ($body | is-empty) { [{k: "text", t: "—"}] } else { $body }
+    # `where` is this surface's own kind — the markdown never produces one — and
+    # it is what keeps slot 0 in the state's hue while the message beneath it
+    # takes its colours from what the agent wrote.
+    [{k: "where", t: (where-of $r $s)}] ++ $shown
 }
 
 # One key per SLOT on the bar, which is what lets `core/dispatch.nu` do the whole

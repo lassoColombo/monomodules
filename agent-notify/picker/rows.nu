@@ -112,7 +112,12 @@ export def settle [view: record, rows: list<record>, height: int]: nothing -> re
     if $at < $top { $top = $at }
     if $at >= ($top + $h) { $top = $at - $h + 1 }
 
-    $view | merge {sel: $sel, top: $top}
+    # An agent that went away takes the preview's scroll with it: the message
+    # under the cursor is somebody else's now, and row 40 of it is not where you
+    # were reading. The keys reset this when YOU move; this is the case where
+    # the list moved instead.
+    let stayed = $sel == ($view.sel? | default "")
+    $view | merge {sel: $sel, top: $top, pv_top: (if $stayed { $view.pv_top? | default 0 } else { 0 })}
 }
 
 # Where the selection is in the list, and which row that is. Both answer "nothing"

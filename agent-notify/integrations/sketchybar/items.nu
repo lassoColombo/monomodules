@@ -118,15 +118,36 @@ export def open-shell [s: record, state: string, n: int]: nothing -> string {
     $GUARD + $"($s.binary) ($args | str join ' ')"
 }
 
+# WHAT A ROW IS, IN THE ONE THING A LABEL CAN SAY IT WITH (D62). A SketchyBar
+# item has no ANSI and no runs: it has ONE `label.color`, so a row gets one
+# colour and its kind picks which. `core/markdown.nu` says what each row is and
+# stops there — the same split as everywhere else here, and the reason the
+# picker can paint the same two meanings in ANSI without sharing a line of this.
+#
+# WHICH MEANS THE COLOUR IS DECIDED PER PAINT, not once at install. The pool
+# cannot hold it: whether row 4 is a heading depends on what the agent wrote.
+def ink [s: record, hue: string, kind: string]: nothing -> string {
+    match $kind {
+        "where" => (tint $hue "99")
+        "head" => $s.colors.head
+        "code" => $s.colors.code
+        _ => $s.colors.dim
+    }
+}
+
 # One row's preview, as the command that will show it. Called at PAINT time with
-# the lines already wrapped, so the hover itself does no thinking.
-export def hover-shell [s: record, state: string, lines: list<string>]: nothing -> string {
+# the rows already wrapped and kinded, so the hover itself does no thinking.
+export def hover-shell [s: record, state: string, rows: list<record>]: nothing -> string {
+    let hue = $s.colors | get $state
     let args = 0..<$s.preview_lines | each {|i|
-        let l = $lines | get -o $i
-        if $l == null {
+        let r = $rows | get -o $i
+        if $r == null {
             ["--set" (pv-name $s $state $i) "drawing=off"]
         } else {
-            ["--set" (pv-name $s $state $i) $"'label=(quotable $l)'" "drawing=on"]
+            ["--set" (pv-name $s $state $i)
+             $"'label=(quotable $r.t)'"
+             $"label.color=(ink $s $hue $r.k)"
+             "drawing=on"]
         }
     } | flatten
     $GUARD + $"($s.binary) ($args | str join ' ')"
@@ -257,8 +278,10 @@ export def pool-args [s: record]: nothing -> list<string> {
         for i in 0..<$s.preview_lines {
             let n = pv-name $s $state $i
             # Slot 0 is the WHERE line — which agent this is — so it is styled
-            # apart from the message beneath it. A fixed slot can afford that:
-            # the styling is set once here and no paint ever touches it.
+            # apart from the message beneath it. The FONT is set once here and
+            # no paint touches it; the COLOUR written here is only the pool's
+            # resting state, because `hover-shell` decides it per row from what
+            # the agent actually wrote.
             let lead = $i == 0
             $args = $args ++ [
                 "--add" "item" $n $"popup.($item)"

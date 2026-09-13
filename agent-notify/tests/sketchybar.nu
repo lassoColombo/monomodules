@@ -57,9 +57,9 @@ export def main [] {
         (check "…and leaves the rest alone"
                (sketchybar settings {colors: {working: "0xff000000"}} | get colors.awaiting)
                $s.colors.awaiting)
-        (check "the drawer has colours of its own, beyond the three states"
+        (check "the drawer has colours of its own, beyond the three states — and two for what a preview ROW IS"
                ($s.colors | columns | sort)
-               ["awaiting" "border" "dim" "needs-attention" "popup" "row" "text" "working"])
+               ["awaiting" "border" "code" "dim" "head" "needs-attention" "popup" "row" "text" "working"])
         (check "a different prefix is honoured"
                (sketchybar settings {prefix: "x_"} | get prefix) "x_")
         (check-err "a setting we do not have is a typo" "is not a setting"
@@ -121,27 +121,27 @@ export def main [] {
                (row-of {id: "x", name: $long_name} $s | get label | split chars | length) $s.row_width)
         (check "the first preview line says WHICH agent this is"
                (row-of {id: "x", cwd: "/a/b", zellij: {session: "home", tab_base: "root"}} $s | get lines | first)
-               "home/root · /a/b")
+               {k: "where", t: "home/root · /a/b"})
         (check "…falling back to the client when zellij is not in play"
-               (row-of {id: "x", client: "codex", cwd: "/a/b"} $s | get lines | first) "codex · /a/b")
+               (row-of {id: "x", client: "codex", cwd: "/a/b"} $s | get lines | first | get t) "codex · /a/b")
         (check "a home directory is written the short way"
-               (row-of {id: "x", cwd: ($nu.home-dir | path join "w")} $s | get lines | first
+               (row-of {id: "x", cwd: ($nu.home-dir | path join "w")} $s | get lines | first | get t
                 | str contains "~/w") true)
         # A narrow drawer, so the eliding is exercised rather than the 110
         # characters a real one has.
         (check "a directory too long for the row keeps its END, not its beginning"
                (row-of {id: "x", client: "c", cwd: "/very/long/prefix/that/will/not/fit/anywhere/near/here/at/all/thing"} $narrow
-                | get lines | first | str ends-with "/thing") true)
+                | get lines | first | get t | str ends-with "/thing") true)
         (check "…and the cut lands on a separator rather than mid-word"
                (row-of {id: "x", client: "c", cwd: "/very/long/prefix/that/will/not/fit/anywhere/near/here/at/all/thing"} $narrow
-                | get lines | first | str contains "· …/") true)
+                | get lines | first | get t | str contains "· …/") true)
         (check "an agent with nothing to say says so rather than nothing"
-               (row-of {id: "x", cwd: "/a"} $s | get lines | last) "—")
-        (check "the message follows the where-line, with its markdown taken off"
+               (row-of {id: "x", cwd: "/a"} $s | get lines | last | get t) "—")
+        (check "the message follows the where-line, its heading marked and bound to what it introduces"
                (row-of {id: "x", cwd: "/a", message: "## Done\n\nAll **green**."} $s | get lines)
-               ["agent · /a" "Done" "" "All green."])
+               [{k: "where", t: "agent · /a"} {k: "head", t: "▊ Done"} {k: "text", t: "All green."}])
         (check "a preview never outgrows its drawer"
-               (row-of {id: "x", message: (1..60 | each {|i| $"line ($i)" } | str join "\n")} $s
+               (row-of {id: "x", message: (1..60 | each {|i| $"para ($i)" } | str join "\n\n")} $s
                 | get lines | length) $s.preview_lines)
     ]
 
@@ -202,7 +202,7 @@ export def main [] {
     # the item by the paint that drew the row. These assert what that is.
     let open = scripts $counter | first
     let shut = scripts $empty | first
-    let row = sketchybar message {"row|working|0": {label: "one", lines: ["where" "hello"]}} {} $s
+    let row = sketchybar message {"row|working|0": {label: "one", lines: [{k: "where", t: "where"} {k: "text", t: "hello"}]}} {} $s
     let hover = scripts $row | first
     let f = [
         (check "every generated script guards on the sender"
@@ -237,8 +237,16 @@ export def main [] {
     # `items.nu` writes the quote, not in `project`, so what is fed here is what
     # an agent would actually say and what comes back is a command that holds.
     let nasty = "it's `rm -rf /` $HOME \"x\" --set evil popup.drawing=on\r"
-    let bad = scripts (sketchybar message {"row|working|0": {label: $nasty, lines: [$nasty]}} {} $s) | first
+    let bad = scripts (sketchybar message {"row|working|0": {label: $nasty, lines: [{k: "text", t: $nasty}]}} {} $s) | first
     let g = [
+        (check "a preview row is coloured by WHAT IT IS — a label has no ANSI, so the kind picks its one colour"
+               (scripts (sketchybar message {"row|working|0": {label: "x", lines: [
+                    {k: "where", t: "w"} {k: "head", t: "h"} {k: "code", t: "c"} {k: "text", t: "p"}]}} {} $s)
+                | first | split row " " | where {|w| $w | str starts-with "label.color=" } | first 4)
+               [$"label.color=0x99($s.colors.working | str substring 4..)"
+                $"label.color=($s.colors.head)"
+                $"label.color=($s.colors.code)"
+                $"label.color=($s.colors.dim)"])
         (check "an apostrophe cannot reach the shell" ($bad | str contains "it's") false)
         (check "…because it is not an apostrophe any more" ($bad | str contains "it’s") true)
         (check "a quote count that is even is a command that cannot break out"

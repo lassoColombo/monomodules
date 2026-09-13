@@ -16,7 +16,8 @@
 #       records ← the store          re-read EVERY frame: 0.33ms, so the list is live
 #       rows    ← build, narrow      pure
 #       view    ← settle             pure: the selection still exists? scrolled?
-#       preview ← the message        pure: markdown flattened, cut to the pane
+#       preview ← the message        pure: markdown, cut to the pane at its offset
+#       view    ← the offset back    pure: only the preview knows where a message ends
 #       lines   ← render             pure: the whole screen, as strings
 #       print IF THE FRAME MOVED     unchanged ⇒ not one byte
 #       key     ← input listen       blocks; beats every 2s so the list stays live
@@ -70,7 +71,7 @@ const QUICK = 200ms
 
 # One turn of the loop, over and over. Returns the chosen ROW, or null.
 def drive [query: string, table?: record]: nothing -> any {
-    mut view = {sel: "", query: $query, top: 0}
+    mut view = {sel: "", query: $query, top: 0, pv_top: 0}
     mut painted = []
 
     loop {
@@ -81,8 +82,12 @@ def drive [query: string, table?: record]: nothing -> any {
         let lay = frame layout (term size) ($shown | length)
         $view = rows settle $view $shown $lay.list
 
-        let seen = preview of (rows selected $shown $view) $lay.preview $lay.width
-        let lines = frame render $shown $view $lay $seen
+        # The preview CORRECTS its own offset — only it knows where a message
+        # ends (D63) — so what it hands back goes into the view before the frame
+        # is built, the same way `settle` corrects the list's `top` above.
+        let seen = preview of (rows selected $shown $view) $lay.preview $lay.width ($view.pv_top? | default 0)
+        $view = ($view | merge {pv_top: $seen.at})
+        let lines = frame render $shown $view $lay $seen.rows
         if $lines != $painted {
             print -n (tty paint $lines (frame caret $view))
             $painted = $lines
@@ -99,7 +104,7 @@ def drive [query: string, table?: record]: nothing -> any {
             continue
         }
 
-        let next = keys step $ev $view $shown
+        let next = keys step $ev $view $shown $lay.preview
         if $next.action == "cancel" { return null }
         if $next.action == "jump" { return (rows selected $shown $next.view) }
         $view = $next.view

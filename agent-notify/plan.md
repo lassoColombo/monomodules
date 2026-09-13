@@ -713,7 +713,12 @@ committed. Each surface is wrapped alone, so one failing cannot stop the next.
 | D57 | The preview is the agent's LIVE SCREEN; the filter matches only what the row SHOWS | first half **REVERSED** by D58; second half **LOCKED** | step 6b — the filter half stands and always will: a message is kilobytes of prose, and folding it in made a two-letter query match an agent for an invisible reason, at character 4195 of something it said an hour ago. The preview half lasted until it was lived with — see D58 |
 | D58 | The preview is the agent's STORED MESSAGE, rendered the way the bar renders it | **LOCKED** | step 8 — truer lost to readable. A dump is the bottom of a TUI mid-redraw, half a spinner and a rule cut off at both edges; the agent already wrote the answer to "which of these wants me" in a sentence. It also cost a subprocess on every heartbeat and only ever covered agents that still had a pane — the rest already fell back to exactly this. Markdown rendering comes BACK to the picker, but not as new code: `core/markdown.nu` is the bar's flattener, moved up |
 | D59 | A session that ends is FILED AWAY, not deleted — `ended/`, a directory the hot path never opens | **LOCKED** | step 9 — Claude Code, zellij and tmux all treat a session as durable and *running* as a state it is in; we were the only one destroying it. Keeping ended records in `agents/` behind a flag is the textbook soft delete and would have put **36.9ms on every tool call** at a month of history (measured). A second directory costs nothing, and a restore keeps `schema durable` — the core fields — so no stale pid or pane comes back with it |
-| D15 | Replace pandoc with a nu-native flattener | **LOCKED** (step 5b) | done: `integrations/sketchybar/text.nu` does it in nushell. 25.1ms off the event path and a dependency gone. v1 could afford pandoc because it converted where the preview was STORED, on a path already spawning processes; v2's whole paint is 6.5ms |
+| D60 | `core/markdown.nu` PARSES — `from md --verbose`, not seven regexes | **LOCKED** | step 10 — it is a BUILT-IN, so the "why not pandoc" argument that shaped D15 does not reach it: no subprocess, and measured FASTER than the regex loop it replaced (88µs vs 392µs to parse). What the regexes could not give is what the display wanted: a heading knows its depth, a list knows its level, its order and its checkbox, and a table has real cells |
+| D61 | A paragraph is REFLOWED and then WRAPPED — reverses "nothing is wrapped" | **LOCKED** | step 10 — the old rule was reasoned about markdown a person hard-wraps at 80, and that is not what an agent writes. Measured on the real store: a message's paragraphs are ONE SOURCE LINE EACH, the longest 435 characters, so one row per source line meant cutting every paragraph at 110 and dropping the other 325. Cost: an agent's column-aligned block that is neither fenced nor indented now reflows into prose — standard markdown, and what every other renderer does |
+| D62 | The flattener says WHAT A ROW IS; each surface paints it | **LOCKED** | step 10 — the two surfaces have nothing in common to share a coloured string with. A SketchyBar item has no ANSI and no runs: it has one `label.color`, set over the wire per paint (whether row 4 is a heading depends on what the agent wrote). The picker's frame strips escapes out of every line on purpose, because that text is agent-authored. So a row is `{k, t}` and colour is applied at the far end — in the picker, LAST, after the clip, so the strip stays a defence and the clip still measures what a reader sees |
+| D63 | The preview SCROLLS, and it corrects its own offset | **LOCKED** | step 10 — `pv_top` is the message's first visible row, the preview's `top`. Keys can only ever say "further down": `markdown plain` is given a line budget and stops there (D61), so nothing renders a whole message just to count it, and the end is knowable only by asking for one row MORE than the pane holds and getting fewer back. So `preview of` clamps and hands the used offset back, the way `rows settle` corrects the list's `top` — which is what stops ctrl-d running up a number that then has to be undone before the view moves again. ctrl-j/k by the row, ctrl-d/u by half the pane; PROBED ON A REAL PTY first, because a terminal sends ctrl-j as LF and enter as CR, and had crossterm folded them together the binding would have cost the jump key. Clearing the filter moved to ctrl-w |
+| D64 | The picker's chrome is coloured, and a line is built as PIECES | **LOCKED** | step 10 — closes §9b.2. A line is `{c, t}` pieces, measured in plain text and inked last, which is the only order that works: the width a terminal cares about is the one a reader sees, and a row's name and place are agent-authored so the strip in `clean` has to stay a defence. Two things the list could not say got a home in the bars — a fleet tally on the top, `▾ n` on the bottom when the preview is scrolled — and both are RIGHT-ALIGNED so they drop first on a narrow terminal and never move the caret. One palette gotcha worth keeping: ANSI 8 (`dark_gray`) is Rosé Pine's OVERLAY tone, what a selection is drawn *on*, so as text it is nearly the background; dim chrome is `white_dimmed`, the way cmdprompt draws its box |
+| D15 | Replace pandoc with a nu-native flattener | **LOCKED** (step 5b) | done: `integrations/sketchybar/text.nu` does it in nushell. 25.1ms off the event path and a dependency gone. v1 could afford pandoc because it converted where the preview was STORED, on a path already spawning processes; v2's whole paint is 6.5ms. Superseded in part by D60 — the flattener is a parser now, and still no subprocess |
 | D16 | Where the bench harness lives | **OPEN** | the only open row left. ~350 lines of documented nu; §8, and §9b.3 |
 | D17 | Promoted to `monomodules/agent-notify`, a module beside `ai` and the rest | **LOCKED** (2026-09-12) | step 7 — it was never `ai`-shaped: reflecting agent state on a status bar is not provider-agnostic content generation, and being a submodule is what made every hook parse the whole `ai` tree. The directory, the command, the store at `~/.local/share/agent-notify/` and the bar prefix `an_` all carry the one name |
 
@@ -1270,18 +1275,30 @@ The first is the only one that has survived a reading so far, and the user has
 deferred the question twice. It should be taken on its own, not folded into
 another step.
 
-### 9b.2 A palette for the picker
+### 9b.2 A palette for the picker — DONE (step 10, D62 and D64)
 
-**What it is.** The picker is deliberately plain: no colour, no glyphs, a `>`
-for the selection, one `─` for a rule. Everything else in this module is
-coloured — the bar has a Rosé Pine palette in the config file, the pane titles
-carry the three glyphs — and the picker will want the same vocabulary.
+**What is done.** The PREVIEW is painted, and only its two kinds: a heading in
+`yellow_bold` and a code block in `blue`, which on this machine's Rosé Pine are
+rose and iris — the same two meanings the drawer paints, said in each surface's
+own vocabulary. `INK` in `frame.nu` is the whole of it, and a kind that is not in
+that map is not painted at all.
 
-**Why it was left.** Freezing a palette while the layout was still moving would
-have meant asserting escape codes in the suite and revising them a day later.
-Plain first, colour once the shape is settled — which it now is.
+**All three constraints below held**, and the way they held is the part worth
+copying. Colour goes on LAST, after `clean` and `clip`: the strip stays a defence
+against an escape in an agent's own text, the clip still measures what a reader
+sees, and the suite's whole-frame assertions stay escape-free because the kind
+they use (`text`) is not in the map. One assertion pins the ordering directly —
+a painted row, clipped to a narrow pane, is still the right width after `ansi
+strip`.
 
-**Two things it has to decide, and one it has to not break.**
+**And then the rest of it (D64).** The list, the rules and the footer. A state
+wears the colour it wears on the bar and in the pane titles — foam turning, gold
+talking to you, love stuck — the selection is rose, a place is dim, and a key on
+the footer is iris because a key is a thing you invoke. The mechanism is what
+made it small: a line is built as `{c, t}` PIECES and inked last, so the same
+eight lines lay out a row, a bar and a preview line.
+
+**Two things it had to decide, and one it had to not break.**
 
 - **ANSI names, or hex?** The old picker used ANSI NAMES on purpose: the bar sits
   on a desktop and picks its own colours, but a terminal has a theme and the
