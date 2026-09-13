@@ -1,6 +1,6 @@
 # The session-store: the core of the module, and the only thing that owns state.
 #
-# One JSON file per agent instance, so two agents never contend for a write and
+# One JSON file per session, so two agents never contend for a write and
 # no lock is needed anywhere; writes are temp-then-rename, so a reader never
 # sees half a record. (Both inherited from v1, which got this right.)
 #
@@ -58,7 +58,7 @@ def read-dir [dir: string]: nothing -> list<any> {
 #
 # This is the read the whole hot path hangs off, which is why an ended session
 # is in another directory rather than behind a flag here (core/paths.nu).
-export def list []: nothing -> list<any> { read-dir (agents-dir) }
+export def list []: nothing -> list<any> { read-dir (sessions-dir) }
 
 # Sessions that have ended and not yet been reaped. Nothing on the hot path
 # reads this; it is here so `agent-notify session-store list --ended` can, and
@@ -99,7 +99,7 @@ def deep-merge [base: record, changes: record]: nothing -> record {
 # Commit a fully-formed record. Atomic: a temp file in the same directory (so
 # the rename cannot cross a filesystem) replaced over the target in one syscall.
 def commit [id: string, rec: record] {
-    ensure-dir (agents-dir)
+    ensure-dir (sessions-dir)
     let f = record-file $id
     let tmp = $"($f).tmp"
     $rec | to json | save --force $tmp

@@ -218,10 +218,10 @@ one second) it is 13% of one core for one second, and at the real rate it is
 
 ```
 $XDG_DATA_HOME/agent-notify/
-  agents/<id>.json          one file per agent instance
+  sessions/<id>.json        one file per session
 ```
 
-One namespace. One file per agent, so concurrent agents never contend; writes
+One namespace. One file per session, so concurrent agents never contend; writes
 are temp+rename, so a reader never sees half a record. (Both inherited from v1,
 which got this right.)
 
@@ -689,7 +689,7 @@ committed. Each display is wrapped alone, so one failing cannot stop the next.
 | D5 | Strict config validation | **LOCKED** | user decision |
 | D6 | No animations — static glyphs, coloured by state | **LOCKED** | user decision; also removes the only 1Hz process (~15ms/s forever) |
 | D7 | No display/render cache, no `displays/` namespace | **LOCKED** | saves ~2.4ms in a rare case; costs a namespace, a staleness class, and a concurrency race |
-| D8 | One session-store namespace: `agents/`, one file per agent, temp+rename | **LOCKED** | inherited from v1, measured cheap (0.26ms put) |
+| D8 | One session-store namespace: `sessions/`, one file per session, temp+rename | **LOCKED** | inherited from v1, measured cheap (0.26ms put) |
 | D9 | In-process dispatch — no poke, no `render.sh`, no second process | **LOCKED** | step 3 — built and running: `core/dispatch.nu` fans out inside the agent's own process. It removed a whole nu spawn + parse (34.6ms/event measured) and two glue scripts with it |
 | D10 | No daemon | **LOCKED** | held all the way through: at ~1 event/s, saving the 12.9ms floor never justified the lifecycle risk, and the one periodic job that IS needed is a launchd `StartInterval` (D39), not a process we keep alive |
 | D11 | Identity = the agent's session id, opaque and caller-supplied | **LOCKED** | the only way zellij can genuinely be opt-in; opaque because of P5 |
@@ -747,7 +747,7 @@ committed. Each display is wrapped alone, so one failing cannot stop the next.
 | D62 | The flattener says WHAT A ROW IS; each display paints it | **LOCKED** | step 10 — the two displays have nothing in common to share a coloured string with. A SketchyBar item has no ANSI and no runs: it has one `label.color`, set over the wire per paint (whether row 4 is a heading depends on what the agent wrote). The picker's frame strips escapes out of every line on purpose, because that text is agent-authored. So a row is `{k, t}` and colour is applied at the far end — in the picker, LAST, after the clip, so the strip stays a defence and the clip still measures what a reader sees |
 | D63 | The preview SCROLLS, and it corrects its own offset | **LOCKED** | step 10 — `pv_top` is the message's first visible row, the preview's `top`. Keys can only ever say "further down": `markdown plain-md` is given a line budget and stops there (D61), so nothing renders a whole message just to count it, and the end is knowable only by asking for one row MORE than the pane holds and getting fewer back. So `preview of` clamps and hands the used offset back, the way `rows keep-in-view` corrects the list's `top` — which is what stops ctrl-d running up a number that then has to be undone before the view moves again. ctrl-j/k by the row, ctrl-d/u by half the pane; PROBED ON A REAL PTY first, because a terminal sends ctrl-j as LF and enter as CR, and had crossterm folded them together the binding would have cost the jump key. Clearing the filter moved to ctrl-w |
 | D64 | The picker's chrome is coloured, and a line is built as PIECES | **LOCKED** | step 10 — closes §9b.2. A line is `{c, t}` pieces, measured in plain text and inked last, which is the only order that works: the width a terminal cares about is the one a reader sees, and a row's name and location are agent-authored so the strip in `clean` has to stay a defence. Two things the list could not say got a home in the bars — a fleet tally on the top, `▾ n` on the bottom when the preview is scrolled — and both are RIGHT-ALIGNED so they drop first on a narrow terminal and never move the caret. One palette gotcha worth keeping: ANSI 8 (`dark_gray`) is Rosé Pine's OVERLAY tone, what a selection is drawn *on*, so as text it is nearly the background; dim chrome is `white_dimmed`, the way cmdprompt draws its box |
-| D65 | The vocabulary is **session / agent / integration**; nothing is a `client` | **LOCKED** | the rename (naming.md 34) — `client` named a role in a protocol this module does not have: there is no server, and zellij reads the store as much as Claude Code writes it, so the word drew no line. The three nouns each name their subject instead — a SESSION is a row in the store, an AGENT is the program a session runs, an INTEGRATION is a tool that shows them — and read/write is a consequence rather than a name. It also removes the ambiguity `agents/` would otherwise have: rows are sessions, so `agents/claude.nu` can only be read as the file about the Claude Code PROGRAM. Carried out as a rename plus a one-shot over the live `client` field, the same treatment the `v` field got |
+| D65 | The vocabulary is **session / agent / integration**; nothing is a `client` | **LOCKED** | the rename (naming.md 34) — `client` named a role in a protocol this module does not have: there is no server, and zellij reads the store as much as Claude Code writes it, so the word drew no line. The three nouns each name their subject instead — a SESSION is a row in the store, an AGENT is the program a session runs, an INTEGRATION is a tool that shows them — and read/write is a consequence rather than a name. It also removes the ambiguity `agents/` would otherwise have: rows are sessions, so `agents/claude.nu` can only be read as the file about the Claude Code PROGRAM. Carried out as a rename plus a one-shot over the live `client` field, the same treatment the `v` field got. The store directory followed (naming.md 35): `agents/` held rows, and a row is a session |
 | D15 | Replace pandoc with a nu-native flattener | **LOCKED** (step 5b) | done: `integrations/sketchybar/text.nu` does it in nushell. 25.1ms off the event path and a dependency gone. v1 could afford pandoc because it converted where the preview was STORED, on a path already spawning processes; v2's whole paint is 6.5ms. Superseded in part by D60 — the flattener is a parser now, and still no subprocess |
 | D16 | Where the bench harness lives | **OPEN** | the only open row left. ~350 lines of documented nu; §8, and §9b.3 |
 | D17 | Promoted to `monomodules/agent-notify`, a module beside `ai` and the rest | **LOCKED** (2026-09-12) | step 7 — it was never `ai`-shaped: reflecting agent state on a status bar is not provider-agnostic content generation, and being a submodule is what made every hook parse the whole `ai` tree. The directory, the command, the session-store at `~/.local/share/agent-notify/` and the bar prefix `an_` all carry the one name |
@@ -1259,7 +1259,7 @@ in
    and 36.9ms at six hundred, and eight concurrent writers doing 320 updates with
    zero failures, which is the contention D8 was locked against. Not taken here:
    the record is an open session-schema (D11c) so it would live in a JSON column, `cat
-   agents/<id>.json` stops being how the session-store is inspected (P5 leans on that),
+   sessions/<id>.json` stops being how the session-store is inspected (P5 leans on that),
    and the cold cost inside a real hook was never measured. Reopening D8 deserves
    its own step, not a decision made on the way past.
 

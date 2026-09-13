@@ -67,7 +67,7 @@ export def main [] {
 
     # ── opaque ids ────────────────────────────────────────────────────────────
     agent-notify session-store patch "../../etc/passwd" {agent: "evil", state: "idle"}
-    let escaped = ls ($"($TMP)/agent-notify/agents/*.json" | into glob) | get name | path basename
+    let escaped = ls ($"($TMP)/agent-notify/sessions/*.json" | into glob) | get name | path basename
     $r = $r ++ [(check "a traversing id cannot escape the session-store"
                        ($escaped | any {|f| $f | str contains ".." }) false)]
     $r = $r ++ [(check "no id can produce a hidden (unlistable) file"
@@ -163,7 +163,7 @@ export def main [] {
     ]
 
     # ── no litter ─────────────────────────────────────────────────────────────
-    let tmps = ls ($"($TMP)/agent-notify/agents/*" | into glob) | get name | where {|f| $f | str ends-with ".tmp" }
+    let tmps = ls ($"($TMP)/agent-notify/sessions/*" | into glob) | get name | where {|f| $f | str ends-with ".tmp" }
     $r = $r ++ [(check "atomic writes leave no temp files" ($tmps | length) 0)]
 
     # ── the empty session-store ───────────────────────────────────────────────

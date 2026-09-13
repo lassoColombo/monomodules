@@ -51,6 +51,7 @@ Two rules came out of the review and are worth keeping for anything new:
 | 32 | `clients/`, `integrations/` | keep both | `clients/` write, `integrations/` read. Only the config key `surfaces:` moves, to `displays:` |
 | 33 | the `v` field | `schema_version` | a ONE-SHOT migration over the live `agents/*.json` and `ended/*.json`, run by hand at rename time. No `migrate` command survives it |
 | 34 | `client`, `clients/`, `cli/clients.nu`, `cli/agent.nu` | `agent`, `agents/`, `cli/agents.nu`, `cli/self-report.nu` | a second pass, on 2026-09-14, over what row 32 kept. `client` named a role in a protocol that does not exist here — there is no server, and zellij is as much a client as Claude Code is. The vocabulary is three nouns that each name their subject: a **session** is a row in the store, an **agent** is the program a session runs, an **integration** is a tool that shows them. Read/write falls out of that rather than naming it. Same ONE-SHOT treatment as row 33 for the `client` field on disk |
+| 35 | `agents/` (the store directory), `agents-dir` | `sessions/`, `sessions-dir` | the last thing row 34 left reading wrong. The directory holds ROWS, and a row is a session — one file per session, not one per agent, which is exactly the distinction row 34 drew. `ended/` was already named for what it holds. Same one-shot on disk |
 
 ## Not settled here
 

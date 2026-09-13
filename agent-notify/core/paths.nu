@@ -1,5 +1,5 @@
 # Where the session-store lives, and the one genuinely non-obvious thing about
-# it: turning an opaque agent id into a filename.
+# it: turning an opaque session id into a filename.
 #
 # The id belongs to whoever reports (see plan.md P5) — a session uuid from one
 # agent, a pid from another, a name from a script. So it may contain anything at
@@ -21,19 +21,19 @@ export def xdg-data-home []: nothing -> string {
 # Everything this module owns on disk. TWO directories, and the split is the
 # whole of how a resumed session works:
 #
-#   agents/   live. The only thing any display ever reads, so it stays small and
+#   sessions/ live. The only thing any display ever reads, so it stays small and
 #             `list` stays cheap — measured: 3 records 0.4ms, 600 records 36.9ms,
 #             and `list` runs on every event.
 #   ended/    filed away. A session that ends is MOVED here, not deleted, and
 #             moved back if you resume it.
 #
-# Keeping ended sessions in `agents/` with a flag would have been the textbook
+# Keeping ended sessions in `sessions/` with a flag would have been the textbook
 # soft delete, and the measurement above is why it is not: a month of history
 # would put 36ms on every tool call. A directory the hot path never opens costs
 # nothing at all.
 export def session-store-root []: nothing -> string { [(xdg-data-home) agent-notify] | path join }
 
-export def agents-dir []: nothing -> string { [(session-store-root) agents] | path join }
+export def sessions-dir []: nothing -> string { [(session-store-root) sessions] | path join }
 export def ended-dir []: nothing -> string { [(session-store-root) ended] | path join }
 
 export def ensure-dir [dir: string] { if not ($dir | path exists) { mkdir $dir } }
@@ -64,7 +64,7 @@ export def encode-id [id: string]: nothing -> string {
 }
 
 export def record-file [id: string]: nothing -> string {
-    [(agents-dir) $"(encode-id $id).json"] | path join
+    [(sessions-dir) $"(encode-id $id).json"] | path join
 }
 
 export def ended-file [id: string]: nothing -> string {
