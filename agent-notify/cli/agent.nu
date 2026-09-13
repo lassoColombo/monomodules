@@ -13,6 +13,7 @@
 
 use ../core/identity.nu
 use ../core/event.nu
+use ../core/store.nu
 
 def target [given: any]: nothing -> record {
     if ($given != null) { return {id: $given, client: "unknown"} }
@@ -48,14 +49,32 @@ export def report [
 #
 # Nothing else can move the displayed name: with no name set, surfaces fall back
 # to the cwd's basename, and that fallback applies only in the absence of a name.
-# So the name is free to change and, in practice, does not (plan.md D12).
+# So the name is free to change and, in practice, should not (plan.md D12).
+#
+# `--if-unnamed` IS WHAT MAKES THIS SAFE TO RUN AT EVERY SESSION START, resumed
+# ones included. A resumed session keeps the name it had — `SessionEnd` files the
+# record away and a resume hands it back (D59) — so naming it again would only
+# make a stable name unstable, and the name is how a session is recognised on the
+# bar and in the picker. With the flag, a name that is already there is left
+# alone and nothing is written at all.
+#
+# It cannot be expressed as a create-only `default`: a fresh session's record
+# already exists by the time this runs (SessionStart made it), so a default would
+# never apply and a fresh session would never get named.
 @search-terms agent notify name rename title session
 @example "name the session for the work it is doing" { agent-notify name "explain-agent-notify" }
+@example "…at every session start, resumed ones included" { agent-notify name "some-name" --if-unnamed }
 export def name [
     value: string
     --id: string
+    --if-unnamed        # leave an existing name alone; write only when there is none
 ]: nothing -> record {
     let me = target $id
+    if $if_unnamed {
+        let rec = store read $me.id
+        let have = ($rec | default {} | get -o name | default "") | str trim
+        if ($have | is-not-empty) { return {changed: false, before: $rec, after: $rec} }
+    }
     event apply {op: "patch", id: $me.id, changes: {client: $me.client, name: $value}
                  defaults: {state: "idle"}}
 }

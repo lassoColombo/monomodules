@@ -127,12 +127,30 @@ export def main [] {
                (agent-notify report --id "brand-new" --client "claude" | get after.state) "idle")
     ]
 
+    # ── naming, and not re-naming ────────────────────────────────────────────
+    # `--if-unnamed` is what lets CLAUDE.md say "run this at every session start"
+    # without qualification: on a resumed session the name is already back, and
+    # re-deriving one would make the stable thing unstable.
+    agent-notify report --id "namer" --client "claude" | ignore
+    let first = agent-notify name "chosen" --id "namer" --if-unnamed
+    let second = agent-notify name "something-else" --id "namer" --if-unnamed
+    $r = $r ++ [
+        (check "--if-unnamed names a session that has none" $first.after.name "chosen")
+        (check "…and leaves one that already has a name alone"
+               (agent-notify store get "namer" | get name) "chosen")
+        (check "…writing nothing at all, so no surface hears about it" $second.changed false)
+        (check "without the flag it is still a plain rename"
+               (agent-notify name "renamed" --id "namer" | get after.name) "renamed")
+    ]
+
     # ── reaping ──────────────────────────────────────────────────────────────
     # On archive, the only moment the directory can grow, and by MTIME — so the
     # scan opens nothing. `touch` fakes the age, which is the whole point of
     # using mtime: no field to write, and nothing to parse to read it back.
     agent-notify store patch "old-one" {client: "claude", state: "idle", name: "ancient"} | ignore
     agent-notify store drop "old-one" | ignore
+    # Older than the 7-day keep window, faked with `touch` — which is the point of
+    # using mtime: no field to write, and nothing to parse to read it back.
     ^touch -mt 202001010000 ($TMP | path join "agent-notify" "ended" "old-one.json")
     agent-notify store patch "fresh-one" {client: "claude", state: "idle", name: "recent"} | ignore
     agent-notify store drop "fresh-one" | ignore

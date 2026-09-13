@@ -145,12 +145,14 @@ export def set [id: string, rec: record]: nothing -> record {
 # once, by a human or by an agent following an instruction, and nothing ever says
 # it again. Deleting the record deleted the only copy.
 
-# How long an ended session waits before it is really gone.
-const KEEP_ENDED = 30day
+# How long an ended session waits before it is really gone. Long enough to cover
+# coming back to something after a weekend, short enough that the directory never
+# becomes an archive nobody asked for.
+const KEEP_ENDED = 7day
 
 # Reap on ARCHIVE, which is the only moment `ended/` can grow — so it costs once
 # per session, never on the hot path, and the clock gains no new job. (On the 30s
-# clock it would be 2,880 scans a day to delete something once a month.)
+# clock it would be 2,880 scans a day to delete something once a week.)
 #
 # By MTIME, not by a field in the record: `ls` answers without opening anything,
 # so scanning 600 files costs 2.5ms where parsing them costs 36.9ms.

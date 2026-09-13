@@ -1199,8 +1199,19 @@ the bar.
    The janitor archives too — an agent that was killed is no less resumable than
    one that quit. Reaping is by MTIME and runs ON ARCHIVE, the only moment the
    directory can grow: scanning 600 files costs 2.5ms where parsing them costs
-   36.9ms, and the 30s clock gains no new job. `agent-notify store list --ended`
-   is the way to look.
+   36.9ms, and the 30s clock gains no new job. **Seven days** — long enough to
+   pick something back up after a weekend, short enough that the directory never
+   becomes an archive nobody asked for. `agent-notify store list --ended` is the
+   way to look.
+   **And `agent-notify name` grew `--if-unnamed`**, which is what lets the rule in
+   `CLAUDE.md` be one line with no qualification: *run this at every session
+   start*. A resumed session already has its name back, so re-deriving one would
+   make the stable thing unstable — the flag leaves an existing name alone and
+   writes nothing at all. It names only a session that has none: a fresh one, a
+   forked one, or one resumed after the keep window. It cannot be a create-only
+   `default`, because by the time an agent names itself its record already exists
+   — `SessionStart` made it — so a default would never apply and a fresh session
+   would never get named.
    452/452. The hot path is untouched — `ended/` is not in any read it makes.
    **Also measured, and deliberately not acted on:** SQLite. `nu` has good
    builtin support, and it beat the JSON store on every axis — 0.12ms to write
