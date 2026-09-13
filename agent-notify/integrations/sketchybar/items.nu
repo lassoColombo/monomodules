@@ -204,7 +204,7 @@ export def row-off-args [settings: record, state: string, index: int]: nothing -
 # NO TIMER HERE. An earlier version hung a hidden `update_freq=30` item off this
 # pool to prune dead agents and repaint. It worked, and it was still wrong: it
 # made a core guarantee depend on one optional display being installed. The
-# prune-daemon is its own thing now (core/prune-daemon.nu), and this file is
+# prune-daemon is its own thing now (core/prune-daemon/), and this file is
 # only a display again.
 export def preallocate-args [settings: record]: nothing -> list<string> {
     mut args = []

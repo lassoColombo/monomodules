@@ -50,7 +50,8 @@
 #   agents [help-setup <name>]               which agents can report, and how
 #   config path|show|check                   the settings file
 #   displays [refresh|install|help-setup]    what shows it, and repaint them
-#   prune-daemon install|status              the periodic look for dead agents
+#   prune-daemon status|uninstall            the periodic look for dead agents
+#   prune-daemon install|unit <launcher>     …under launchd, or under systemd
 #   browse [query]                           pick a live agent, land in its pane
 #   jump <who>                               …or go straight there, by name or id
 #

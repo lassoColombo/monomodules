@@ -20,7 +20,7 @@
 # (D20).
 #
 # AND IT DOES NOT PRUNE (D53). A dead agent is the prune-daemon's business
-# (core/prune-daemon.nu, every 30s). Pruning here too would be a second
+# (core/prune-daemon/, every 30s). Pruning here too would be a second
 # mechanism for one guarantee, and the worst it saves you from is a jump that
 # says "no session called 'x'".
 

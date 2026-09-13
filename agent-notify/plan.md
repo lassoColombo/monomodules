@@ -571,12 +571,79 @@ Three candidates were tried, in this order:
 |---|---|
 | a hidden SketchyBar item, `update_freq=30` | worked, and free — the daemon is already running. But it made a core guarantee depend on one OPTIONAL display being installed and enabled |
 | `job spawn` | a nushell job is a thread inside its process: it dies when that process exits, and so does anything it starts (both verified). A hook lives ~30ms |
-| **launchd, `StartInterval`** | ✅ launchd *is* the periodic thing already running. No daemon to keep alive, no lock file, no pid to supervise, no detaching trick — and it survives logout and reboot, which a spawned process would not |
+| **a launcher the machine already runs** | ✅ it *is* the periodic thing. No daemon to keep alive, no lock file, no pid to supervise, no detaching trick — and it survives logout and reboot, which a spawned process would not |
 
-`core/prune-daemon.nu` writes the job, `agent-notify prune-daemon
-install|status|uninstall` drives it, and the tick is `displays refresh` — the
-same command a human types. Verified end to end: a record planted with a dead
-pid was gone in 15 seconds.
+The tick is `displays refresh` — the same command a human types. Verified end to
+end: a record planted with a dead pid was gone in 15 seconds.
+
+**And `job spawn` is not a near miss, it is a closed door.** Re-checked on
+0.115.1: nushell has no `disown`, all jobs are threads that die with the shell,
+and "spawn an independent background process" is still an open design question
+upstream ([#15200](https://github.com/nushell/nushell/issues/15200),
+[#15201](https://github.com/nushell/nushell/issues/15201)) — hard cross-platform
+because Windows has no `fork`. The community answer is to shell out to `pueue`,
+which is D10 with extra steps. So there is no native-nushell periodic tick on
+any platform, and delegating to the OS is not a macOS shortcut, it is the only
+shape available.
+
+#### The launchers (D66, D67)
+
+launchd is macOS, and it was the one genuinely platform-locked thing in `core/`.
+So it became a table, the same shape as `core/dispatch.nu`'s display registry
+and for the same reason — nushell has no first-class modules, so a name cannot
+become a module at runtime.
+
+```
+core/prune-daemon/mod.nu       the tick, the log, the registry, the refusals
+core/prune-daemon/launchd.nu   macOS   — one plist, StartInterval
+core/prune-daemon/systemd.nu   Linux   — a .service and a .timer, user scope
+```
+
+Each launcher answers the same five questions: `INFO`, `available` (a **probe**,
+returning `{ok, why}`), `unit-files` (**PURE** — the files, written nowhere),
+`register`/`unregister`, and `status` (which reads the interval back **out of
+the unit file**, because the file is what the launcher obeys and what someone
+typed once is only a memory of it).
+
+**`unit-files` being pure is what makes this testable on one machine.** The
+systemd timer is asserted in full by `tests/prune-daemon.nu` running on a Mac
+with no systemd on it. Same split as `render-items` / `push-items`.
+
+**Nothing autodetects (D67).** `install` takes the launcher as a required
+argument with a completer; the machine is not asked. Autodetection would be
+right nearly always and invisible when wrong — and wrong looks exactly like
+"dead agents linger", with nothing in any log. So `available` turns from a
+chooser into a **validator**, and its `why` is shown verbatim, because a refusal
+is the whole of the UX for a choice the user made:
+
+```
+agent-notify: systemd cannot run here — systemctl is not on PATH (this machine is macos)
+```
+
+**The asymmetry is deliberate: you name a launcher to CREATE one, never to ask
+about one or to destroy one.** `status` reports every launcher — so "is it
+running?" is answerable without remembering what you installed six months ago,
+and a unit file that arrived with someone's dotfiles is visible rather than
+immortal. `uninstall` sweeps them all, so a launcher can never be left armed
+because detection would now answer differently. That drift-proofing is why there
+is no state file recording what was installed.
+
+Two refusals fire before anything touches the disk: a launcher that cannot run
+here, and a second launcher already loaded (harmless — a sweep and a repaint are
+both idempotent — but never what anyone meant).
+
+**What a launcher may touch: only files it named, only units it created.** One
+plist; one `.service` and one `.timer`, both named after us, both under
+`~/.config/systemd/user/`. Never `user.conf`, never `system.conf`, never
+`DefaultTimerAccuracySec=`, never a unit it did not create — and `uninstall`
+leaves nothing behind. Same spirit as the rule that nothing of ours lives in
+anyone else's config directory: a unit we own and can fully remove is ours;
+another tool's config file is not.
+
+Windows was scoped out on purpose. Task Scheduler has a hard one-minute floor
+and would need `/XML` to survive the quoting, but the real reason is that
+Windows has neither zellij nor SketchyBar — the clock would tick correctly and
+paint nothing.
 
 ### 4.7 Displays — describe, decide, write
 
@@ -721,7 +788,7 @@ committed. Each display is wrapped alone, so one failing cannot stop the next.
 | D36 | Every write goes through `core/operation.nu`, the CLI included | **LOCKED** | step 7 — the command set IS the public API (P5); a write that skips the seam is a display that never hears about it |
 | D37 | `push-items` receives the previous projection | **LOCKED** | step 7 — the only way a display can act on what has disappeared, and it makes "skip what did not move" free |
 | D38 | Dispatch answers "whose event" and "whose environment" separately | **LOCKED** | step 7 — identical for a hook, different for a CLI write about another agent |
-| D39 | The prune-daemon is its own launchd job, never a display's item | **LOCKED** | §4.6c — a core guarantee must not depend on an optional display being installed |
+| D39 | The prune-daemon is its own job under a launcher, never a display's item | **LOCKED** | §4.6c — a core guarantee must not depend on an optional display being installed. Which launcher became a table in D66; the rule that it is never the bar's `update_freq` is unchanged |
 | D40 | `render-items` returns a MAP; dispatch owns the diff | **LOCKED** | §4.7 — one correct implementation instead of one per display, and the gate falls out of it |
 | D41 | Dispatch takes two session-store SNAPSHOTS, not a delta | **LOCKED** | §4.7 — one spelling for "a moment ago", whether a hook or the prune-daemon is calling |
 | D42 | `discover-own-location` reports the environment; it is not smuggled through `settings` or `push-items` | **LOCKED** | §4.7 — it is what lets `render-items` be a plain function of records |
@@ -748,6 +815,9 @@ committed. Each display is wrapped alone, so one failing cannot stop the next.
 | D63 | The preview SCROLLS, and it corrects its own offset | **LOCKED** | step 10 — `pv_top` is the message's first visible row, the preview's `top`. Keys can only ever say "further down": `markdown plain-md` is given a line budget and stops there (D61), so nothing renders a whole message just to count it, and the end is knowable only by asking for one row MORE than the pane holds and getting fewer back. So `preview of` clamps and hands the used offset back, the way `rows keep-in-view` corrects the list's `top` — which is what stops ctrl-d running up a number that then has to be undone before the view moves again. ctrl-j/k by the row, ctrl-d/u by half the pane; PROBED ON A REAL PTY first, because a terminal sends ctrl-j as LF and enter as CR, and had crossterm folded them together the binding would have cost the jump key. Clearing the filter moved to ctrl-w |
 | D64 | The picker's chrome is coloured, and a line is built as PIECES | **LOCKED** | step 10 — closes §9b.2. A line is `{c, t}` pieces, measured in plain text and inked last, which is the only order that works: the width a terminal cares about is the one a reader sees, and a row's name and location are agent-authored so the strip in `clean` has to stay a defence. Two things the list could not say got a home in the bars — a fleet tally on the top, `▾ n` on the bottom when the preview is scrolled — and both are RIGHT-ALIGNED so they drop first on a narrow terminal and never move the caret. One palette gotcha worth keeping: ANSI 8 (`dark_gray`) is Rosé Pine's OVERLAY tone, what a selection is drawn *on*, so as text it is nearly the background; dim chrome is `white_dimmed`, the way cmdprompt draws its box |
 | D65 | The vocabulary is **session / agent / integration**; nothing is a `client` | **LOCKED** | the rename (naming.md 34) — `client` named a role in a protocol this module does not have: there is no server, and zellij reads the store as much as Claude Code writes it, so the word drew no line. The three nouns each name their subject instead — a SESSION is a row in the store, an AGENT is the program a session runs, an INTEGRATION is a tool that shows them — and read/write is a consequence rather than a name. It also removes the ambiguity `agents/` would otherwise have: rows are sessions, so `agents/claude.nu` can only be read as the file about the Claude Code PROGRAM. Carried out as a rename plus a one-shot over the live `client` field, the same treatment the `v` field got. The store directory followed (naming.md 35): `agents/` held rows, and a row is a session |
+| D66 | The launcher is a TABLE, and `unit-files` is pure | **LOCKED** | §4.6c — launchd was the one genuinely platform-locked thing in `core/`, and nushell is not. Two launchers today (`launchd`, `systemd`), each answering the same five questions, registered by hand like the display registry because a name cannot become a module at runtime. The pure half is what pays for itself immediately: the systemd `.service` and `.timer` are asserted IN FULL by `tests/prune-daemon.nu` on a Mac with no systemd on it — the same `render-items` / `push-items` split, for the same reason. Windows was scoped out on purpose: a one-minute floor in Task Scheduler, and no zellij and no SketchyBar to paint |
+| D67 | The launcher is NAMED at install, never detected — with a completer | **LOCKED** | §4.6c — autodetection would be right nearly always and INVISIBLE WHEN WRONG, and wrong looks exactly like "dead agents linger", with nothing in any log. So `available` stops being a chooser and becomes a validator whose `why` is shown verbatim, the completer's `description` column carries the explanation the detection used to hide, and the asymmetry is the rule: **you name a launcher to create one, never to ask about one or destroy one**. `status` reports every launcher, `uninstall` sweeps them all — which is also why there is no state file recording what was installed, and why re-detecting differently can never leave one armed |
+| D68 | systemd's `AccuracySec=` is PINNED to 1s, in our own timer | **LOCKED** | §11 — it defaults to ONE MINUTE, and the default silently makes `--interval 30` a lie: the expiry lands at a stable, host-wide position inside the window, synchronised across every local timer, so a 30s timer snaps to the shared 60s grid and ticks every 60s forever. Not jitter — steady state. Pinned so that `install launchd --interval 30` and `install systemd --interval 30` MEAN THE SAME THING; if the launchers disagree about what the number means, the abstraction is not one. Per-unit, in the `[Timer]` section of the file we write — the global knob is a different setting with a different name (`DefaultTimerAccuracySec=` in `user.conf`) and nothing here goes near it |
 | D15 | Replace pandoc with a nu-native flattener | **LOCKED** (step 5b) | done: `integrations/sketchybar/text.nu` does it in nushell. 25.1ms off the event path and a dependency gone. v1 could afford pandoc because it converted where the preview was STORED, on a path already spawning processes; v2's whole paint is 6.5ms. Superseded in part by D60 — the flattener is a parser now, and still no subprocess |
 | D16 | Where the bench harness lives | **OPEN** | the only open row left. ~350 lines of documented nu; §8, and §9b.3 |
 | D17 | Promoted to `monomodules/agent-notify`, a module beside `ai` and the rest | **LOCKED** (2026-09-12) | step 7 — it was never `ai`-shaped: reflecting agent state on a status bar is not provider-agnostic content generation, and being a submodule is what made every hook parse the whole `ai` tree. The directory, the command, the session-store at `~/.local/share/agent-notify/` and the bar prefix `an_` all carry the one name |
@@ -1682,6 +1752,50 @@ twice.
 - `launchctl list | grep <label>` gives pid and last exit status — the only
   cheap way to notice a tick that fails every 30 seconds. Set
   `StandardErrorPath`.
+
+**systemd** — written from the documentation, NOT yet watched on real hardware.
+Everything below is asserted against the generated file text; the lines marked
+UNVERIFIED are the ones a Linux box has to settle.
+
+- **`AccuracySec=` defaults to ONE MINUTE, and that default is a silent lie for
+  any sub-minute timer.** systemd.timer(5): the unit elapses within a window
+  from the scheduled time to `AccuracySec` later, and inside that window "the
+  expiry time will be placed at a host-specific, randomized, but **stable**
+  position that is **synchronized between all local timer units**". Stable and
+  synchronized, not jitter — every timer on the machine lands on one shared
+  grid. Follow a 30s timer through a 60s grid: fire at T, next elapse T+30,
+  window [T+30, T+90], which contains exactly one grid point. Steady state: a
+  30-second timer that fires every 60 seconds, forever. Pin it (D68).
+- It is a **per-unit** setting in `[Timer]`. The global one is a different name
+  in a different file — `DefaultTimerAccuracySec=` in `systemd/user.conf` — and
+  the per-unit value overrides it, so there is never a reason to touch it.
+- **`%` is a specifier in every value**, expanded before quoting is even
+  considered. A literal one must be doubled. A `%` in a home directory would
+  otherwise silently become something else.
+- **`ExecStart` is a command line and `StandardError=append:` is not.** The
+  first is split on whitespace with C-style escapes inside quotes, so every
+  argument is quoted; the second takes a path, and quoting it would put the
+  quotes IN the filename.
+- Two files, linked by name: a `Type=oneshot` `.service` and a `.timer`.
+  `[Install] WantedBy=timers.target` is what makes `enable` possible.
+- `daemon-reload` BEFORE `enable --now`, or a re-install silently runs the file
+  systemd read last time — the old interval, with no complaint.
+- `disable --now` before deleting the files: `enable` leaves a symlink outside
+  our two paths, and that is the one thing deleting them would strand.
+- `systemctl --user show <unit> -p A -p B` prints `KEY=VALUE` lines and **exits
+  0 for a unit that was never installed**, values just empty — so `installed` is
+  the file on disk, never systemd's opinion. `ExecMainStatus` on the SERVICE is
+  the last tick's exit code; the timer only reports on itself.
+- **The binary existing is not the question.** WSL1 and many containers ship
+  `systemctl` with no user manager behind it, so the probe is `systemctl --user
+  list-units` exiting 0 — the call that needs the same user bus everything else
+  here needs.
+- UNVERIFIED: what happens after the machine sleeps through several intervals.
+  launchd fires once on wake. `Persistent=` does not help either way — it
+  applies to `OnCalendar=`, not to monotonic timers.
+- UNVERIFIED: `OnActiveSec=1s` as the `RunAtLoad` equivalent, and whether
+  `StandardError=append:` on a `oneshot` behaves as expected across the systemd
+  versions in the wild (it needs ≥ 240).
 
 **macOS `ps`**
 
