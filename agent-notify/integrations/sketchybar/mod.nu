@@ -41,12 +41,15 @@
 # is the price of the preview being right.
 #
 #   mod.nu    the surface contract — settings, project, apply
-#   items.nu  item names, the fixed pool, and the shell a hover runs
-#   text.nu   markdown → what a label can show
+#   items.nu  item names, the fixed pool, and the shell a hover runs — which is
+#             also where that shell's escaping lives, at the point of quoting
+#
+# The markdown a message is written in is flattened by `core/markdown.nu`, which
+# lived here until the picker's preview became its second reader.
 
 use ../../core/schema.nu
+use ../../core/markdown.nu
 use items.nu
-use text.nu
 
 const SELF = path self
 
@@ -170,7 +173,7 @@ def where-of [r: record, s: record]: nothing -> string {
         $r.client? | default "agent"
     }
     let dir = $r.cwd? | default "" | str replace $nu.home-dir "~"
-    if ($dir | is-empty) { return (text cut-to $place $s.preview_width) }
+    if ($dir | is-empty) { return (markdown cut-to $place $s.preview_width) }
     let room = $s.preview_width - (($place | split chars | length) + 3)
     $"($place) · (tail-to $dir $room)"
 }
@@ -185,18 +188,22 @@ def label-of [r: record, s: record]: nothing -> string {
         let dir = $r.cwd? | default "" | path basename
         if ($dir | is-not-empty) { $dir } else { $r.id? | default "agent" | str substring 0..7 }
     }
-    text quotable (text cut-to $raw $s.row_width)
+    markdown cut-to $raw $s.row_width
 }
 
-# The preview, ready to be baked into a shell command: the WHERE line, then the
-# message with its markdown taken off, one source line per row and NOTHING
-# WRAPPED — a drawer is wide, and a sentence spilling onto a second row costs a
-# slot and reads as two thoughts. What does not fit is cut with an ellipsis.
+# The preview, as the agent's own words: the WHERE line, then the message with
+# its markdown taken off, one source line per row and NOTHING WRAPPED — a drawer
+# is wide, and a sentence spilling onto a second row costs a slot and reads as
+# two thoughts. What does not fit is cut with an ellipsis.
+#
+# NOT ESCAPED HERE. `items.nu` makes it safe to single-quote at the moment it
+# writes the quote; a projection says what should be SHOWN, and how one surface
+# gets it onto a wire is not part of that.
 def lines-of [r: record, s: record]: nothing -> list<string> {
-    let source = text plain ($r.message? | default "")
-    let body = text lay-out $source $s.preview_width ($s.preview_lines - 1)
+    let source = markdown plain ($r.message? | default "")
+    let body = markdown lay-out $source $s.preview_width ($s.preview_lines - 1)
     let shown = if ($body | is-empty) { ["—"] } else { $body }
-    ([(where-of $r $s)] ++ $shown) | each {|l| text quotable $l }
+    [(where-of $r $s)] ++ $shown
 }
 
 # One key per SLOT on the bar, which is what lets `core/dispatch.nu` do the whole

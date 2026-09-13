@@ -17,16 +17,19 @@
 #     zellij/
 #       mod.nu      PUSH   pane and tab titles
 #       jump.nu     PULL   go to an agent's pane
-#       locate.nu   PULL   where an agent lives, what is on its screen, how to go
+#       locate.nu   PULL   where an agent lives, and how to go there
 #     sketchybar/
 #       mod.nu      PUSH   counters, drawers and hover previews
-#       items.nu           item names, the fixed pool, the generated shell
-#       text.nu            markdown → what a label can show
+#       items.nu           item names, the fixed pool, the generated shell —
+#                          and that shell's escaping, at the point of quoting
+#
+# The markdown a message is written in is flattened by `core/markdown.nu`, which
+# was `sketchybar/text.nu` until the picker's preview became its second reader.
 #
 # THE PICKER IS NOT IN HERE, and that is the shape of it. `agent-notify browse`
 # lives in `cli/` with the other commands, and the machinery in `picker/`,
 # because a picker is not a zellij program: it asks whichever integration claimed
-# an agent the four questions in `locate.nu` and draws the answers. A tmux
+# an agent the three questions in `locate.nu` and draws the answers. A tmux
 # integration is one more `locate.nu` and one more row in `picker/locators.nu` —
 # and not one line of the picker changes.
 #
@@ -70,14 +73,18 @@
 #   INFO      what it is
 #   claims    is this record yours?          it has a `zellij` namespace
 #   place     where does it live?            home/root
-#   screen    what is on its screen?         `dump-screen`, the agent's REAL one
 #   go        take me there                  `jump`
+#
+# There was a `screen` — dump me this agent's live terminal — and step 8 took it
+# out with the preview that needed it (D58). The picker shows the stored message
+# now, which every record has, so a locator asks only what the multiplexer alone
+# can answer.
 #
 # Which locator answers is decided by the RECORD, not by the config file:
 # `surfaces:` says what the store is pushed to and nothing else (D47), so
-# switching the zellij surface off must not stop the picker previewing a zellij
-# pane. `tests/fake.nu` ships a fake locator beside the fake surface, which is how
-# the whole picker is asserted with neither zellij nor tmux installed.
+# switching the zellij surface off must not stop the picker taking you to a
+# zellij pane. `tests/fake.nu` ships a fake locator beside the fake surface, which
+# is how the whole picker is asserted with neither zellij nor tmux installed.
 #
 # ── THREE RULES, each of which cost real time when broken ────────────────────
 #

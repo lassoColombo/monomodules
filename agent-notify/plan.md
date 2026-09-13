@@ -708,9 +708,10 @@ committed. Each surface is wrapped alone, so one failing cannot stop the next.
 | D52 | `browse` runs IN PLACE; the floating pane belongs to the keybinding | **LOCKED** | step 6 — v1 re-launched itself through `zellij run --floating` and needed a `--here` flag to not. Same bargain as `sketchybarrc` and `settings.json`: we print the block, you own the file |
 | D53 | `browse` does not prune | **LOCKED** | step 6 — the clock already does, every 30s. A second mechanism for one guarantee, and all it saves is a jump that says "no session called 'x'" |
 | D54 | The picker OWNS ITS EVENT LOOP — `input listen`, not `input list` | **LOCKED** | step 6b — `input list` is OPAQUE: it blocks and reports nothing until enter, so nothing can redraw a preview beside it. Every design that kept it needed a second process parsing the highlight back off the picker's own screen |
-| D55 | The picker is `picker/`, its command is `cli/browse.nu`, and each integration answers a four-question LOCATOR contract | **LOCKED** | step 6b — three things vary per multiplexer (where an agent lives, what is on its screen, how to go there) and nothing else does. tmux is one `locate.nu` and one row in `picker/locators.nu` |
+| D55 | The picker is `picker/`, its command is `cli/browse.nu`, and each integration answers a LOCATOR contract — three questions since D58, four before it | **LOCKED** | step 6b — what varies per multiplexer is where an agent lives and how to go there, and nothing else does. `screen` was the fourth and left with the pane preview (D58). tmux is one `locate.nu` and one row in `picker/locators.nu` |
 | D56 | Which locator answers is decided by the RECORD, not by the config file | **LOCKED** | step 6b — `surfaces:` says what the store is PUSHED to and nothing else (D47), so switching the zellij surface off must not stop the picker previewing a zellij pane. It also makes a MIXED fleet work with nothing configured |
-| D57 | The preview is the agent's LIVE SCREEN; the filter matches only what the row SHOWS | **LOCKED** | step 6b — `dump-screen` is truer than anything we could store and deletes markdown rendering outright. And a message is kilobytes of prose: folding it into the filter made a two-letter query match an agent for an invisible reason, at character 4195 of something it said an hour ago |
+| D57 | The preview is the agent's LIVE SCREEN; the filter matches only what the row SHOWS | first half **REVERSED** by D58; second half **LOCKED** | step 6b — the filter half stands and always will: a message is kilobytes of prose, and folding it in made a two-letter query match an agent for an invisible reason, at character 4195 of something it said an hour ago. The preview half lasted until it was lived with — see D58 |
+| D58 | The preview is the agent's STORED MESSAGE, rendered the way the bar renders it | **LOCKED** | step 8 — truer lost to readable. A dump is the bottom of a TUI mid-redraw, half a spinner and a rule cut off at both edges; the agent already wrote the answer to "which of these wants me" in a sentence. It also cost a subprocess on every heartbeat and only ever covered agents that still had a pane — the rest already fell back to exactly this. Markdown rendering comes BACK to the picker, but not as new code: `core/markdown.nu` is the bar's flattener, moved up |
 | D15 | Replace pandoc with a nu-native flattener | **LOCKED** (step 5b) | done: `integrations/sketchybar/text.nu` does it in nushell. 25.1ms off the event path and a dependency gone. v1 could afford pandoc because it converted where the preview was STORED, on a path already spawning processes; v2's whole paint is 6.5ms |
 | D16 | Where the bench harness lives | **OPEN** | the only open row left. ~350 lines of documented nu; §8, and §9b.3 |
 | D17 | Promoted to `monomodules/agent-notify`, a module beside `ai` and the rest | **LOCKED** (2026-09-12) | step 7 — it was never `ai`-shaped: reflecting agent state on a status bar is not provider-agnostic content generation, and being a submodule is what made every hook parse the whole `ai` tree. The directory, the command, the store at `~/.local/share/agent-notify/` and the bar prefix `an_` all carry the one name |
@@ -1033,13 +1034,13 @@ the bar.
    silently. Owning the loop is resilient through three ABSENCES: nothing to
    parse (we set the selection), nothing to poll (`input listen` blocks), nothing
    to coordinate (one pane, one process).
-   **The preview is the agent's real terminal** (D57), 12ms per read, which is
-   truer than anything we could store and deletes markdown rendering from this
-   module outright. A `--timeout 2sec` heartbeat keeps it live while you sit
-   still. An agent with no pane falls back to its stored message.
-   Four calls in `picker/mod.nu` touch the world — read the store, read a screen,
-   print, read a key — and every other line is pure: `rows.nu`, `frame.nu`,
-   `keys.nu`. `frame render` returns the WHOLE SCREEN as a list of strings and
+   **The preview was the agent's real terminal** (D57), 12ms per read, truer than
+   anything we could store — and step 8 reversed it (D58), because truer was not
+   readable. A `--timeout 2sec` heartbeat keeps the frame live while you sit
+   still, which is still what it is for.
+   Four calls in `picker/mod.nu` touched the world — read the store, read a
+   screen, print, read a key — and every other line is pure: `rows.nu`,
+   `frame.nu`, `keys.nu`. Three, since the screen read went. `frame render` returns the WHOLE SCREEN as a list of strings and
    never prints (D34, after the bar's `message` and zellij's `commands`), so the
    suite asserts entire frames line for line with no terminal and nothing
    installed. `tests/fake.nu` grew a fake LOCATOR beside its fake surface.
@@ -1108,6 +1109,41 @@ the bar.
    chosen to keep the two apart, and it turns out to be the right name anyway.
    432/432, the store intact across the move, both surfaces painting.
 
+8. **The picker's preview is the message** — ✅ done. The first change made by
+   USING the picker rather than by building it, and it reverses D57's first half
+   (D58). The preview was `zellij action dump-screen`; it is now the agent's
+   stored message, flattened through the same code that fills the bar's drawer.
+   **Truer lost to readable.** A dump really is what the agent is DOING, and what
+   it looks like is the bottom of a TUI caught mid-redraw — half a spinner, a box
+   rule cut off at both edges, an input prompt. The question a picker answers is
+   "which of these wants me", and the agent already wrote that answer in a
+   sentence. Two smaller things fell out with it: no frame spawns a subprocess any
+   more (the heartbeat was doing one every 2 seconds, forever, for as long as the
+   picker sat open), and the two codepaths became one — an agent with no pane had
+   always fallen back to exactly this.
+   **`sketchybar/text.nu` became `core/markdown.nu`.** A flattener with two
+   readers is not the bar's, and there was no second answer to have: a message is
+   markdown, and neither a SketchyBar label nor a rectangle of terminal renders
+   it. Its assertions moved too, into `tests/markdown.nu`.
+   **And what stayed behind went where it belonged.** The leftover was one
+   function — `quotable`, making text safe to single-quote (D44, D45) — which for
+   a moment was a file of its own, which is a smell. Following it found the real
+   fault: it was being applied in `project`, so the map dispatch diffs held `it’s`
+   where the agent had written `it's`, and a row's LABEL was escaped although it
+   is argv and never sees a shell. Escaping is what `apply` does to text on the
+   way out, not part of what should be SHOWN. It is now private to `items.nu` and
+   called at the single point that writes a quote, `hover-shell`. The suite tests
+   the guarantee end to end instead of testing the function: an agent's raw text
+   goes in and a command that cannot break out comes back.
+   **The locator contract lost a question** (D55): `claims`, `place`, `go`. A
+   locator now asks only what the multiplexer alone can answer. `screen` and its
+   `--session` care are written up in §9b.5, for a `watch` command where a whole
+   live terminal would be the point.
+   **And the preview became testable**, which it never was: it was the one part
+   of a frame the suite could not assert, because asserting it meant running
+   zellij. `picker/preview.nu` is pure like everything else in that directory,
+   and `picker/mod.nu` is down to three calls that touch the world.
+   439/439.
 
 > **Reordered after step 1** (was: write API → config → zellij → client). Two
 > reasons. The old step 2 largely landed inside step 1 — `patch`, `changed` and
@@ -1127,8 +1163,10 @@ Every step in §9 is done. These are not unfinished steps; they are work set asi
 on purpose, each for a reason that has not changed. Written down because the
 alternative is rediscovering them — and because the first and the third are
 blocked on a DECISION rather than on effort, which is a different kind of waiting
-and needs saying out loud. The fourth is not work at all: it is a behaviour that
-looks like a bug and is not, recorded so it does not get filed as one.
+and needs saying out loud. §9b.5 is the odd one: the code for it was written,
+shipped, lived with and deleted, and what is deferred is the SHAPE it should have
+come in. The fourth is not work at all: it is a behaviour that looks like a bug
+and is not, recorded so it does not get filed as one.
 
 ### 9b.1 A click on a bar row should jump
 
@@ -1199,6 +1237,26 @@ part of the module — nothing in `mod.nu` imports it, so `use agent-notify` nev
 parses a byte. §8 promises every step re-measures, which is why it is in the repo
 rather than in a scratch directory. The question is only whether that is where it
 stays now that the steps are done.
+
+### 9b.5 A `watch` command — the live pane, where it belongs
+
+**What it is.** `agent-notify watch <who>`: one agent's real terminal, followed
+in place, without taking your pane to it. The code existed and worked —
+`integrations/zellij/locate.nu`'s `screen`, deleted in step 8 with the preview
+that used it (D58).
+
+**Why it was left.** Not for want of a mechanism. A live screen wants a WHOLE
+terminal, a refresh faster than 2 seconds, and no chrome competing with the
+agent's own TUI. The picker gave it eight lines beside a list and a footer,
+which is where it looked worst; a command of its own is where it would look
+right. Nothing about the picker is in the way, and nothing has to change there.
+
+**What is already known, so it is not re-probed.** `zellij action dump-screen
+--pane-id terminal_N` reads any pane in ~12ms. `--session` IS NOT OPTIONAL —
+pane ids are per session, so without it you read whichever session the process
+is attached to and silently show a stranger's terminal (§11). A dump races the
+redraw. And `browse` runs in place (D52), so a watcher must notice when the pane
+it is asked to show is its OWN — the deleted code did.
 
 ### 9b.4 Known and accepted: a resumed session starts nameless
 
@@ -1388,9 +1446,11 @@ Not nushell — the programs underneath. Same rule as §10: cost time once, not 
 - **`tab_id` is not `tab_position`.** `rename-tab --tab-id` wants the id; ids are
   not renumbered when tabs move, and `query-tab-names` returns names in POSITION
   order with no ids, so it cannot be used for renaming.
-- **`action dump-screen --pane-id` reads ANY pane's live screen** for **12ms**,
-  which is what makes a preview the agent's real terminal rather than something
-  we stored. `--full` for scrollback, `--ansi` to keep styling, `--path` to a file.
+- **`action dump-screen --pane-id` reads ANY pane's live screen** for **12ms**.
+  `--full` for scrollback, `--ansi` to keep styling, `--path` to a file. It was
+  the picker's preview until step 8 (D58) and nothing calls it today; the note
+  stays because §9b.5 wants it back, in a command where a whole terminal is the
+  point.
 - **PANE IDS ARE PER SESSION, so `--session` is not optional.** Probed with two
   sessions, both holding a pane 0 and different contents: `action dump-screen
   --pane-id terminal_0` with no `--session` reads whichever session the process is

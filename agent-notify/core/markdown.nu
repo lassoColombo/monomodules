@@ -1,8 +1,16 @@
-# Markdown in, SketchyBar labels out.
+# Markdown in, plain display lines out.
 #
-# A label takes ONE font and ONE colour and holds ONE line, so everything that
-# makes a message readable in a terminal — the bold, the headings, the fences —
-# is noise here. That is this file: strip, then lay out.
+# A LEAF, AND SHARED. It was `integrations/sketchybar/text.nu` while the bar was
+# the only thing that had to show an agent's message; the picker's preview is the
+# second (step 8), and a flattener that two surfaces read is not the bar's. It
+# imports nothing and touches nothing, so anything may take it — including the
+# hot half, though nothing there needs it yet.
+#
+# WHAT IT IS FOR, in both callers: a stored message is markdown, and the places
+# it has to appear are not. A SketchyBar label takes ONE font and ONE colour and
+# holds ONE line; a picker preview is a fixed rectangle of a terminal with no
+# renderer behind it. The bold, the headings and the fences are noise in both.
+# So: strip, then lay out.
 #
 # NOTHING IS WRAPPED. An earlier version folded a long line onto a second row,
 # which is what a 62-character drawer forced. A drawer is 110 characters wide
@@ -15,17 +23,16 @@
 # spawning processes. v2 has no such path — the surface runs inside the agent's
 # own hook and the whole paint is one ~7ms message — so a subprocess here would
 # be four times the cost of everything else put together. Doing it in nushell
-# also keeps the markdown itself in the store, where the picker still wants it.
+# also keeps the markdown itself in the store, where both readers want it.
 #
-# NOTHING HERE KNOWS ABOUT THE BAR. It is given a width and a line budget and
-# returns strings; the item names, the colours and the shell live next door.
+# NOTHING HERE KNOWS ABOUT ITS CALLER. It is given a width and a line budget and
+# returns strings; the item names, the colours, the shell and the escaping that
+# shell needs all live next door, in `integrations/sketchybar/items.nu`.
 
 # ── measuring ────────────────────────────────────────────────────────────────
 # By CHARACTER, not by byte. Slicing a string at a byte offset can land inside a
 # codepoint and turn an em dash into a replacement glyph — and a character is
 # also what a label's width actually counts.
-
-def chars [s: string]: nothing -> int { $s | split chars | length }
 
 export def cut-to [s: string, n: int]: nothing -> string {
     let cs = $s | split chars
@@ -42,20 +49,10 @@ def mark [s: string, width: int]: nothing -> string {
     (($cs | first ([0 ($width - 1)] | math max) | str join) | str trim --right) + "…"
 }
 
-# Safe to wrap in SINGLE QUOTES inside a generated shell command, which is how a
-# preview reaches the bar (see items.nu). Probed on the real daemon: inside single
-# quotes `$HOME` and backticks stay literal and only `'` can break out, so one
-# substitution is the whole of the escaping — and a typographic apostrophe is what
-# the text wanted anyway. Control characters go too: a stray \r would end the
-# command line early.
-export def quotable [s: string]: nothing -> string {
-    $s | str replace --all "'" "’" | str replace --all --regex '[\x00-\x1f]' " "
-}
-
 # ── markdown → plain lines ───────────────────────────────────────────────────
 # Line-based on purpose. The block structure is the only formatting that survives
-# to a stack of labels, so a list stays a list and a fenced block stays a block;
-# everything inside a line is flattened.
+# to a stack of labels or a preview pane, so a list stays a list and a fenced
+# block stays a block; everything inside a line is flattened.
 
 def strip-inline [line: string]: nothing -> string {
     $line

@@ -1,21 +1,26 @@
 # Step 6 — the picker: rows, the filter, the selection, the frame, and the keys.
 #
 # NO TERMINAL IS OPENED HERE, and nothing is installed. That is the whole reason
-# `picker/` is shaped the way it is: four calls in `picker/mod.nu` touch the
+# `picker/` is shaped the way it is: three calls in `picker/mod.nu` touch the
 # world and every other line is a pure function of data, so an interactive
 # program can be asserted frame by frame with `check`.
 #
-# The locator comes from `tests/fake.nu` — four questions answered out of the
+# The locator comes from `tests/fake.nu` — three questions answered out of the
 # record itself. It is to the picker what the fake SURFACE is to dispatch: proof
 # that the contract is answerable without the tool, on a machine with neither
 # zellij nor tmux.
 #
+# THE PREVIEW IS ASSERTED HERE NOW, which it never could be before: it used to be
+# a live pane dump and is the stored message since step 8 (D58), so it is a pure
+# function like the rest and `picker/preview.nu` is tested like the rest.
+#
 # What is deliberately NOT here: `picker choose`. It is the loop, it blocks on a
 # key, and it cannot be driven from a suite — which is exactly why it holds
-# nothing but the four I/O calls and hands every decision to the files below.
+# nothing but the three I/O calls and hands every decision to the files below.
 
 use ../picker/rows.nu
 use ../picker/frame.nu
+use ../picker/preview.nu
 use ../picker/keys.nu
 use ../picker/tty.nu
 use ../picker/locators.nu
@@ -26,10 +31,10 @@ use assert.nu *
 # all — so urgency, the tie-break and the unclaimed case are all in one fixture.
 def fleet []: nothing -> list<record> {
     [ {id: "aaa", state: "working", name: "alpha", message: "compiling the thing"
-       fake: {where: "box/one", screen: "one\ntwo\nthree"}}
-      {id: "bbb", state: "awaiting", name: "bravo", message: "shall I continue?"
-       fake: {where: "box/two", screen: "ready"}}
-      {id: "ccc", state: "idle", name: "charlie", fake: {where: "box/one", screen: ""}}
+       fake: {where: "box/one"}}
+      {id: "bbb", state: "awaiting", name: "bravo", message: "## Ready\n\nshall I **continue**?"
+       fake: {where: "box/two"}}
+      {id: "ccc", state: "idle", name: "charlie", fake: {where: "box/one"}}
       {id: "ddd", state: "needs-attention", name: "delta", message: "stuck on auth"} ]
 }
 
@@ -72,9 +77,29 @@ export def main [] {
                (built | where id == "bbb" | get 0.via | is-not-empty) true)
         (check "…and an unclaimed one carries null, which is how the caller knows"
                (built | where id == "ddd" | get 0.via) null)
-        (check "the locator answers the screen too, bottom-first — what is current"
-               (do (built | where id == "aaa" | get 0.via).screen
-                   (built | where id == "aaa" | get 0.rec) 2) ["two" "three"])
+        (check "a locator answers THREE questions — `screen` went with the pane preview"
+               ((fake locator).fake | columns | sort) ["claims" "go" "info" "place"])
+    ]
+
+    # ── the preview: what the agent last SAID ────────────────────────────────
+    # Not what is on its terminal, which is what this used to dump (D58). A
+    # message is markdown, so it goes through the same flattener the bar's
+    # drawer uses — one rendering, one place to fix it.
+    let sel_b = rows selected (built) {sel: "bbb"}
+    let b2 = [
+        (check "the preview is the message, with its markdown taken off"
+               (preview of $sel_b 4 40) ["Ready" "" "shall I continue?"])
+        (check "it is cut from the TOP — a message's first line is its point"
+               (preview of $sel_b 1 40) ["Ready…"])
+        (check "…and to the width of the pane"
+               (preview of (rows selected (built) {sel: "aaa"}) 4 8) ["compili…"])
+        (check "AN AGENT WITH NO PANE STILL HAS A PREVIEW — which is the whole point"
+               (preview of (rows selected (built) {sel: "ddd"}) 4 40) ["stuck on auth"])
+        (check "an agent that has said nothing says so, rather than showing a blank"
+               (preview of (rows selected (built) {sel: "ccc"}) 4 40) ["—"])
+        (check "no room is no preview, not an error"
+               [(preview of $sel_b 0 40) (preview of $sel_b 4 0)] [[] []])
+        (check "and an empty list previews nothing at all" (preview of null 4 40) [])
     ]
 
     # ── what to call an agent ────────────────────────────────────────────────
@@ -298,7 +323,7 @@ export def main [] {
     ]
 
     # ── the locator table ────────────────────────────────────────────────────
-    # One row per integration that can answer the four questions. The RECORD
+    # One row per integration that can answer the three questions. The RECORD
     # picks its own — not the config file, which says what the store is pushed to
     # and nothing else (D47).
     let m = [
@@ -313,5 +338,5 @@ export def main [] {
                [true null])
     ]
 
-    summarise ($a ++ $b ++ $c ++ $d ++ $e ++ $f ++ $g ++ $h ++ $i ++ $j ++ $k ++ $l ++ $m) --title "picker"
+    summarise ($a ++ $b ++ $b2 ++ $c ++ $d ++ $e ++ $f ++ $g ++ $h ++ $i ++ $j ++ $k ++ $l ++ $m) --title "picker"
 }

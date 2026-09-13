@@ -23,9 +23,16 @@
 #   the row.
 #
 # The price is that a preview's text is baked into a shell command, so it must be
-# safe to single-quote. `text.nu`'s `quotable` is the whole of that: a literal
-# `'` becomes `’` and control characters become spaces. Probed on the real
-# daemon — inside single quotes `$HOME` and backticks stay literal.
+# safe to single-quote. `quotable`, below, is the whole of that: a literal `'`
+# becomes `’` and control characters become spaces. Probed on the real daemon —
+# inside single quotes `$HOME` and backticks stay literal.
+#
+# IT IS APPLIED WHERE THE QUOTE IS WRITTEN, in `hover-shell`, and nowhere else.
+# It used to be applied in `project`, which put a transport quirk of one surface
+# into the map dispatch diffs — so the projection said the agent had written
+# `it’s` when it had written `it's` — and escaped a row's LABEL, which is argv
+# and never sees a shell at all. Escaping is what `apply` does to text on its way
+# out; it is not part of what should be shown.
 #
 # EVERY SCRIPT GUARDS ON $SENDER. An item's script also runs on a forced
 # `--update`, which SketchyBar sends at bar load; without the guard the bar would
@@ -70,6 +77,19 @@ export def tint [color: string, alpha: string]: nothing -> string {
 
 const GUARD = "[ \"$SENDER\" = mouse.entered ] || exit 0; exec "
 
+# Safe to wrap in SINGLE QUOTES, which is how a preview line reaches the bar. On
+# the real daemon `$HOME` and backticks are already literal inside single quotes,
+# so a lone `'` is the whole of the danger and one substitution is the whole of
+# the escaping — and a typographic apostrophe is what the text wanted anyway.
+# Control characters go too: a stray \r would end the command line early.
+#
+# CHARACTER FOR CHARACTER, which is what lets it run last. A line has already
+# been cut to `preview_width` by then, and an escape that changed the length
+# would push it back over.
+def quotable [s: string]: nothing -> string {
+    $s | str replace --all "'" "’" | str replace --all --regex '[\x00-\x1f]' " "
+}
+
 # Shut every drawer. Static — it depends on nothing that a paint can change —
 # so it is written once, at install, and never rewritten.
 export def close-args [s: record]: nothing -> list<string> {
@@ -106,7 +126,7 @@ export def hover-shell [s: record, state: string, lines: list<string>]: nothing 
         if $l == null {
             ["--set" (pv-name $s $state $i) "drawing=off"]
         } else {
-            ["--set" (pv-name $s $state $i) $"'label=($l)'" "drawing=on"]
+            ["--set" (pv-name $s $state $i) $"'label=(quotable $l)'" "drawing=on"]
         }
     } | flatten
     $GUARD + $"($s.binary) ($args | str join ' ')"

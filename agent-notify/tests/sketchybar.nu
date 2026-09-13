@@ -9,9 +9,12 @@
 # happens to an agent must never reach the bar at all; and the SHELL, because a
 # hover runs a command we generated, and a single stray quote in an agent's
 # message would break it.
+#
+# The FLATTENING is next door, in `tests/markdown.nu`. It left with the code:
+# `core/markdown.nu` is shared with the picker's preview now, so its assertions
+# are not the bar's either.
 
 use ../integrations/sketchybar
-use ../integrations/sketchybar/text.nu
 use ../core/dispatch.nu
 use assert.nu *
 
@@ -229,7 +232,11 @@ export def main [] {
     # THE ESCAPING, which is the one thing that can break a generated command.
     # Probed on the real daemon: inside single quotes $HOME and backticks stay
     # literal, so a lone apostrophe is the whole of the danger.
-    let nasty = text quotable "it's `rm -rf /` $HOME \"x\" --set evil popup.drawing=on"
+    #
+    # THE AGENT'S TEXT GOES IN RAW. That is the assertion: escaping happens where
+    # `items.nu` writes the quote, not in `project`, so what is fed here is what
+    # an agent would actually say and what comes back is a command that holds.
+    let nasty = "it's `rm -rf /` $HOME \"x\" --set evil popup.drawing=on\r"
     let bad = scripts (sketchybar message {"row|working|0": {label: $nasty, lines: [$nasty]}} {} $s) | first
     let g = [
         (check "an apostrophe cannot reach the shell" ($bad | str contains "it's") false)
@@ -238,6 +245,11 @@ export def main [] {
                (($bad | split chars | where {|q| $q == "'" } | length) mod 2) 0)
         (check "backticks and $HOME survive as text, because single quotes make them text"
                (($bad | str contains "`rm -rf /`") and ($bad | str contains "$HOME")) true)
+        (check "a carriage return cannot end the command line early"
+               ($bad | str contains "\r") false)
+        (check "the PROJECTION keeps the agent's own words — escaping is not part of
+           what should be shown"
+               (row-of {name: "it's", message: "it's"} $s | get label) "it's")
     ]
 
     # ── rows that go away ────────────────────────────────────────────────────
@@ -281,28 +293,6 @@ export def main [] {
         (check "a fresh counter starts at zero" ("label=0" in $inst) true)
     ]
 
-    # ── markdown, flattened onto labels ──────────────────────────────────────
-    let j = [
-        (check "a heading loses its hashes" (text plain "## Done") ["Done"])
-        (check "bold, code and links lose their syntax, not their words"
-               (text plain "a **b** `c` [d](http://e)") ["a b c d"])
-        (check "a bullet becomes a bullet" (text plain "- one") ["• one"])
-        (check "a rule is a whole row spent on nothing, so it goes" (text plain "a\n---\nb") ["a" "b"])
-        (check "a fence is a toggle; what it wraps is code and is left alone"
-               (text plain "```nu\nlet a = 1\n```") ["let a = 1"])
-        # A drawer is 110 characters wide; folding a sentence onto a second row
-        # would spend one of twelve slots saying nothing new.
-        (check "a long line is CUT, never wrapped — one row per source line"
-               (text lay-out ["one two three four"] 9 5) ["one two…"])
-        (check "…so a block keeps its shape, indentation and all"
-               (text lay-out ["    indented"] 40 5) ["    indented"])
-        (check "two blank lines become one — an empty row is the scarcest thing here"
-               (text lay-out ["a" "" "" "b"] 40 5) ["a" "" "b"])
-        (check "a preview that was cut says so" (text lay-out ["one" "two" "three"] 40 2 | last) "two…")
-        (check "…even when the line it stopped on happened to fit" (text lay-out ["ab" "cd"] 40 1) ["ab…"])
-        (check "cutting counts characters, not bytes" (text cut-to "é—ù" 2) "é…")
-    ]
-
     # ── it is a surface like any other ───────────────────────────────────────
     let k = [
         (check "dispatch ships it" ("sketchybar" in (dispatch known)) true)
@@ -314,6 +304,6 @@ export def main [] {
                (dispatch shipped | get zellij | get -o observe | is-not-empty) true)
     ]
 
-    let all = ($a ++ $b ++ $c ++ $d ++ $e ++ $f ++ $g ++ $h ++ $i ++ $j ++ $k)
+    let all = ($a ++ $b ++ $c ++ $d ++ $e ++ $f ++ $g ++ $h ++ $i ++ $k)
     summarise $all --title "sketchybar surface"
 }
