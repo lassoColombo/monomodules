@@ -82,19 +82,27 @@ the only place they differ from what shipped.
 
 ## What moved on disk, and what has to be done by hand
 
-`migrate-once.nu` carries the two changes that live outside this repo, and is
-deleted once it has run:
+`migrate-once.nu` carried the two changes that live outside this repo. It was
+run on 2026-09-13 and deleted in the same commit, which is the whole of its
+design — a migration that can only ever run once is not a command. What it did:
 
 1. every record's `v` → `schema_version`, in `agents/` and in `ended/`;
 2. the config file's `surfaces:` → `displays:` and each tool's `surface:` →
    `display:` — TEXTUALLY, because that file is mostly commentary and
    `open | to yaml | save` would delete every line of it.
 
-One thing it deliberately does NOT do, because it is a running job rather than a
-file: the launchd label changed from `com.agent-notify.clock` to
-`com.agent-notify.prune-daemon`. The old job has to be evicted with the old
-code, or by hand:
+Two things it deliberately did NOT do, because neither is a file of ours:
 
-    launchctl bootout gui/$(id -u)/com.agent-notify.clock
-    rm ~/Library/LaunchAgents/com.agent-notify.clock.plist
-    nu -c 'use agent-notify; agent-notify prune-daemon install'
+1. The launchd label changed from `com.agent-notify.clock` to
+   `com.agent-notify.prune-daemon`, so the old job was evicted by hand and the
+   new one installed:
+
+       launchctl bootout gui/$(id -u)/com.agent-notify.clock
+       rm ~/Library/LaunchAgents/com.agent-notify.clock.plist
+       nu -c 'use agent-notify; agent-notify prune-daemon install'
+
+2. `~/.config/sketchybar/sketchybarrc` holds the one line that asks this module
+   to build its items, and it named `surfaces install`. It now says `displays
+   install` (backed up beside it as `.bak-rename-20260913`). That line is the
+   only thing of ours anywhere in anyone else's config, and D50 keeps it that
+   way — which is also why a rename reaches exactly one line of it.
