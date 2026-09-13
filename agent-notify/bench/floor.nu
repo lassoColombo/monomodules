@@ -1,10 +1,10 @@
-# Case group 1 — THE FLOOR: what one process costs before our code does anything,
-# and what pointing `use` at different depths of the tree adds on top.
+# Case group 1 — THE FLOOR: what one process costs before our code does
+# anything, and what pointing `use` at different depths of the tree adds on top.
 #
-# This is the group the whole architecture rests on. If a nu spawn is ~13ms and a
-# bash spawn is ~2ms, then principle 1 ("all logic in nushell") has a price, and
-# the only question left is how much of it we can hand back by narrowing what
-# gets parsed — which is what the `use` ladder below measures.
+# This is the group the whole architecture rests on. If a nu spawn is ~13ms and
+# a bash spawn is ~2ms, then principle 1 ("all logic in nushell") has a price,
+# and the only question left is how much of it we can hand back by narrowing
+# what gets parsed — which is what the `use` ladder below measures.
 #
 # `-I <repo>` rather than NU_LIB_DIRS throughout: same effect on the parse, and
 # it survives being handed down two process hops (see harness.nu's `cpu`).
@@ -25,7 +25,7 @@ const LADDER = [
     [label                           code];
     ["(nothing)"                     ""]
     ["leaf core/paths.nu"            "use agent-notify/core/paths.nu"]
-    ["leaf core/store.nu"            "use agent-notify/core/store.nu"]
+    ["leaf core/session-store.nu"            "use agent-notify/core/session-store.nu"]
     ["the HOT cone (what a hook pays)" "use agent-notify/clients/claude.nu"]
     ["the whole module (what a human pays)" "use agent-notify"]
 ]
@@ -57,7 +57,7 @@ export def main [] {
         (cpu "/usr/bin/true" ["/usr/bin/true"])
         (cpu "/bin/bash -c ''" ["/bin/bash" "-c" ""])
         (cpu "nu -c '' (no std lib)" (nu-args ""))
-        (cpu "nu -c 'use core/store.nu'" (nu-args "use agent-notify/core/store.nu"))
+        (cpu "nu -c 'use core/session-store.nu'" (nu-args "use agent-notify/core/session-store.nu"))
         (cpu "nu -c 'use clients/claude.nu'  (the hook)" (nu-args "use agent-notify/clients/claude.nu"))
         (cpu "nu -c 'use agent-notify'      (the CLI)" (nu-args "use agent-notify"))
     ] | fmt-cpu | table)

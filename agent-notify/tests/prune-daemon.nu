@@ -1,32 +1,33 @@
-# The clock — the periodic look that notices agents nobody will report.
+# The prune-daemon — the periodic look that notices agents nobody will report.
 #
 # Only the pure half is exercised here: what the tick would run, and what the
 # launchd job would say. `arm` and `disarm` talk to launchctl and would load a
 # real job on the machine running the tests, which a test must never do.
 
 use ../../agent-notify
-use ../core/clock.nu
+use ../core/prune-daemon.nu
+use ../core/prune-daemon.nu LABEL
 use assert.nu *
 
-const TMP = ($nu.temp-dir | path join "agent-notify-tests-clock")
+const TMP = ($nu.temp-dir | path join "agent-notify-tests-prune-daemon")
 
 export def main [] {
     $env.XDG_STATE_HOME = $TMP
 
-    let tick = clock tick
-    let p = clock plist 45
+    let tick = prune-daemon prune-command
+    let p = prune-daemon plist 45
 
     let a = [
         (check "the tick is the same refresh a human can type"
-               ($tick | last | str contains "agent-notify surfaces refresh") true)
+               ($tick | last | str contains "agent-notify displays refresh") true)
         (check "…which prunes first and paints second, so one mechanism does both"
-               ($tick | any {|x| $x | str contains "surfaces refresh" }) true)
+               ($tick | any {|x| $x | str contains "displays refresh" }) true)
         (check "it names nu by absolute path — a launchd job has no PATH of yours"
                ($tick | first | str starts-with "/") true)
         (check "…and starts it with no config, like every other entry point"
                ("--no-std-lib" in $tick) true)
         (check "the job is named once, and recognisably"
-               $clock.LABEL "com.agent-notify.clock")
+               $LABEL "com.agent-notify.prune-daemon")
     ]
 
     let b = [
@@ -39,16 +40,16 @@ export def main [] {
         (check "a failing tick leaves a trace instead of failing in silence"
                ($p | str contains "StandardErrorPath") true)
         (check "the log follows XDG_STATE_HOME"
-               (clock log-path | str starts-with $TMP) true)
+               (prune-daemon log-path | str starts-with $TMP) true)
         (check "the job lives where launchd looks for user agents"
-               (clock plist-path | str contains "Library/LaunchAgents") true)
+               (prune-daemon plist-path | str contains "Library/LaunchAgents") true)
     ]
 
     # The guard runs before launchctl is touched, so this is safe to assert.
     let c = [
         (check-err "an interval that would be a busy loop is refused"
-                   "busy loop" {|| agent-notify clock install --interval 5 })
+                   "busy loop" {|| agent-notify prune-daemon install --interval 5 })
     ]
 
-    summarise ($a ++ $b ++ $c) --title "clock"
+    summarise ($a ++ $b ++ $c) --title "prune-daemon"
 }

@@ -4,7 +4,8 @@
 # quantity we have been guessing at ("PostToolUse fires on every tool call").
 # Real transcripts know the answer: every `tool_use` block an assistant emitted
 # is one PostToolUse, and its timestamp says when. Parallel blocks in a single
-# assistant message each fire their own hook, so blocks are counted, not messages.
+# assistant message each fire their own hook, so blocks are counted, not
+# messages.
 #
 # What matters for the design is not the average — it is the BURST: the most
 # events that ever land inside one second, because that is the moment the hook
@@ -53,9 +54,10 @@ def summarise [file: string] {
 # The per-transcript rate is bounded by something no amount of engineering will
 # change: a tool call costs the model a second or two to emit, so ONE agent can
 # never make the hook path hot. Concurrency is the only thing that can — several
-# agents, each with their own subagents, all firing into the same machine. So the
-# real question is the SYSTEM-WIDE burst: pool every transcript's events on one
-# wall clock and look at the busiest seconds that have ever actually happened.
+# agents, each with their own subagents, all firing into the same machine. So
+# the real question is the SYSTEM-WIDE burst: pool every transcript's events on
+# one wall prune-daemon and look at the busiest seconds that have ever actually
+# happened.
 export def global [--days: int = 21] {
     let cutoff = (date now) - ($days * 1day)
     let files = ls ($"($PROJECTS)/**/*.jsonl" | into glob)

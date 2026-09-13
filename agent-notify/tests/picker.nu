@@ -6,20 +6,20 @@
 # program can be asserted frame by frame with `check`.
 #
 # The locator comes from `tests/fake.nu` — three questions answered out of the
-# record itself. It is to the picker what the fake SURFACE is to dispatch: proof
+# record itself. It is to the picker what the fake DISPLAY is to dispatch: proof
 # that the contract is answerable without the tool, on a machine with neither
 # zellij nor tmux.
 #
-# THE PREVIEW IS ASSERTED HERE NOW, which it never could be before: it used to be
-# a live pane dump and is the stored message since step 8 (D58), so it is a pure
-# function like the rest and `picker/preview.nu` is tested like the rest.
+# THE PREVIEW IS ASSERTED HERE NOW, which it never could be before: it used to
+# be a live pane dump and is the stored message since step 8 (D58), so it is a
+# pure function like the rest and `picker/preview.nu` is tested like the rest.
 #
 # What is deliberately NOT here: `picker choose`. It is the loop, it blocks on a
 # key, and it cannot be driven from a suite — which is exactly why it holds
 # nothing but the three I/O calls and hands every decision to the files below.
 
 use ../picker/rows.nu
-use ../picker/frame.nu
+use ../picker/layout.nu
 use ../picker/preview.nu
 
 # `preview of` returns ROWS — `{k, t}` — so a frame assertion has to hand
@@ -69,11 +69,11 @@ def wordy []: nothing -> any {
 
 def built []: nothing -> list<record> { rows build (fleet) (fake locator) }
 
-# `--ctrl` uses the spelling nushell ACTUALLY emits — `keymodifiers(control)`,
-# a Debug format leaking into the record — because the documented `control` is
-# what the first version of `keys.nu` matched on, and every control key therefore
-# typed its own letter instead. `--ctrl-plain` is the documented spelling, so
-# both are asserted and neither can quietly stop working.
+# `--ctrl` uses the spelling nushell ACTUALLY emits — `keymodifiers(control)`, a
+# Debug format leaking into the record — because the documented `control` is
+# what the first version of `keys.nu` matched on, and every control key
+# therefore typed its own letter instead. `--ctrl-plain` is the documented
+# spelling, so both are asserted and neither can quietly stop working.
 def key [code: string, --ctrl, --ctrl-plain, --char]: nothing -> record {
     let mods = if $ctrl { ["keymodifiers(control)"] } else if $ctrl_plain { ["control"] } else { [] }
     { type: "key"
@@ -83,7 +83,7 @@ def key [code: string, --ctrl, --ctrl-plain, --char]: nothing -> record {
 }
 
 export def main [] {
-    # ── which agent comes first ──────────────────────────────────────────────
+    # ── which agent comes first ───────────────────────────────────────────────
     # A fleet list has exactly one useful order: whoever needs you most. Idle
     # sorts LAST rather than being hidden — an agent you have finished with is
     # still one you may want to go back to.
@@ -92,25 +92,25 @@ export def main [] {
                (built | get id) ["ddd" "bbb" "aaa" "ccc"])
         (check "every row carries its record, so a pick needs no second lookup"
                (built | first | get rec.name) "delta")
-        (check "an empty store makes no rows at all" (rows build [] (fake locator)) [])
+        (check "an empty session-store makes no rows at all" (rows build [] (fake locator)) [])
     ]
 
-    # ── what the locator supplies ────────────────────────────────────────────
+    # ── what the locator supplies ─────────────────────────────────────────────
     # The picker cannot know where an agent lives. It asks whatever claimed it,
     # and an agent nothing claims is still a row — just one with nowhere to go.
     let b = [
         (check "`place` comes from the locator that claimed the record"
-               (built | where id == "bbb" | get 0.place) "box/two")
-        (check "…and a record nothing claims has no place" (built | where id == "ddd" | get 0.place) "")
+               (built | where id == "bbb" | get 0.location-label) "box/two")
+        (check "…and a record nothing claims has no place" (built | where id == "ddd" | get 0.location-label) "")
         (check "a claimed record carries the locator that claimed it"
                (built | where id == "bbb" | get 0.via | is-not-empty) true)
         (check "…and an unclaimed one carries null, which is how the caller knows"
                (built | where id == "ddd" | get 0.via) null)
         (check "a locator answers THREE questions — `screen` went with the pane preview"
-               ((fake locator).fake | columns | sort) ["claims" "go" "info" "place"])
+               ((fake locator).fake | columns | sort) ["go" "info" "location-label" "owns"])
     ]
 
-    # ── the preview: what the agent last SAID ────────────────────────────────
+    # ── the preview: what the agent last SAID ─────────────────────────────────
     # Not what is on its terminal, which is what this used to dump (D58). A
     # message is markdown, so it goes through the same flattener the bar's
     # drawer uses — one rendering, one place to fix it.
@@ -133,7 +133,7 @@ export def main [] {
         (check "and an empty list previews nothing at all" (preview of null 4 40 | get rows) [])
     ]
 
-    # ── scrolling the preview (D63) ──────────────────────────────────────────
+    # ── scrolling the preview (D63) ───────────────────────────────────────────
     # A message is the one thing on this screen that holds more than it shows,
     # and the offset is CORRECTED HERE rather than by the keys: only the render
     # knows where a message ends, because `plain` is given a budget and stops
@@ -160,7 +160,7 @@ export def main [] {
                (preview of $long 4 40 2 | get at) 2)
     ]
 
-    # ── what to call an agent ────────────────────────────────────────────────
+    # ── what to call an agent ─────────────────────────────────────────────────
     let names = rows build [
         {id: "1", state: "idle", name: "said-so"}
         {id: "2", state: "idle", cwd: "/home/me/projects/thing"}
@@ -174,33 +174,34 @@ export def main [] {
                ($names | where id == "0123456789abcdef" | get 0.name) "01234567")
     ]
 
-    # ── the filter ───────────────────────────────────────────────────────────
+    # ── the filter ────────────────────────────────────────────────────────────
     # Substring, case-insensitive, and nothing cleverer: predictable beats
     # ranked when the list is a handful of rows.
     let d = [
-        (check "an empty query is everything" (rows narrow (built) "" | length) 4)
-        (check "a substring of the name narrows it" (rows narrow (built) "brav" | get id) ["bbb"])
-        (check "…and case does not matter" (rows narrow (built) "BRAV" | get id) ["bbb"])
+        (check "an empty query is everything" (rows filter (built) "" | length) 4)
+        (check "a substring of the name narrows it" (rows filter (built) "brav" | get id) ["bbb"])
+        (check "…and case does not matter" (rows filter (built) "BRAV" | get id) ["bbb"])
         (check "a state is a filter too, which is how you ask 'who is stuck'"
-               (rows narrow (built) "needs" | get id) ["ddd"])
-        (check "so is where it lives" (rows narrow (built) "box/one" | get id) ["aaa" "ccc"])
+               (rows filter (built) "needs" | get id) ["ddd"])
+        (check "so is where it lives" (rows filter (built) "box/one" | get id) ["aaa" "ccc"])
         (check "BUT NOT SOMETHING IT SAID — the filter can only match what you can see"
-               (rows narrow (built) "stuck on auth") [])
+               (rows filter (built) "stuck on auth") [])
         (check "…which is what stops a two-letter query matching kilobytes of old prose"
-               (rows narrow (built) "auth") [])
+               (rows filter (built) "auth") [])
         (check "matching nothing is an empty list, not an error"
-               (rows narrow (built) "zzzz") [])
+               (rows filter (built) "zzzz") [])
     ]
 
-    # ── THE SELECTION IS AN ID, NEVER AN INDEX ───────────────────────────────
-    # The headline, and the reason `settle` exists. The store is re-read every
-    # frame, so an agent changing state re-sorts the list WHILE YOU LOOK AT IT.
+    # ── THE SELECTION IS AN ID, NEVER AN INDEX ────────────────────────────────
+    # The headline, and the reason `keep-in-view` exists. The store is re-read
+    # every frame, so an agent changing state re-sorts the list WHILE YOU LOOK
+    # AT IT.
     # An index would leave the cursor pointing at whoever slid into that slot.
     let before = built
     let after = rows build (fleet | each {|r|
         if $r.id == "aaa" { $r | merge {state: "needs-attention"} } else { $r }
     }) (fake locator)
-    let held = rows settle {sel: "aaa", query: "", top: 0} $after 10
+    let held = rows keep-in-view {sel: "aaa", query: "", top: 0} $after 10
     let e = [
         (check "the agent was third before it changed state" (rows index-of $before {sel: "aaa"}) 2)
         (check "…and second after, because the list re-sorted under it"
@@ -210,57 +211,57 @@ export def main [] {
         (check "an index would have kept slot 2 — which is now A DIFFERENT AGENT"
                ($after | get 2 | get id) "bbb")
         (check "a selection that has gone falls to the top rather than erroring"
-               (rows settle {sel: "vanished", query: "", top: 0} $after 10 | get sel) "ddd")
+               (rows keep-in-view {sel: "vanished", query: "", top: 0} $after 10 | get sel) "ddd")
         (check "…and an empty list selects nothing at all"
-               (rows settle {sel: "aaa", query: "", top: 3} [] 10 | select sel top) {sel: "", top: 0})
+               (rows keep-in-view {sel: "aaa", query: "", top: 3} [] 10 | select sel top) {sel: "", top: 0})
         (check "`selected` hands back the whole row" (rows selected $after {sel: "bbb"} | get name) "bravo")
         (check "…and null when there is no such row" (rows selected $after {sel: "gone"}) null)
     ]
 
-    # ── scrolling ────────────────────────────────────────────────────────────
+    # ── scrolling ─────────────────────────────────────────────────────────────
     # `top` is the first visible row and moves only far enough to keep the
     # selection on screen.
     let many = rows build (0..7 | each {|i| {id: $"id($i)", state: "idle", name: $"agent($i)"} }) {}
     let f = [
         (check "a selection below the window drags it down"
-               (rows settle {sel: "id5", query: "", top: 0} $many 3 | get top) 3)
+               (rows keep-in-view {sel: "id5", query: "", top: 0} $many 3 | get top) 3)
         (check "…and one above drags it back up"
-               (rows settle {sel: "id1", query: "", top: 4} $many 3 | get top) 1)
+               (rows keep-in-view {sel: "id1", query: "", top: 4} $many 3 | get top) 1)
         (check "a window already showing the selection does not move"
-               (rows settle {sel: "id4", query: "", top: 3} $many 3 | get top) 3)
+               (rows keep-in-view {sel: "id4", query: "", top: 3} $many 3 | get top) 3)
         (check "a window past the end of a shrunken list is pulled back"
-               (rows settle {sel: "id0", query: "", top: 6} $many 3 | get top) 0)
+               (rows keep-in-view {sel: "id0", query: "", top: 6} $many 3 | get top) 0)
         (check "a list shorter than the window starts at the top"
-               (rows settle {sel: "id1", query: "", top: 0} ($many | first 2) 5 | get top) 0)
+               (rows keep-in-view {sel: "id1", query: "", top: 0} ($many | first 2) 5 | get top) 0)
     ]
 
-    # ── how the screen is divided ────────────────────────────────────────────
+    # ── how the screen is divided ─────────────────────────────────────────────
     # The list takes what it needs up to half of what is left; the preview takes
     # the rest, because the rows say WHICH agents exist and the preview says what
     # the one under the cursor wants from you.
     let g = [
         (check "four agents in sixteen rows: four for the list, the rest to the preview"
-               (frame layout {rows: 16, columns: 40} 4 | select list preview) {list: 4, preview: 7})
+               (layout measure {rows: 16, columns: 40} 4 | select list preview) {list: 4, preview: 7})
         (check "a crowd cannot take more than half"
-               (frame layout {rows: 16, columns: 40} 20 | select list preview) {list: 5, preview: 6})
+               (layout measure {rows: 16, columns: 40} 20 | select list preview) {list: 5, preview: 6})
         (check "an empty list still gets a line to say so"
-               (frame layout {rows: 16, columns: 40} 0 | select list preview) {list: 1, preview: 10})
+               (layout measure {rows: 16, columns: 40} 0 | select list preview) {list: 1, preview: 10})
         (check "a terminal with no room for a preview spends it all on the list"
-               (frame layout {rows: 6, columns: 40} 4 | select list preview) {list: 1, preview: 0})
+               (layout measure {rows: 6, columns: 40} 4 | select list preview) {list: 1, preview: 0})
         (check "…and one with no room at all does not go negative"
-               (frame layout {rows: 2, columns: 40} 4 | select list preview) {list: 1, preview: 0})
+               (layout measure {rows: 2, columns: 40} 4 | select list preview) {list: 1, preview: 0})
         (check "the width comes through for the rules and the clipping"
-               (frame layout {rows: 16, columns: 40} 4 | get width) 40)
+               (layout measure {rows: 16, columns: 40} 4 | get width) 40)
     ]
 
-    # ── THE WHOLE FRAME, LINE FOR LINE ───────────────────────────────────────
+    # ── THE WHOLE FRAME, LINE FOR LINE ────────────────────────────────────────
     # The reason `render` returns strings and never prints (D34, after the bar's
     # `message` and zellij's `commands`): an entire picker screen is a value, so
     # it can simply be compared.
-    let lay = frame layout {rows: 16, columns: 40} 4
-    let narrow_lay = frame layout {rows: 16, columns: 12} 4
-    let wide_lay = frame layout {rows: 16, columns: 120} 4
-    let shot = bare (frame render (built) {sel: "bbb", query: "", top: 0} $lay (say ["screen line 1" "screen line 2"]))
+    let lay = layout measure {rows: 16, columns: 40} 4
+    let narrow_lay = layout measure {rows: 16, columns: 12} 4
+    let wide_lay = layout measure {rows: 16, columns: 120} 4
+    let shot = bare (layout render (built) {sel: "bbb", query: "", top: 0} $lay (say ["screen line 1" "screen line 2"]))
     let h = [
         (check "the frame, exactly" $shot [
             "agents ❯"
@@ -278,50 +279,50 @@ export def main [] {
         (check "the marker is on the selected row and nowhere else"
                ($shot | where {|l| $l | str starts-with "> " } | length) 1)
         (check "moving the selection moves the marker"
-               (bare (frame render (built) {sel: "ccc", query: "", top: 0} $lay [])
+               (bare (layout render (built) {sel: "ccc", query: "", top: 0} $lay [])
                 | where {|l| $l | str starts-with "> " } | get 0 | str contains "charlie") true)
         (check "what you type is the header, which is where the cursor sits"
-               (bare (frame render (built) {sel: "bbb", query: "brav", top: 0} $lay []) | first) "agents ❯ brav")
-        # ── the bars (§9b.2, D64) ────────────────────────────────────────────
+               (bare (layout render (built) {sel: "bbb", query: "brav", top: 0} $lay []) | first) "agents ❯ brav")
+        # ── the bars (§9b.2, D64) ─────────────────────────────────────────────
         # The chrome says two things the list cannot: what the whole fleet is
         # doing, and how far into a message you have read.
         (check "the top bar tallies the fleet, most urgent first and zeroes left out"
-               (bare (frame render (built) {sel: "bbb", query: "", top: 0} $wide_lay []) | first
+               (bare (layout render (built) {sel: "bbb", query: "", top: 0} $wide_lay []) | first
                 | split row "\u{25cf}" | skip 1 | each {|p| $p | str trim } | str join " | ")
                "1 needs-attention | 1 awaiting | 1 working")
         (check "\u{2026}and idle is not one of them, because a zero is not news"
-               (bare (frame render (built) {sel: "bbb", query: "", top: 0} $wide_lay []) | first
+               (bare (layout render (built) {sel: "bbb", query: "", top: 0} $wide_lay []) | first
                 | str contains "idle") false)
         (check "THE TALLY IS THE FIRST THING TO GO when a terminal cannot hold both halves"
-               (bare (frame render (built) {sel: "bbb", query: "", top: 0} $narrow_lay []) | first) "agents \u{276f}")
+               (bare (layout render (built) {sel: "bbb", query: "", top: 0} $narrow_lay []) | first) "agents \u{276f}")
         (check "how far down the message you have read, but only once you have"
-               [ (bare (frame render (built) {sel: "bbb", query: "", top: 0, pv_top: 12} $wide_lay []) | last
+               [ (bare (layout render (built) {sel: "bbb", query: "", top: 0, pv_top: 12} $wide_lay []) | last
                   | str ends-with "\u{25be} 12")
-                 (bare (frame render (built) {sel: "bbb", query: "", top: 0, pv_top: 0} $wide_lay []) | last
+                 (bare (layout render (built) {sel: "bbb", query: "", top: 0, pv_top: 0} $wide_lay []) | last
                   | str contains "\u{25be}") ]
                [true false])
         (check "every binding is on the footer, so the only place to learn one is the screen"
-               (bare (frame render (built) {sel: "bbb", query: "", top: 0} $wide_lay []) | last)
+               (bare (layout render (built) {sel: "bbb", query: "", top: 0} $wide_lay []) | last)
                "\u{2191}\u{2193} move  ^j^k read  ^d^u page  enter jump  esc cancel  ^w clear")
         (check "a state wears its own colour \u{2014} the three the bar and the pane titles use"
-               (frame render (built) {sel: "zzz", query: "", top: 0} $lay [] | skip 2 | first 3
+               (layout render (built) {sel: "zzz", query: "", top: 0} $lay [] | skip 2 | first 3
                 | zip ["red" "magenta" "cyan"]
                 | each {|p| ($p | first) | str starts-with $"  (ansi ($p | last))" })
                [true true true])
-        (check "the caret lands just past what you typed" (frame caret {query: "brav"}) 14)
-        (check "…and at the prompt when nothing is typed" (frame caret {}) 10)
+        (check "the caret lands just past what you typed" (layout caret {query: "brav"}) 14)
+        (check "…and at the prompt when nothing is typed" (layout caret {}) 10)
     ]
 
-    # ── the frame cannot be made to overflow ─────────────────────────────────
+    # ── the frame cannot be made to overflow ──────────────────────────────────
     # A line that wraps pushes every row below it down, and the next repaint
     # homes to the top and stays wrong. Autowrap is off (`tty.nu`) and these are
     # the belts.
-    let nasty = bare (frame render (built) {sel: "bbb", query: "", top: 0} $narrow_lay (say [
+    let nasty = bare (layout render (built) {sel: "bbb", query: "", top: 0} $narrow_lay (say [
         "a\u{7}b\u{1b}[31mc"          # a bell and an escape sequence
         "tab\there"
         "0123456789abcdefghij"
     ]))
-    let short_lay = frame layout {rows: 8, columns: 40} 4
+    let short_lay = layout measure {rows: 8, columns: 40} 4
     let i = [
         (check "every line is clipped to the terminal's width"
                ($nasty | each {|l| $l | str length --grapheme-clusters } | math max) 12)
@@ -329,30 +330,30 @@ export def main [] {
                ($nasty | where {|l| ($l | str contains "\u{7}") or ($l | str contains "\u{1b}") } | length) 0)
         (check "…and a tab, which one of would carry a line past the right edge"
                ($nasty | where {|l| $l | str contains "\t" } | length) 0)
-        # ── colour (§9b.2, in part) ──────────────────────────────────────────
+        # ── colour (§9b.2, in part) ───────────────────────────────────────────
         # The preview's two kinds are painted and nothing else is. The order is
         # the assertion that matters: CLIPPED FIRST, COLOURED AFTER, so a line
         # is still cut by what a reader sees and an escape in an agent's own
         # text still cannot survive `clean`.
         (check "a heading in the preview is painted, and a paragraph is left to the terminal"
-               (frame render (built) {sel: "bbb", query: "", top: 0} $lay
+               (layout render (built) {sel: "bbb", query: "", top: 0} $lay
                     [{k: "head", t: "H"} {k: "text", t: "p"}]
                 | skip 7 | first 2 | each {|l| $l | str contains "\u{1b}" })
                [true false])
         (check "…and the colour goes on AFTER the clip, so a painted row is still cut to the pane"
-               (frame render (built) {sel: "bbb", query: "", top: 0} $narrow_lay
+               (layout render (built) {sel: "bbb", query: "", top: 0} $narrow_lay
                     [{k: "head", t: "0123456789abcdefghij"}]
                 | each {|l| $l | ansi strip | str length --grapheme-clusters } | math max)
                12)
         (check "the frame is never taller than the terminal"
-               (frame render (built) {sel: "bbb", query: "", top: 0} $short_lay (say ["x" "y" "z"]) | length) 8)
+               (layout render (built) {sel: "bbb", query: "", top: 0} $short_lay (say ["x" "y" "z"]) | length) 8)
         (check "a filter that matches nothing says THAT, so backspace is the obvious move"
-               (bare (frame render [] {sel: "", query: "zz", top: 0} $lay []) | get 2) "  (nothing matches)")
-        (check "…and an empty store says something else, because the fix is different"
-               (bare (frame render [] {sel: "", query: "", top: 0} $lay []) | get 2) "  (no agents)")
+               (bare (layout render [] {sel: "", query: "zz", top: 0} $lay []) | get 2) "  (nothing matches)")
+        (check "…and an empty session-store says something else, because the fix is different"
+               (bare (layout render [] {sel: "", query: "", top: 0} $lay []) | get 2) "  (no agents)")
     ]
 
-    # ── the repaint ──────────────────────────────────────────────────────────
+    # ── the repaint ───────────────────────────────────────────────────────────
     # Nothing is ever erased in advance: the cursor homes, each line is written
     # over what was there and finished with EL, and one ED takes away the rows a
     # shorter frame left behind. So there is no blank moment to see.
@@ -372,7 +373,7 @@ export def main [] {
                (tty restore | str starts-with "\u{1b}[?7h") true)
     ]
 
-    # ── what a key means ─────────────────────────────────────────────────────
+    # ── what a key means ──────────────────────────────────────────────────────
     let rs = built
     let at_b = {sel: "bbb", query: "", top: 0}
     # The PREVIEW's height, which is the only thing a half page can be half of.
@@ -386,7 +387,7 @@ export def main [] {
                (keys step (key "up") {sel: "ddd", query: "", top: 0} $rs $PAGE | get view.sel) "ddd")
         (check "…and so is the bottom"
                (keys step (key "down") {sel: "ccc", query: "", top: 0} $rs $PAGE | get view.sel) "ccc")
-        # ── scrolling the message (D63) ──────────────────────────────────────
+        # ── scrolling the message (D63) ───────────────────────────────────────
         # A terminal sends ctrl-j as LF and ENTER as CR, which is the whole
         # reason vim's pair is available here — probed on a real pty: 0x0a comes
         # back as char `j` with control held, 0x0d as `enter` with nothing.
@@ -449,12 +450,12 @@ export def main [] {
                (keys step {type: "resize", width: 80, height: 24} $at_b $rs $PAGE | get view) $at_b)
     ]
 
-    # ── the locator table ────────────────────────────────────────────────────
+    # ── the locator table ─────────────────────────────────────────────────────
     # One row per integration that can answer the three questions. The RECORD
-    # picks its own — not the config file, which says what the store is pushed to
-    # and nothing else (D47).
+    # picks its own — not the config file, which says what the store is pushed
+    # to and nothing else (D47).
     let m = [
-        (check "zellij ships as a locator" (locators known) ["zellij"])
+        (check "zellij ships as a locator" (locators integration-registry-names) ["zellij"])
         (check "a record naming a tool is claimed by it"
                (locators owner {fake: {where: "box/one"}} --table (fake locator) | is-not-empty) true)
         (check "…and one naming none is claimed by nobody"

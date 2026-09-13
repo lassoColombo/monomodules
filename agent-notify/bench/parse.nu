@@ -3,9 +3,9 @@
 # the entry point should be a script or a module import.
 #
 # The floor group showed a leaf import is nearly free (+0.04ms for 26 lines,
-# +0.82ms for 108), which suggests a slope of a few µs per line. `hot.nu` will be
-# a few hundred lines, so the slope — not the intercept — is what sets its size
-# budget. Synthetic modules of known size measure it directly, rather than
+# +0.82ms for 108), which suggests a slope of a few µs per line. `hot.nu` will
+# be a few hundred lines, so the slope — not the intercept — is what sets its
+# size budget. Synthetic modules of known size measure it directly, rather than
 # extrapolating from three real files whose contents differ in kind.
 
 use harness.nu *
@@ -14,8 +14,8 @@ const REPO = path self ../..
 const DIR = ($nu.temp-dir | path join "agent-notify-bench-synth")
 
 # A function of roughly the shape agent-notify's code has: params, a couple of
-# lets, a conditional, some string work. Not a comment farm and not a one-liner —
-# comments are cheap to lex and would flatter the slope.
+# lets, a conditional, some string work. Not a comment farm and not a one-liner
+# — comments are cheap to lex and would flatter the slope.
 def one-func [i: int] {
     [ $"export def f($i) [name: string, n: int] {"
       "    let base = $name | str trim | str downcase"

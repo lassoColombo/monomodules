@@ -4,16 +4,16 @@ A ground-up rebuild of `ai/agent-notify`, developed alongside the original and
 promoted over it when finished — which it now is: the original is deleted and
 this module carries its name (D17). This file is the contract: the principles it
 was built to, the measurements those principles were tested against, the
-decisions taken, and — just as importantly — the options considered and rejected,
-so none of them get re-litigated by accident.
+decisions taken, and — just as importantly — the options considered and
+rejected, so none of them get re-litigated by accident.
 
 Status markers used throughout:
 
 - **LOCKED** — decided. Do not reopen without new evidence.
 - **PROPOSED** — recommended from measured data, awaiting explicit sign-off.
 - **OPEN** — genuinely undecided.
-- **REVISED** — was right about the problem, wrong about the answer. The row says
-  which half survived.
+- **REVISED** — was right about the problem, wrong about the answer. The row
+  says which half survived.
 - **SUPERSEDED** — overtaken by a later decision, which the row names. Kept
   because a decision that quietly disappears gets made again.
 
@@ -21,39 +21,40 @@ Status markers used throughout:
 
 ## 1. Principles
 
-**P1. Everything lives in the module.** All logic, all graphics, for every tool —
-zellij, SketchyBar, Claude Code, and any client added later. Nothing of substance
-may live in `~/.config/sketchybar/plugins/*.sh`, in `sketchybarrc`, or in a shell
-glue script. The bar's config gets exactly one line: a call into the module.
+**P1. Everything lives in the module.** All logic, all graphics, for every tool
+— zellij, SketchyBar, Claude Code, and any client added later. Nothing of
+substance may live in `~/.config/sketchybar/plugins/*.sh`, in `sketchybarrc`, or
+in a shell glue script. The bar's config gets exactly one line: a call into the
+module.
 
 **P2. All logic is written in nushell.** No bash, no other language, anywhere in
 the module. This is a hard constraint and it was tested before being accepted —
 see §2.
 
 **P3. It must be efficient and fast to load.** Performance is a first-class
-concern, discussed explicitly and measured rather than assumed. Every decision in
-§4 that trades one cost against another cites a number from §3.
+concern, discussed explicitly and measured rather than assumed. Every decision
+in §4 that trades one cost against another cites a number from §3.
 
-**P4. The on-disk store is the core.** Everything else is a projection of it. The
-store must offer (a) powerful and precise ways to write it, and (b) submodules
-that integrate clients onto it — zellij, SketchyBar, and others — as **opt-in**
-integrations.
+**P4. The on-disk session-store is the core.** Everything else is a projection
+of it. The session-store must offer (a) powerful and precise ways to write it,
+and (b) submodules that integrate clients onto it — zellij, SketchyBar, and
+others — as **opt-in** integrations.
 
-**P5. Agent-agnostic.** This is not a Claude Code tool. *Every* agent must be able
-to call the entry points — another CLI agent, a script, a cron job, something not
-yet written. Claude is one client among N, and its payload adapter is a
-convenience, not the path. Three things follow, and they are design constraints
-rather than aspirations:
+**P5. Agent-agnostic.** This is not a Claude Code tool. *Every* agent must be
+able to call the entry points — another CLI agent, a script, a cron job,
+something not yet written. Claude is one client among N, and its payload adapter
+is a convenience, not the path. Three things follow, and they are design
+constraints rather than aspirations:
 
 - **The write API is a public interface, not an admin convenience.** A foreign
-  agent talks to us by running a command, so the store's command surface needs
-  typed flags *and* a JSON body on stdin — the lingua franca for an agent written
-  in bash or python — with clear errors and machine-readable output.
+  agent talks to us by running a command, so the session-store's command set
+  needs typed flags *and* a JSON body on stdin — the lingua franca for an agent
+  written in bash or python — with clear errors and machine-readable output.
 - **Identifiers are opaque.** The core may not assume a UUID or any other shape.
-- **The state vocabulary is the one thing the core must close** (§4.1). Everything
-  else opens up; states cannot, because surfaces render them. A shared vocabulary
-  is what an adapter adapts *to* — it is the mechanism that makes P5 work, not a
-  limit on it.
+- **The state vocabulary is the one thing the core must close** (§4.1).
+  Everything else opens up; states cannot, because displays render them. A
+  shared vocabulary is what an adapter adapts *to* — it is the mechanism that
+  makes P5 work, not a limit on it.
 
 ---
 
@@ -76,9 +77,9 @@ A single agent cannot make this path hot, for a structural reason no engineering
 will change: emitting a tool call costs the model seconds. Only concurrency can,
 and the all-time worst concurrency observed is six events in one second.
 
-At that worst-ever burst an all-nushell hot path costs ~90ms of CPU — **9% of one
-core, for one second, three times in three weeks**. The bash gate's saving in that
-same second is 2.3% of a core. It was optimising a non-problem.
+At that worst-ever burst an all-nushell hot path costs ~90ms of CPU — **9% of
+one core, for one second, three times in three weeks**. The bash gate's saving
+in that same second is 2.3% of a core. It was optimising a non-problem.
 
 **Consequence: the bash fast path is deleted, and `PostToolUse` keeps its exact
 semantics.** No TTL heuristic, no demotion timer, no lag anywhere.
@@ -111,7 +112,7 @@ rounds unless noted. Harness: see §8.
 | `-c` payload | Δ over empty (ms) |
 |---|---|
 | leaf `lib/state.nu` (1.0KB) | +0.04 |
-| leaf `lib/store.nu` (1.9KB) | +0.30 |
+| leaf `lib/session-store.nu` (1.9KB) | +0.30 |
 | leaf `lib/view.nu` (4.5KB) | +0.82 |
 | `use ai/agent-notify list` — *selective import* | +15.6 |
 | `use ai/agent-notify` — whole module | ≈ +17 |
@@ -128,7 +129,7 @@ Slope from synthetic modules: **0.26 ms/KB of code, 0.029 ms/KB of comments**
 > 2. **Comments are ~9× cheaper than code**, so this repo's documentation style
 >    costs essentially nothing and is preserved without compromise.
 > 3. **Deep submodule nesting is free** as long as the hot entry's dependency cone
->    stays narrow — the modularization preference and performance do not conflict.
+>    stays filter — the modularization preference and performance do not conflict.
 > 4. **`use` is parse-time.** Nushell: *"module files and their paths must be
 >    available before your script is run as parsing occurs before anything is
 >    evaluated."* There is no runtime import. This single fact shapes §4.4.
@@ -137,11 +138,11 @@ Slope from synthetic modules: **0.26 ms/KB of code, 0.029 ms/KB of comments**
 
 | | ms |
 |---|---|
-| `store get` (one record) | 0.08 |
+| `session-store get` (one record) | 0.08 |
 | `open --raw \| from json` | 0.06 |
-| `store put` (atomic: save + mv) | 0.26 |
+| `session-store put` (atomic: save + mv) | 0.26 |
 | `to json` (one record) | 0.04 |
-| `store list` | 0.39 (1 rec) → 3.48 (50 recs), ~0.065/record |
+| `session-store list` | 0.39 (1 rec) → 3.48 (50 recs), ~0.065/record |
 
 ### Config file read — free, any format
 
@@ -178,8 +179,8 @@ Slope from synthetic modules: **0.26 ms/KB of code, 0.029 ms/KB of comments**
 | the bar repaint that follows | **+34.6** |
 
 A v1 state change therefore costs ~93ms across two nu processes. Of the 86.8ms
-writer, **47.5ms is avoidable subprocess work**: `list-panes` 11.5 + `rename-pane`
-11 + pandoc 25.
+writer, **47.5ms is avoidable subprocess work**: `list-panes` 11.5 +
+`rename-pane` 11 + pandoc 25.
 
 ### v2 projection
 
@@ -190,21 +191,21 @@ writer, **47.5ms is avoidable subprocess work**: `list-panes` 11.5 + `rename-pan
 | an event we do not subscribe to | 20.9 | measured, step 2 |
 | + a pane rename, once zellij lands | ~33 | projected (11ms per zellij call) |
 
-Against v1: **2.6× cheaper** on a state change (58.7ms), **3.9×** when v1 pays for
-pandoc (86.8ms), and that is before counting the second nu process v1 spawns to
-repaint (+34.6ms) which v2 does not have.
+Against v1: **2.6× cheaper** on a state change (58.7ms), **3.9×** when v1 pays
+for pandoc (86.8ms), and that is before counting the second nu process v1 spawns
+to repaint (+34.6ms) which v2 does not have.
 
 The honest other side: for the COMMON event — a redundant `PostToolUse` — v1's
-bash gate costs 3.9ms and v2 costs 21.3ms. That is the price of P2, and it is the
-trade §2 measured before accepting: at the worst burst ever observed (6 in one
-second) it is 13% of one core for one second, and at the real rate it is 37ms of
-extra CPU per agent per minute — 0.06% of a core.
+bash gate costs 3.9ms and v2 costs 21.3ms. That is the price of P2, and it is
+the trade §2 measured before accepting: at the worst burst ever observed (6 in
+one second) it is 13% of one core for one second, and at the real rate it is
+37ms of extra CPU per agent per minute — 0.06% of a core.
 
 > Measured under load, with the floor drifted to ~14.6ms from the 12.86ms of §3
 > (this machine was busy running the suites). On a quiet machine subtract ~2ms.
 
 > Revised after step 1, upward and honestly. The original projection assumed a
-> ~3ms hot cone; the store alone measures **+1.76ms** of parse, so a realistic
+> ~3ms hot cone; the session-store alone measures **+1.76ms** of parse, so a realistic
 > full cone (core + view + dispatch + two integration hot halves) is 4–6ms rather
 > than 3. The conclusion is unaffected — v1's single `use ai` costs +19.4ms — but
 > the budget is tighter than first claimed, and every later step should watch it.
@@ -213,30 +214,31 @@ extra CPU per agent per minute — 0.06% of a core.
 
 ## 4. Architecture
 
-### 4.1 The store is the core — and it holds facts, not decisions
+### 4.1 The session-store is the core — and it holds facts, not decisions
 
 ```
 $XDG_DATA_HOME/agent-notify/
   agents/<id>.json          one file per agent instance
 ```
 
-One namespace. One file per agent, so concurrent agents never contend; writes are
-temp+rename, so a reader never sees half a record. (Both inherited from v1, which
-got this right.)
+One namespace. One file per agent, so concurrent agents never contend; writes
+are temp+rename, so a reader never sees half a record. (Both inherited from v1,
+which got this right.)
 
 **Records hold facts. Display decisions are derived at read time.** v1 bakes a
-decision into storage — an eight-line ladder picks *which* base name wins, freezes
-it into `pane_name`, and guards it with `pane_locked`. v2 stores both facts
-(`name`, what the agent called itself, write-once; `name_auto`, the cwd basename,
-last-wins) and resolves precedence in the view. Derivation costs 0.04ms, so there
-is no reason to bake a decision into storage where a later change of mind would
-need a migration to undo.
+decision into storage — an eight-line ladder picks *which* base name wins,
+freezes it into `pane_name`, and guards it with `pane_locked`. v2 stores both
+facts (`name`, what the agent called itself, write-once; `name_auto`, the cwd
+basename, last-wins) and resolves precedence in the view. Derivation costs
+0.04ms, so there is no reason to bake a decision into storage where a later
+change of mind would need a migration to undo.
 
-**The schema is open, with a small core and one namespace per owner.** A closed
-schema would make the core depend on every integration's fields — adding an
-integration would mean editing core — which contradicts P4's opt-in requirement.
-So the core guarantees a handful of fields and owns their policy; everything else
-belongs to a namespace named after its owner, integration or client alike.
+**The session-schema is open, with a small core and one namespace per owner.** A
+closed session-schema would make the core depend on every integration's fields —
+adding an integration would mean editing core — which contradicts P4's opt-in
+requirement. So the core guarantees a handful of fields and owns their policy;
+everything else belongs to a namespace named after its owner, integration or
+client alike.
 
 ```nu
 { # ── core-owned ──────────────────────────────────────────────────────────
@@ -259,108 +261,114 @@ belongs to a namespace named after its owner, integration or client alike.
 ```
 
 **Identity is the agent, not the pane.** v1 keys on `(zellij_session, pane_id)`,
-so its store cannot exist without zellij — incompatible with zellij being opt-in.
-The key is the reporting agent's own session id, whatever shape that takes (P5).
+so its session-store cannot exist without zellij — incompatible with zellij
+being opt-in. The key is the reporting agent's own session id, whatever shape
+that takes (P5).
 
-Because the id is opaque, the **filename derivation must be injective**: anything
-outside `[A-Za-z0-9._-]` is percent-encoded, so the common case stays greppable
-and no two ids can collide onto one file. (v1's `str replace '/' '_'` collides
-`a/b` with `a_b`.) The record carries its own `id`, so a filename never needs
-decoding.
+Because the id is opaque, the **filename derivation must be injective**:
+anything outside `[A-Za-z0-9._-]` is percent-encoded, so the common case stays
+greppable and no two ids can collide onto one file. (v1's `str replace '/' '_'`
+collides `a/b` with `a_b`.) The record carries its own `id`, so a filename never
+needs decoding.
 
 **One guarantee the pane key gave us for free is now merely a fact:** "one pane,
-one agent" can be violated — a crashed session's stale record and a fresh one can
-both claim pane 3. The core does not resolve this, because the core must not know
-what a pane is; the zellij projection picks the live record and the janitor drops
-the dead one.
+one agent" can be violated — a crashed session's stale record and a fresh one
+can both claim pane 3. The core does not resolve this, because the core must not
+know what a pane is; the zellij projection picks the live record and the
+session-store-garbage-collector drops the dead one.
 
 ### 4.2 Writing — `patch` and the `changed` flag
 
 ```nu
-store get   <id>                → record | null
-store patch <id> <changes>      → {changed: bool, before: record, after: record}
-store set   <id> <record>       → replace wholesale
-store drop  <id>
-store list  [--where <closure>] → all records
+session-store get   <id>                → record | null
+session-store patch <id> <changes>      → {changed, before, after}
+session-store set   <id> <record>       → replace wholesale
+session-store end   <id>
+session-store list  [--where <closure>] → all records
 ```
 
-**`patch` returning `changed` is the load-bearing decision of the whole design.**
-It performs the read-merge-write atomically, enforces field policy, and reports
-whether the world actually moved — comparing *semantic* fields only, ignoring the
-`updated_at`/`state_since` stamps it sets itself.
+**`patch` returning `changed` is the load-bearing decision of the whole
+design.** It performs the read-merge-write atomically, enforces field policy,
+and reports whether the world actually moved — comparing the *comparable*
+fields only, ignoring the stamps it sets itself.
 
 That one boolean replaces three separate mechanisms in v1 — the bash fast-path
-gate, the `working` verb's early return, and the render-side model cache — with a
-single check in the one place able to answer it. When it comes back false the
+gate, the `working` verb's early return, and the render-side model cache — with
+a single check in the one place able to answer it. When it comes back false the
 event ends: no zellij, no sketchybar, ~15ms, nothing touched.
 
-Field policy is the only cleverness the store gets, and it is a handful of lines:
-the schema names write-once fields, `patch` drops writes to a field already set,
-and it stamps `state_since` only when `state` genuinely changes.
+Field policy is the only cleverness the session-store gets, and it is a handful
+of lines: the session-schema names write-once fields, `patch` drops writes to a
+field already set, and it stamps `state_since` only when `state` genuinely
+changes.
 
 ### 4.3 Reading — one contract, per integration
 
 ```nu
-project [records: list<record>]     # paint what changed. Never reads the store.
+render-items [records: list<record>]   # paint what changed. Never reads it.
 ```
 
-The core reads the store **once** and hands the same snapshot to every enabled
-integration — not for the 0.39ms, but because it guarantees every surface paints
-the same instant. An integration that never reads the store is also trivially
-testable: call `project` with a hand-written list, no agent, no hook, no zellij.
+The core reads the session-store **once** and hands the same snapshot to every
+enabled integration — not for the 0.39ms, but because it guarantees every
+display paints the same instant. An integration that never reads the
+session-store is also trivially testable: call `render-items` with a
+hand-written list, no agent, no hook, no zellij.
 
 Ordering rules:
 
-1. **Persist first, project after.** A projection failure must never lose a fact.
+1. **Persist first, project after.** A projection failure must never lose a
+   fact.
 2. **Each integration is wrapped in `try`** — a dead zellij cannot stop the bar.
-3. **`patch` does not dispatch.** Otherwise `core/store.nu` would depend on the
-   integrations and stop being a cheap leaf that anything can import. The *entry
-   point* sequences patch-then-dispatch, so a CLI write projects exactly like a
-   hook does and the surfaces can never diverge from the store.
+3. **`patch` does not dispatch.** Otherwise `core/session-store.nu` would depend
+   on the integrations and stop being a cheap leaf that anything can import. The
+   *entry point* sequences patch-then-dispatch, so a CLI write projects exactly
+   like a hook does and the displays can never diverge from the session-store.
 
 ### 4.4 Hot and cold — the layout consequence of parse-time `use`
 
 Because the hot entry pays for everything it imports, every integration splits
-into a hot half and a cold half **at file boundaries**, by one question: *does an
-event need this?*
+into a hot half and a cold half **at file boundaries**, by one question: *does
+an event need this?*
 
 ```
 agent-notify/
-  mod.nu                    facade — re-exports the public surface
+  mod.nu                    facade — re-exports the public commands
   hot.nu                    THE event entry. Narrow cone, nothing cold reachable.
-  cli.nu             COLD   human/admin command surface
+  cli.nu             COLD   human/admin command set
   core/
-    schema.nu               record shape, states, field policy, version
+    session-schema.nu       record shape, states, field policy, version
     paths.nu                XDG paths
-    store.nu                get/patch/set/drop/list — pure state, no I/O beyond it
+    session-store.nu        get/patch/set/end/list — pure state, no I/O beyond it
     config.nu               read/normalize/validate the YAML (strict)
     dispatch.nu             fan out to enabled integrations
-    janitor.nu       COLD   liveness + reconciliation (the 30s timer)
-  view/                     presentation-neutral derivation shared by all surfaces
+    session-store-garbage-collector.nu
+                     COLD   liveness + reconciliation (the 30s timer)
+  view/                     presentation-neutral derivation shared by all displays
   clients/
-    claude.nu               hook payload → store changes
+    claude.nu               hook payload → session-store changes
   integrations/
     zellij/
-      project.nu     HOT    titles
+      render.nu      HOT    titles
       admin.nu       COLD   liveness source, jump, install
     sketchybar/
-      project.nu     HOT    model → one message
+      render.nu      HOT    model → one message
       items.nu       HOT    pure model→args builders
       theme.nu       HOT    palette/geometry, defaults overridable from config
-      install.nu     COLD   item pool, click/hover wiring, teardown
+      install.nu     COLD   item pool, click/hover help-setup, teardown
     picker/          COLD   the terminal drawer (`browse`)
 ```
 
-Hot cone budget: **4–6ms**, of which the store already spends 1.76 (measured in
-step 1). Every KB of cold code kept out of it is 0.26ms — so the split has a
-number behind it, not just taste — and comments are ~9× cheaper than code, so the
-documentation is not what costs.
+Hot cone budget: **4–6ms**, of which the session-store already spends 1.76
+(measured in step 1). Every KB of cold code kept out of it is 0.26ms — so the
+split has a number behind it, not just taste — and comments are ~9× cheaper than
+code, so the documentation is not what costs.
 
 **Opt-in is about behaviour, not parse cost.** `use` being parse-time means the
 hot entry imports every integration's hot half unconditionally; config gates the
-*calls*. A disabled integration touches nothing and may be absent from the machine
-entirely, but it still costs its ~1ms of parse. Making that zero would require a
-generated entry point, which we are not doing unless numbers ever demand it.
+*calls*. A disabled integration touches nothing and may be absent from the
+machine entirely, but it still costs its ~1ms of parse. Making that zero would
+require a generated entry point, which we are not doing unless numbers ever
+demand it.
 
 ### 4.5 Configuration
 
@@ -372,12 +380,12 @@ clean fallback, because `open` is a runtime read.
 
 This deliberately departs from the house convention (`$env.gg_config`,
 `$env.kubebridge_config`, `$env.ai_config`) for a principled reason worth
-recording in the module header: those modules are typed at a prompt by a human in
-a configured shell. agent-notify is invoked by Claude Code, by sketchybar, by
+recording in the module header: those modules are typed at a prompt by a human
+in a configured shell. agent-notify is invoked by Claude Code, by sketchybar, by
 zellij — processes with no shell config, and `nu -n` cannot see `$env` set in
-`config.nu`. A `source`-based bridge would work but is parse-time: a missing file
-becomes a parse failure, and the path cannot be chosen at runtime. `open` has
-neither problem and costs 0.06ms.
+`config.nu`. A `source`-based bridge would work but is parse-time: a missing
+file becomes a parse failure, and the path cannot be chosen at runtime. `open`
+has neither problem and costs 0.06ms.
 
 **What stays in `config.nu`: nothing.** This was written expecting the v1
 arrangement to survive — `$env.ai_config.picker` (skim) and `.render` (bat),
@@ -385,17 +393,18 @@ closures wired in by `module-hooks.nu`. Both are gone (D48, D54): the picker has
 no engine to swap and nothing to render, so there is no code in the env and no
 hook to wire. Data in the file, and only the file.
 
-Colours live in the config file. Validation is **strict**: an unknown integration
-name or a malformed entry is an error with a helpful message, not a silent no-op,
-because a hand-edited file makes typos likelier than an env record does. A
-`config show` command prints the resolved record and the file it came from.
+Colours live in the config file. Validation is **strict**: an unknown
+integration name or a malformed entry is an error with a helpful message, not a
+silent no-op, because a hand-edited file makes typos likelier than an env record
+does. A `config show` command prints the resolved record and the file it came
+from.
 
 ### 4.6 Clients — one module per agent
 
-The agents that might report into the store agree on almost nothing. Surveyed
-before committing to a shape:
+The agents that might report into the session-store agree on almost nothing.
+Surveyed before committing to a shape:
 
-| agent | wiring | payload transport | event named by | identity | reply contract | states reachable |
+| agent | help-setup | payload transport | event named by | current-session | reply contract | states reachable |
 |---|---|---|---|---|---|---|
 | Claude Code | `settings.json` hooks, one per event | **stdin** JSON | our argv | `session_id` + env var | silence fine; exit 2 blocks | all four |
 | Codex `hooks` | `hooks.json` / `[hooks]` | stdin JSON | `hook_event_name` *in* the payload | `session_id` | silence fine; exit 2 blocks | all four |
@@ -407,48 +416,52 @@ before committing to a shape:
 | Aider | `notifications_command` | **nothing** | implicit | **none** | — | `awaiting` only |
 
 Five axes vary: **transport**, **how the event is named**, **field naming and
-identity**, **the reply contract**, and **how much of our state vocabulary the
-agent can even reach**. A declarative mapping table could encode the first three.
-It cannot encode the fourth (Gemini must print `{}` where Claude must print
-nothing), and it cannot encode Aider, which supplies no identity at all and needs
-its client to invent one. Encoding all of it would have produced a worse nushell.
+current-session**, **the reply contract**, and **how much of our state
+vocabulary the agent can even reach**. A declarative mapping table could encode
+the first three. It cannot encode the fourth (Gemini must print `{}` where
+Claude must print nothing), and it cannot encode Aider, which supplies no
+current-session at all and needs its client to invent one. Encoding all of it
+would have produced a worse nushell.
 
 So: **one file per agent**, exposing three things.
 
 ```nu
-export const INFO = {name, title, transport, states}   # for `agent-notify clients`
-export def map [event: string, payload: record] -> operation   # PURE — where the thinking is
-export def main [...]                                          # the entry; owns the peculiar parts
+export const INFO = {name, title, transport, states}  # for `agent-notify clients`
+export def to-operation [event: string, payload: record] -> operation
+                                                      # PURE — the thinking
+export def main [...]                                 # the entry; the peculiar parts
 ```
 
-`map` is a pure function, which is why 30 of Claude's 37 assertions need no store,
-no hook and no agent. `main` owns transport, reply and exit code — the parts that
-are strange per agent, expressed where strange is cheap.
+`to-operation` is a pure function, which is why 30 of Claude's 37 assertions
+need no session-store, no hook and no agent. `main` owns transport, reply and
+exit code — the parts that are strange per agent, expressed where strange is
+cheap.
 
 **Nothing registers a client.** The agent's own configuration names the file
 directly, so a client works the moment it exists. `clients/mod.nu` lists the
-shipped ones for `agent-notify clients` and for nothing else; an entry point
-imports exactly the one client it is for and pays to parse no other.
+integration-registry ones for `agent-notify clients` and for nothing else; an
+entry point imports exactly the one client it is for and pays to parse no other.
 
-**A half-wired agent is worse than an unwired one.** Codex shipped here as a
-`notify` client first, and `notify` fires once, when a turn ends. That reached one
-of the four states, so a Codex record read `awaiting` from its first turn to its
-last — true only where it happened to coincide with reality, and wrong every
-second the agent was working. Nothing was malformed: a legal state, a legal
-client, validation passing. The store has no way to say *I don't know*, so a
-one-sided hook writes a confident fact that outlives its truth, and the counter a
-surface exists to show — "2 agents waiting for you" — stops being worth a glance.
-The order of preference when an agent under-reports:
+**A half-wired agent is worse than an unwired one.** Codex integration-registry
+here as a `notify` client first, and `notify` fires once, when a turn ends. That
+reached one of the four states, so a Codex record read `awaiting` from its first
+turn to its last — true only where it happened to coincide with reality, and
+wrong every second the agent was working. Nothing was malformed: a legal state,
+a legal client, validation passing. The session-store has no way to say *I don't
+know*, so a one-sided hook writes a confident fact that outlives its truth, and
+the counter a display exists to show — "2 agents waiting for you" — stops being
+worth a glance. The order of preference when an agent under-reports:
 
 1. **Fix the transport.** If a state is reachable at all, carry the fact rather
    than a guess about it. Codex's hooks reach all four, which is what the client
    uses now.
-2. **Let the surface read `INFO.states`.** Every record names its `client`, so a
-   surface can join to that client's declared reach and decline to count what it
-   cannot know. This is what makes the field load-bearing rather than decorative,
-   and it is the only answer for an agent like Aider that supplies nothing.
-3. **Decay from `state_since`.** Catches the opposite failure — an agent stuck in
-   `working` because its end-of-turn hook never fired. Useless for this one:
+2. **Let the display read `INFO.states`.** Every record names its `client`, so a
+   display can join to that client's declared reach and decline to count what it
+   cannot know. This is what makes the field load-bearing rather than
+   decorative, and it is the only answer for an agent like Aider that supplies
+   nothing.
+3. **Decay from `state_since`.** Catches the opposite failure — an agent stuck
+   in `working` because its end-of-turn hook never fired. Useless for this one:
    `awaiting` is a resting state, so age says nothing against it.
 
 **One transport per agent**, even when the agent offers several. Codex has both
@@ -458,18 +471,19 @@ both would risk two records for one agent: the same pane counted as working and
 awaiting at once. A client takes the transport that reaches the most states and
 ignores the rest.
 
-**Wiring is printed, not applied.** `agent-notify clients wiring codex` prints
-the block to paste. Merging into four foreign configs in three formats — with
-backups, pre-existing entries and an uninstall path — is a great deal of blast
-radius for the convenience of not pasting a block yourself.
+**Setup help is printed, not applied.** `agent-notify clients help-setup codex`
+prints the block to paste. Merging into four foreign configs in three formats —
+with backups, pre-existing entries and an uninstall path — is a great deal of
+blast radius for the convenience of not pasting a block yourself.
 
 ### 4.6b Liveness — proving an agent is gone
 
-Records are dropped by `SessionEnd`, so the only leaks come from agents that never
-got to say goodbye: a killed process, a crash, a closed pane, a closed terminal.
+Records are dropped by `SessionEnd`, so the only leaks come from agents that
+never got to say goodbye: a killed process, a crash, a closed pane, a closed
+terminal.
 
-**An agent is a process.** If its process is gone, the agent is gone. Every other
-signal is a proxy, and every proxy is wrong somewhere:
+**An agent is a process.** If its process is gone, the agent is gone. Every
+other signal is a proxy, and every proxy is wrong somewhere:
 
 | proxy | wrong when |
 |---|---|
@@ -493,86 +507,96 @@ steps is not fixed (an agent running the command directly has one fewer), so we
 climb until we meet the name **the client declares** — `process: "claude"` in
 `clients/claude.nu`, which is where agent-specific knowledge already lives.
 `$env.AGENT_NOTIFY_PID` short-circuits the walk, the same escape hatch
-`AGENT_NOTIFY_ID` gives for identity (P5).
+`AGENT_NOTIFY_ID` gives for current-session (P5).
 
 Stored as `proc: {pid, started}` at `SessionStart` — where it can be new — and
-looked up again on `UserPromptSubmit`, once per turn. **That retry is what stops a
-missing pid being permanent**: if the walk fails once, or the session predates
+looked up again on `UserPromptSubmit`, once per turn. **That retry is what stops
+a missing pid being permanent**: if the walk fails once, or the session predates
 this code, that agent could otherwise never be proved dead for the rest of its
-life and every surface would show it forever. No store read is needed to decide
-whether it is missing, because attaching it is idempotent — a pid does not change
-within a session, so a second attach produces an identical record, `changed` is
-false, and nothing is written or painted. Measured: `UserPromptSubmit` 28.5ms →
-40.2ms, once per turn; `PostToolUse`, which fires hundreds of times, is
-untouched at 29ms. The start time is not decoration: pids are recycled, so a
-number alone would eventually match a stranger's process and keep a dead agent
-alive forever. A number *and* the second it started cannot be confused.
+life and every display would show it forever. No session-store read is needed to
+decide whether it is missing, because attaching it is idempotent — a pid does
+not change within a session, so a second attach produces an identical record,
+`changed` is false, and nothing is written or painted. Measured:
+`UserPromptSubmit` 28.5ms → 40.2ms, once per turn; `PostToolUse`, which fires
+hundreds of times, is untouched at 29ms. The start time is not decoration: pids
+are recycled, so a number alone would eventually match a stranger's process and
+keep a dead agent alive forever. A number *and* the second it started cannot be
+confused.
 
 The check is one `ps` for every recorded pid at once. Present with a matching
 start time → alive. Absent → **proof** → drop.
 
 **The safety rail: we cannot tell → we drop nothing.** That covers a record with
-no `proc` (its SessionStart predates this, or its agent could not be located) and
-a `ps` that failed to answer. One unreadable answer must never wipe a live store.
+no `proc` (its SessionStart predates this, or its agent could not be located)
+and a `ps` that failed to answer. One unreadable answer must never wipe a live
+session-store.
 
 **One extra case.** `/clear` does not end the process — the same agent starts a
-fresh session inside it, so two records can name one genuinely live pid. A process
-runs one session at a time, so among records sharing a live pid only the most
-recently updated survives.
+fresh session inside it, so two records can name one genuinely live pid. A
+process runs one session at a time, so among records sharing a live pid only the
+most recently updated survives.
 
-Never on a hook: `ps` costs ~13ms and a hook could do nothing with the answer. It
-runs from `store prune`, from `surfaces refresh`, and later from the picker.
+Never on a hook: `ps` costs ~13ms and a hook could do nothing with the answer.
+It runs from `session-store sweep`, from `displays refresh`, and later from the
+picker.
 
-**The prune hands its casualties to the repaint.** `janitor prune` returns the
-WHOLE records it removed, and `surfaces refresh` passes them to dispatch as
-`--gone`, which folds them into "what the store looked like a moment ago". Without
-that, `--force` meant "pretend nothing was there before" and a surface could not
-tell what had disappeared: an agent killed in a pane that OUTLIVED it kept its
-title for good. SketchyBar never noticed the bug — a counter is recomputed whole
-every time — which is exactly why it had to be found on zellij.
+**The sweep hands its casualties to the repaint.** `sweep-dead-sessions`
+returns the WHOLE records it removed, and `displays refresh` passes them to
+dispatch as `--gone`, which folds them into "what the session-store looked like
+a moment ago". Without that, `--force` meant "pretend
+nothing was there before" and a display could not tell what had disappeared: an
+agent killed in a pane that OUTLIVED it kept its title for good. SketchyBar
+never noticed the bug — a counter is recomputed whole every time — which is
+exactly why it had to be found on zellij.
 
 What it deliberately cannot do: a **hung** agent stays, which is correct — it
 really is still there. And an agent whose `SessionStart` we missed has no `proc`
 and can never be pruned.
 
-### 4.6c The clock — who looks when nobody reports
+### 4.6c The prune-daemon — who looks when nobody reports
 
-The store is **pushed, never polled**: an agent's hook writes it and paints the
-surfaces in the same breath, which is why a repaint costs 6.5ms and needs no
-daemon. But a dead agent fires no hook — that is what dead means — so its record
-is never revisited and every surface keeps showing it.
+The session-store is **pushed, never polled**: an agent's hook writes it and
+paints the displays in the same breath, which is why a repaint costs 6.5ms and
+needs no daemon. But a dead agent fires no hook — that is what dead means — so
+its record is never revisited and every display keeps showing it.
 
-So something has to look. **The tick is not a second pruning mechanism**: it runs
-exactly the same pid-based `janitor prune`, then repaints. All it contributes is
-the looking.
+So something has to look. **The daemon is not a second pruning mechanism**: it
+runs exactly the same pid-based `sweep-dead-sessions`, then repaints. All it
+contributes is the looking.
 
 Three candidates were tried, in this order:
 
-| clock | why not |
+| prune-daemon | why not |
 |---|---|
-| a hidden SketchyBar item, `update_freq=30` | worked, and free — the daemon is already running. But it made a core guarantee depend on one OPTIONAL surface being installed and enabled |
+| a hidden SketchyBar item, `update_freq=30` | worked, and free — the daemon is already running. But it made a core guarantee depend on one OPTIONAL display being installed and enabled |
 | `job spawn` | a nushell job is a thread inside its process: it dies when that process exits, and so does anything it starts (both verified). A hook lives ~30ms |
-| **launchd, `StartInterval`** | ✅ launchd *is* a clock. No daemon to keep alive, no lock file, no pid to supervise, no detaching trick — and it survives logout and reboot, which a spawned process would not |
+| **launchd, `StartInterval`** | ✅ launchd *is* the periodic thing already running. No daemon to keep alive, no lock file, no pid to supervise, no detaching trick — and it survives logout and reboot, which a spawned process would not |
 
-`core/clock.nu` writes the job, `agent-notify clock install|status|uninstall`
-drives it, and the tick is `surfaces refresh` — the same command a human types.
-Verified end to end: a record planted with a dead pid was gone in 15 seconds.
+`core/prune-daemon.nu` writes the job, `agent-notify prune-daemon
+install|status|uninstall` drives it, and the tick is `displays refresh` — the
+same command a human types. Verified end to end: a record planted with a dead
+pid was gone in 15 seconds.
 
-### 4.7 Surfaces — describe, decide, write
+### 4.7 Displays — describe, decide, write
 
 ```nu
 export const INFO = {name, title}
-export def settings [given: record] -> record        # config only: defaults, strict, binary
-export def observe []              -> record         # OPTIONAL: what this process sees of itself
-export def project [records, settings] -> record     # PURE: key → what that key should show
-export def apply [changed, removed, settings]        # write these, undo those
+export def settings [given: record] -> record     # config only: defaults, strict
+export def discover-own-location [stored, settings] -> record
+                                                  # OPTIONAL: what this process
+                                                  # sees of ITSELF
+export def render-items [records, settings] -> record
+                                                  # PURE: key → what to show
+export def push-items [changed, removed, settings]
+                                                  # write these, undo those
 ```
 
-**A surface describes. Dispatch decides. The store holds facts.**
+**A display describes. Dispatch decides. The session-store holds facts.**
 
-`project` returns a MAP, not an opaque blob, and that is what makes the division
-possible: dispatch holds two of them — the store as it was, the store as it is —
-and diffs them itself, once, correctly, for every surface that will ever exist.
+`render-items` returns a MAP, not an opaque blob, and that is what makes the
+division possible: dispatch holds two of them — the session-store as it was, the
+session-store as it is — and diffs them itself, once, correctly, for every
+display that will ever exist.
 
 ```
 key changed          → changed
@@ -582,70 +606,74 @@ both empty           → nothing to say, nothing is sent
 
 The gate is no longer a separate idea; it falls out of the diff. And the diff is
 **per key**: with four agents open, a state change moves one pane title and the
-other three are never written. A surface used to work that out for itself, and
+other three are never written. A display used to work that out for itself, and
 zellij's hand-rolled version is what this replaced.
 
-**Two snapshots, not a delta.** Callers pass the whole store before and after, so
-there is one spelling for "what was there a moment ago" whether the change came
-from a hook (one record moved, `core/event.nu` reconstructs the rest) or from the
-clock (some records were pruned, `surfaces refresh` prepends them). `--gone` and
-`--me` are gone with it.
+**Two snapshots, not a delta.** Callers pass the whole session-store before and
+after, so there is one spelling for "what was there a moment ago" whether the
+change came from a hook (one record moved, `core/operation.nu` reconstructs the
+rest) or from the prune-daemon (some records were pruned, `displays refresh`
+prepends them). `--gone` and `--me` are gone with it.
 
-**`observe` is why `project` can be pure.** zellij needs to know which pane it is
-in, which only the running process knows. Rather than passing ambient facts
-through `settings` and branching inside `project` — *"is this record me?"* —
-`observe` reports them, dispatch records them in the surface's own namespace, and
-by the time `project` runs they are just facts in the store like any other.
+**`discover-own-location` is why `render-items` can be pure.** zellij needs to
+know which pane it is in, which only the running process knows. Rather than
+passing ambient facts through `settings` and branching inside `render-items` —
+*"is this record me?"* — `discover-own-location` reports them, dispatch records
+them in the display's own namespace, and by the time `render-items` runs they
+are just facts in the session-store like any other.
 
-**A surface never writes the store**, never learns what changed, and never reads
-back what it wrote. It keeps a surface a LEAF of the import tree (§10) and keeps
-one writer.
+**A display never writes the session-store**, never learns what changed, and
+never reads back what it wrote. It keeps a display a LEAF of the import tree
+(§10) and keeps one writer.
 
-The config file has **the same shape as a store record**: a small core the module
-owns, one namespace per owner, unknown keys rejected. One idea, two files.
+The config file has **the same shape as a session-store record**: a small core
+the module owns, one namespace per owner, unknown keys rejected. One idea, two
+files.
 
 ```yaml
-surfaces: [zellij, sketchybar]     # what the store is PUSHED to; order is dispatch order
+displays: [zellij, sketchybar]     # what the session-store is PUSHED to; order is dispatch order
 zellij:
   binary: zellij                   # shared by both halves
-  surface:                         # PUSH — how it shows the store
+  display:                         # PUSH — how it shows the session-store
     glyphs: {working: 🧠, awaiting: 🔔}
   commands: {}                     # PULL — how its commands behave
 ```
 
 **A tool's namespace has two halves** (D47), because a tool can do two unrelated
-things with the store and they are not controlled by the same switch:
+things with the session-store and they are not controlled by the same switch:
 
 | | driven by | examples | turned on by |
 |---|---|---|---|
-| **push** | an event arriving | pane titles, bar counters and drawers | `surfaces:` |
+| **push** | an event arriving | pane titles, bar counters and drawers | `displays:` |
 | **pull** | you running a command | the picker, the jump | nothing — you ran it |
 
-That distinction was implicit and therefore wrong: `surfaces:` reads like "which
+That distinction was implicit and therefore wrong: `displays:` reads like "which
 integrations exist", so putting the picker inside zellij's directory would
-suggest that removing `zellij` from the list takes the picker away. It must not —
-removing it means *stop renaming my panes*, and nothing else. Splitting the halves
+suggest that removing `zellij` from the list takes the picker away. It must not
+— removing it means *stop renaming my panes*, and nothing else. Splitting the
+halves
 **in the file** makes that unambiguous without a paragraph of explanation.
 
 Keys at a tool's own level are shared by both halves, which is what `binary`
 actually is: the same program renames a pane and focuses one.
 
-A namespace for a surface that is merely switched off is fine — disabling should
-not mean deleting your colours, and its commands still work. A namespace naming a
-surface that does not exist is an error, because that is a typo.
+A namespace for a display that is merely switched off is fine — disabling should
+not mean deleting your colours, and its commands still work. A namespace naming
+a display that does not exist is an error, because that is a typo.
 
-`config check` also runs each ENABLED tool's own `settings` over its `surface`
+`config check` also runs each ENABLED tool's own `settings` over its `display`
 half, because only the tool knows what a key MEANS — a misspelled colour is
 exactly the failure that command exists to explain, and nesting gives a typo one
 more place to hide.
 
-**Strict where a human is, lenient where a hook is.** `config check` is exact and
-loud; `load` never throws. A YAML typo must not be able to stop the store
-recording facts. The cost is that a broken config shows up as "my bar stopped
-moving" rather than as an error, which is what `config check` is for.
+**Strict where a human is, lenient where a hook is.** `config check` is exact
+and loud; `load` never throws. A YAML typo must not be able to stop the
+session-store recording facts. The cost is that a broken config shows up as "my
+bar stopped moving" rather than as an error, which is what `config check` is
+for.
 
-**Nothing in the dispatch path may throw.** It runs after the store has
-committed. Each surface is wrapped alone, so one failing cannot stop the next.
+**Nothing in the dispatch path may throw.** It runs after the session-store has
+committed. Each display is wrapped alone, so one failing cannot stop the next.
 
 ---
 
@@ -659,68 +687,68 @@ committed. Each surface is wrapped alone, so one failing cannot stop the next.
 | D4 | Colours in the config file | **LOCKED** | user decision |
 | D5 | Strict config validation | **LOCKED** | user decision |
 | D6 | No animations — static glyphs, coloured by state | **LOCKED** | user decision; also removes the only 1Hz process (~15ms/s forever) |
-| D7 | No surface/render cache, no `surfaces/` namespace | **LOCKED** | saves ~2.4ms in a rare case; costs a namespace, a staleness class, and a concurrency race |
-| D8 | One store namespace: `agents/`, one file per agent, temp+rename | **LOCKED** | inherited from v1, measured cheap (0.26ms put) |
+| D7 | No display/render cache, no `displays/` namespace | **LOCKED** | saves ~2.4ms in a rare case; costs a namespace, a staleness class, and a concurrency race |
+| D8 | One session-store namespace: `agents/`, one file per agent, temp+rename | **LOCKED** | inherited from v1, measured cheap (0.26ms put) |
 | D9 | In-process dispatch — no poke, no `render.sh`, no second process | **LOCKED** | step 3 — built and running: `core/dispatch.nu` fans out inside the agent's own process. It removed a whole nu spawn + parse (34.6ms/event measured) and two glue scripts with it |
 | D10 | No daemon | **LOCKED** | held all the way through: at ~1 event/s, saving the 12.9ms floor never justified the lifecycle risk, and the one periodic job that IS needed is a launchd `StartInterval` (D39), not a process we keep alive |
 | D11 | Identity = the agent's session id, opaque and caller-supplied | **LOCKED** | the only way zellij can genuinely be opt-in; opaque because of P5 |
 | D11b | Agent-agnostic: any agent may call the entry points; Claude is one client among N | **LOCKED** | P5 |
-| D11c | Open schema — small core + one namespace per owner | **LOCKED** | a closed schema would make core depend on every integration |
-| D11d | Closed, core-owned state vocabulary | **LOCKED** | surfaces cannot render a state they have never heard of |
+| D11c | Open session-schema — small core + one namespace per owner | **LOCKED** | a closed session-schema would make core depend on every integration |
+| D11d | Closed, core-owned state vocabulary | **LOCKED** | displays cannot render a state they have never heard of |
 | D11e | Injective id → filename encoding (percent-encode outside `[A-Za-z0-9._-]`) | **LOCKED** | opaque ids may contain anything; v1's mapping collides |
-| D12 | Facts not decisions: the store holds `name` or nothing | **REVISED** (step 4) | right about the problem, wrong about the answer. `name_auto` was never built and is not wanted: a name the agent did not choose is not a fact, so the store holds one field and each surface computes its own fallback at paint time (`name` → `cwd` basename → id prefix). v1's base-name ladder and `pane_locked` are gone either way |
-| D13 | Lazy zellij reads via `title_written` and `context_read_at` | **SUPERSEDED** by D23/D40 | never built, and it turned out not to be needed. The projection gate skips the write when nothing moved, and dispatch's per-key diff skips the ones that did not — with no extra fields, no throttle and no staleness to reason about. `observe` covers the tab read (D43). Two state fields avoided, not optimised |
-| D14 | Store the message as written; derive the flattened form at paint time | **LOCKED** | step 5b — built: `integrations/sketchybar/text.nu` flattens at paint, the store keeps the markdown. It is what let the picker later take a different view of the same field, and then stop needing it at all (D57) |
-| D18 | One client MODULE per agent, not a declarative mapping table | **LOCKED** | §4.6 — transport, reply contract and identity all vary; a map would become a worse nushell |
+| D12 | Facts not decisions: the session-store holds `name` or nothing | **REVISED** (step 4) | right about the problem, wrong about the answer. `name_auto` was never built and is not wanted: a name the agent did not choose is not a fact, so the session-store holds one field and each display computes its own fallback at paint time (`name` → `cwd` basename → id prefix). v1's base-name ladder and `pane_locked` are gone either way |
+| D13 | Lazy zellij reads via `title_written` and `context_read_at` | **SUPERSEDED** by D23/D40 | never built, and it turned out not to be needed. The projection gate skips the write when nothing moved, and dispatch's per-key diff skips the ones that did not — with no extra fields, no throttle and no staleness to reason about. `discover-own-location` covers the tab read (D43). Two state fields avoided, not optimised |
+| D14 | Store the message as written; derive the flattened form at paint time | **LOCKED** | step 5b — built: `integrations/sketchybar/text.nu` flattens at paint, the session-store keeps the markdown. It is what let the picker later take a different view of the same field, and then stop needing it at all (D57) |
+| D18 | One client MODULE per agent, not a declarative mapping table | **LOCKED** | §4.6 — transport, reply contract and current-session all vary; a map would become a worse nushell |
 | D19 | Clients are discovered by the agent's own config naming the file; no registry | **LOCKED** | adding an agent is one new file |
-| D20 | Wiring is printed, never applied | **LOCKED** | four foreign configs in three formats |
+| D20 | Setup help is printed, never applied | **LOCKED** | four foreign configs in three formats |
 | D21 | A client uses ONE transport, even when its agent offers several | **LOCKED** | §4.6 — Codex's `notify` and hooks key on different ids; running both double-counts one agent |
-| D22 | Fix an agent's transport before inferring states it does not report | **LOCKED** | §4.6 — the store must not hold a confident fact nothing supports |
-| D23 | The projection gate: compare `project(before)` with `project(after)` | **LOCKED** | §4.7 — replaces v1's bash gate, trigger dedup and janitor with one comparison, and no state |
-| D24 | Strict config validation in the CLI, never in the hook | **LOCKED** | §4.7 — a YAML typo must not be able to stop the store recording facts |
-| D25 | The readers are `surfaces/`, the writers are `clients/` | **REVISED** (step 6) | half right. The writers are still `clients/`; the readers went back to `integrations/`, because an integration has two halves and only one of them is a surface — see D47 |
-| D26 | Surfaces reach dispatch as a hand-written table of closures | **LOCKED** | `use` is parse-time; it is also what makes them testable with nothing installed |
-| D27 | A surface reports what it learned; dispatch writes it | **LOCKED** | §4.7 — one writer, and it keeps surfaces out of the store's import cone |
-| D28 | A pane's name comes from the store, never from parsing its old title | **LOCKED** | user decision; deletes ~60 lines of v1 and one zellij call per event. A manual rename is overwritten |
+| D22 | Fix an agent's transport before inferring states it does not report | **LOCKED** | §4.6 — the session-store must not hold a confident fact nothing supports |
+| D23 | The projection gate: compare `render-items(before)` with `render-items(after)` | **LOCKED** | §4.7 — replaces v1's bash gate, trigger dedup and session-store-garbage-collector with one comparison, and no state |
+| D24 | Strict config validation in the CLI, never in the hook | **LOCKED** | §4.7 — a YAML typo must not be able to stop the session-store recording facts |
+| D25 | The readers are `displays/`, the writers are `clients/` | **REVISED** (step 6) | half right. The writers are still `clients/`; the readers went back to `integrations/`, because an integration has two halves and only one of them is a display — see D47 |
+| D26 | Displays reach dispatch as a hand-written table of closures | **LOCKED** | `use` is parse-time; it is also what makes them testable with nothing installed |
+| D27 | A display reports what it learned; dispatch writes it | **LOCKED** | §4.7 — one writer, and it keeps displays out of the session-store's import cone |
+| D28 | A pane's name comes from the session-store, never from parsing its old title | **LOCKED** | user decision; deletes ~60 lines of v1 and one zellij call per event. A manual rename is overwritten |
 | D29 | The import cone must be a TREE | **LOCKED** | §10 — a diamond is parsed twice, on every event, forever |
-| D30 | Liveness is the agent's PROCESS, recorded once at SessionStart | **LOCKED** | §4.6b — the only signal that is proof rather than a proxy; replaces v1's zellij scan and janitor outright |
-| D31 | Cannot tell ⇒ delete nothing | **LOCKED** | §4.6b — one unreadable `ps` must never wipe a live store |
+| D30 | Liveness is the agent's PROCESS, recorded once at SessionStart | **LOCKED** | §4.6b — the only signal that is proof rather than a proxy; replaces v1's zellij scan and session-store-garbage-collector outright |
+| D31 | Cannot tell ⇒ delete nothing | **LOCKED** | §4.6b — one unreadable `ps` must never wipe a live session-store |
 | D32 | The client declares how to find its own process | **LOCKED** | §4.6b — same rule as every other agent-specific fact (D18) |
-| D33 | The hook paints the bar itself; no trigger, no daemon round trip | **LOCKED** | step 5 — dispatch already holds the store; v1's path cost a second nu (~47ms) and a glue script |
+| D33 | The hook paints the bar itself; no trigger, no daemon round trip | **LOCKED** | step 5 — dispatch already holds the session-store; v1's path cost a second nu (~47ms) and a glue script |
 | D34 | A side effect is built as DATA first (`message`), then sent | **LOCKED** | step 5 — it is what lets the bar be tested exactly, with no bar installed and no subprocess |
 | D35 | A fixed item pool, created once, never added to or removed from | **INHERITED** | v1's most expensive lesson; re-measured at 17.51ms per add+remove against 6.5ms per message |
-| D36 | Every write goes through `core/event.nu`, the CLI included | **LOCKED** | step 7 — the command surface IS the public API (P5); a write that skips the seam is a surface that never hears about it |
-| D37 | `apply` receives the previous projection | **LOCKED** | step 7 — the only way a surface can act on what has disappeared, and it makes "skip what did not move" free |
+| D36 | Every write goes through `core/operation.nu`, the CLI included | **LOCKED** | step 7 — the command set IS the public API (P5); a write that skips the seam is a display that never hears about it |
+| D37 | `push-items` receives the previous projection | **LOCKED** | step 7 — the only way a display can act on what has disappeared, and it makes "skip what did not move" free |
 | D38 | Dispatch answers "whose event" and "whose environment" separately | **LOCKED** | step 7 — identical for a hook, different for a CLI write about another agent |
-| D39 | The clock is its own launchd job, never a surface's item | **LOCKED** | §4.6c — a core guarantee must not depend on an optional surface being installed |
-| D40 | `project` returns a MAP; dispatch owns the diff | **LOCKED** | §4.7 — one correct implementation instead of one per surface, and the gate falls out of it |
-| D41 | Dispatch takes two store SNAPSHOTS, not a delta | **LOCKED** | §4.7 — one spelling for "a moment ago", whether a hook or the clock is calling |
-| D42 | `observe` reports the environment; it is not smuggled through `settings` or `apply` | **LOCKED** | §4.7 — it is what lets `project` be a plain function of records |
+| D39 | The prune-daemon is its own launchd job, never a display's item | **LOCKED** | §4.6c — a core guarantee must not depend on an optional display being installed |
+| D40 | `render-items` returns a MAP; dispatch owns the diff | **LOCKED** | §4.7 — one correct implementation instead of one per display, and the gate falls out of it |
+| D41 | Dispatch takes two session-store SNAPSHOTS, not a delta | **LOCKED** | §4.7 — one spelling for "a moment ago", whether a hook or the prune-daemon is calling |
+| D42 | `discover-own-location` reports the environment; it is not smuggled through `settings` or `push-items` | **LOCKED** | §4.7 — it is what lets `render-items` be a plain function of records |
 | D43 | A tab's name is learned ONCE, in the read we already need for its id | **LOCKED** | step 4b — a third subprocess per state change to respect later renames was not worth it |
 | D44 | A hover's answer is BAKED into the item at paint time, as a shell command | **LOCKED** | step 5b — the paint already knows the text; the alternative is a second nu per hover, which is the thing v2 deleted |
 | D45 | A preview's text is made single-quote-safe (`'` → `’`) rather than shell-escaped | **LOCKED** | step 5b — probed: inside single quotes `$HOME` and backticks are already literal, so one substitution is the whole of the escaping |
 | D46 | The bar's slots are keys in the projection, one per row | **LOCKED** | step 5b — D40 then does the per-slot diffing for free; v1 needed a disk cache and ~60 lines of its own |
-| D47 | A tool's config has two halves, `surface` (push) and `commands` (pull) | **LOCKED** | §4.7 — `surfaces:` must not read as "which integrations exist"; splitting it in the FILE is what stops removing a surface from taking its picker away |
+| D47 | A tool's config has two halves, `display` (push) and `commands` (pull) | **LOCKED** | §4.7 — `displays:` must not read as "which integrations exist"; splitting it in the FILE is what stops removing a display from taking its picker away |
 | D48 | The picker has NO configurable engine — skim is a dependency | **SUPERSEDED** by D54–D57 | half right: the hook goes, but so does skim. There is no engine and no dependency at all — nushell's own `input listen` and zellij's `dump-screen`, nothing else |
-| D49 | `surfaces/` → `integrations/`, one directory per tool, one file per half | **LOCKED** | step 6 — the halves must be separate FILES: the push half is in every hook's import cone and the pull half must never be |
+| D49 | `displays/` → `integrations/`, one directory per tool, one file per half | **LOCKED** | step 6 — the halves must be separate FILES: the push half is in every hook's import cone and the pull half must never be |
 | D50 | The jump names NO window manager and assumes no OS | **LOCKED** | step 6 — raising the terminal's window is only needed by a BAR CLICK; the picker runs inside the terminal, where it is already in front. Deferred with the click |
-| D51 | `jump argv` is the whole decision; `main` only runs it | **LOCKED** | step 6 — the same data-first split as `commands`/`apply`, and here it is what lets the cross-session branch be tested at all: running it moves a real screen |
+| D51 | `jump argv` is the whole decision; `main` only runs it | **LOCKED** | step 6 — the same data-first split as `commands`/`push-items`, and here it is what lets the cross-session branch be tested at all: running it moves a real screen |
 | D52 | `browse` runs IN PLACE; the floating pane belongs to the keybinding | **LOCKED** | step 6 — v1 re-launched itself through `zellij run --floating` and needed a `--here` flag to not. Same bargain as `sketchybarrc` and `settings.json`: we print the block, you own the file |
-| D53 | `browse` does not prune | **LOCKED** | step 6 — the clock already does, every 30s. A second mechanism for one guarantee, and all it saves is a jump that says "no session called 'x'" |
+| D53 | `browse` does not prune | **LOCKED** | step 6 — the prune-daemon already does, every 30s. A second mechanism for one guarantee, and all it saves is a jump that says "no session called 'x'" |
 | D54 | The picker OWNS ITS EVENT LOOP — `input listen`, not `input list` | **LOCKED** | step 6b — `input list` is OPAQUE: it blocks and reports nothing until enter, so nothing can redraw a preview beside it. Every design that kept it needed a second process parsing the highlight back off the picker's own screen |
 | D55 | The picker is `picker/`, its command is `cli/browse.nu`, and each integration answers a LOCATOR contract — three questions since D58, four before it | **LOCKED** | step 6b — what varies per multiplexer is where an agent lives and how to go there, and nothing else does. `screen` was the fourth and left with the pane preview (D58). tmux is one `locate.nu` and one row in `picker/locators.nu` |
-| D56 | Which locator answers is decided by the RECORD, not by the config file | **LOCKED** | step 6b — `surfaces:` says what the store is PUSHED to and nothing else (D47), so switching the zellij surface off must not stop the picker previewing a zellij pane. It also makes a MIXED fleet work with nothing configured |
+| D56 | Which locator answers is decided by the RECORD, not by the config file | **LOCKED** | step 6b — `displays:` says what the session-store is PUSHED to and nothing else (D47), so switching the zellij display off must not stop the picker previewing a zellij pane. It also makes a MIXED fleet work with nothing configured |
 | D57 | The preview is the agent's LIVE SCREEN; the filter matches only what the row SHOWS | first half **REVERSED** by D58; second half **LOCKED** | step 6b — the filter half stands and always will: a message is kilobytes of prose, and folding it in made a two-letter query match an agent for an invisible reason, at character 4195 of something it said an hour ago. The preview half lasted until it was lived with — see D58 |
 | D58 | The preview is the agent's STORED MESSAGE, rendered the way the bar renders it | **LOCKED** | step 8 — truer lost to readable. A dump is the bottom of a TUI mid-redraw, half a spinner and a rule cut off at both edges; the agent already wrote the answer to "which of these wants me" in a sentence. It also cost a subprocess on every heartbeat and only ever covered agents that still had a pane — the rest already fell back to exactly this. Markdown rendering comes BACK to the picker, but not as new code: `core/markdown.nu` is the bar's flattener, moved up |
-| D59 | A session that ends is FILED AWAY, not deleted — `ended/`, a directory the hot path never opens | **LOCKED** | step 9 — Claude Code, zellij and tmux all treat a session as durable and *running* as a state it is in; we were the only one destroying it. Keeping ended records in `agents/` behind a flag is the textbook soft delete and would have put **36.9ms on every tool call** at a month of history (measured). A second directory costs nothing, and a restore keeps `schema durable` — the core fields — so no stale pid or pane comes back with it |
+| D59 | A session that ends is FILED AWAY, not deleted — `ended/`, a directory the hot path never opens | **LOCKED** | step 9 — Claude Code, zellij and tmux all treat a session as durable and *running* as a state it is in; we were the only one destroying it. Keeping ended records in `agents/` behind a flag is the textbook soft delete and would have put **36.9ms on every tool call** at a month of history (measured). A second directory costs nothing, and a restore keeps `session-schema session-fields` — the core fields — so no stale pid or pane comes back with it |
 | D60 | `core/markdown.nu` PARSES — `from md --verbose`, not seven regexes | **LOCKED** | step 10 — it is a BUILT-IN, so the "why not pandoc" argument that shaped D15 does not reach it: no subprocess, and measured FASTER than the regex loop it replaced (88µs vs 392µs to parse). What the regexes could not give is what the display wanted: a heading knows its depth, a list knows its level, its order and its checkbox, and a table has real cells |
-| D61 | A paragraph is REFLOWED and then WRAPPED — reverses "nothing is wrapped" | **LOCKED** | step 10 — the old rule was reasoned about markdown a person hard-wraps at 80, and that is not what an agent writes. Measured on the real store: a message's paragraphs are ONE SOURCE LINE EACH, the longest 435 characters, so one row per source line meant cutting every paragraph at 110 and dropping the other 325. Cost: an agent's column-aligned block that is neither fenced nor indented now reflows into prose — standard markdown, and what every other renderer does |
-| D62 | The flattener says WHAT A ROW IS; each surface paints it | **LOCKED** | step 10 — the two surfaces have nothing in common to share a coloured string with. A SketchyBar item has no ANSI and no runs: it has one `label.color`, set over the wire per paint (whether row 4 is a heading depends on what the agent wrote). The picker's frame strips escapes out of every line on purpose, because that text is agent-authored. So a row is `{k, t}` and colour is applied at the far end — in the picker, LAST, after the clip, so the strip stays a defence and the clip still measures what a reader sees |
-| D63 | The preview SCROLLS, and it corrects its own offset | **LOCKED** | step 10 — `pv_top` is the message's first visible row, the preview's `top`. Keys can only ever say "further down": `markdown plain` is given a line budget and stops there (D61), so nothing renders a whole message just to count it, and the end is knowable only by asking for one row MORE than the pane holds and getting fewer back. So `preview of` clamps and hands the used offset back, the way `rows settle` corrects the list's `top` — which is what stops ctrl-d running up a number that then has to be undone before the view moves again. ctrl-j/k by the row, ctrl-d/u by half the pane; PROBED ON A REAL PTY first, because a terminal sends ctrl-j as LF and enter as CR, and had crossterm folded them together the binding would have cost the jump key. Clearing the filter moved to ctrl-w |
-| D64 | The picker's chrome is coloured, and a line is built as PIECES | **LOCKED** | step 10 — closes §9b.2. A line is `{c, t}` pieces, measured in plain text and inked last, which is the only order that works: the width a terminal cares about is the one a reader sees, and a row's name and place are agent-authored so the strip in `clean` has to stay a defence. Two things the list could not say got a home in the bars — a fleet tally on the top, `▾ n` on the bottom when the preview is scrolled — and both are RIGHT-ALIGNED so they drop first on a narrow terminal and never move the caret. One palette gotcha worth keeping: ANSI 8 (`dark_gray`) is Rosé Pine's OVERLAY tone, what a selection is drawn *on*, so as text it is nearly the background; dim chrome is `white_dimmed`, the way cmdprompt draws its box |
+| D61 | A paragraph is REFLOWED and then WRAPPED — reverses "nothing is wrapped" | **LOCKED** | step 10 — the old rule was reasoned about markdown a person hard-wraps at 80, and that is not what an agent writes. Measured on the real session-store: a message's paragraphs are ONE SOURCE LINE EACH, the longest 435 characters, so one row per source line meant cutting every paragraph at 110 and dropping the other 325. Cost: an agent's column-aligned block that is neither fenced nor indented now reflows into prose — standard markdown, and what every other renderer does |
+| D62 | The flattener says WHAT A ROW IS; each display paints it | **LOCKED** | step 10 — the two displays have nothing in common to share a coloured string with. A SketchyBar item has no ANSI and no runs: it has one `label.color`, set over the wire per paint (whether row 4 is a heading depends on what the agent wrote). The picker's frame strips escapes out of every line on purpose, because that text is agent-authored. So a row is `{k, t}` and colour is applied at the far end — in the picker, LAST, after the clip, so the strip stays a defence and the clip still measures what a reader sees |
+| D63 | The preview SCROLLS, and it corrects its own offset | **LOCKED** | step 10 — `pv_top` is the message's first visible row, the preview's `top`. Keys can only ever say "further down": `markdown plain-md` is given a line budget and stops there (D61), so nothing renders a whole message just to count it, and the end is knowable only by asking for one row MORE than the pane holds and getting fewer back. So `preview of` clamps and hands the used offset back, the way `rows keep-in-view` corrects the list's `top` — which is what stops ctrl-d running up a number that then has to be undone before the view moves again. ctrl-j/k by the row, ctrl-d/u by half the pane; PROBED ON A REAL PTY first, because a terminal sends ctrl-j as LF and enter as CR, and had crossterm folded them together the binding would have cost the jump key. Clearing the filter moved to ctrl-w |
+| D64 | The picker's chrome is coloured, and a line is built as PIECES | **LOCKED** | step 10 — closes §9b.2. A line is `{c, t}` pieces, measured in plain text and inked last, which is the only order that works: the width a terminal cares about is the one a reader sees, and a row's name and location are agent-authored so the strip in `clean` has to stay a defence. Two things the list could not say got a home in the bars — a fleet tally on the top, `▾ n` on the bottom when the preview is scrolled — and both are RIGHT-ALIGNED so they drop first on a narrow terminal and never move the caret. One palette gotcha worth keeping: ANSI 8 (`dark_gray`) is Rosé Pine's OVERLAY tone, what a selection is drawn *on*, so as text it is nearly the background; dim chrome is `white_dimmed`, the way cmdprompt draws its box |
 | D15 | Replace pandoc with a nu-native flattener | **LOCKED** (step 5b) | done: `integrations/sketchybar/text.nu` does it in nushell. 25.1ms off the event path and a dependency gone. v1 could afford pandoc because it converted where the preview was STORED, on a path already spawning processes; v2's whole paint is 6.5ms. Superseded in part by D60 — the flattener is a parser now, and still no subprocess |
 | D16 | Where the bench harness lives | **OPEN** | the only open row left. ~350 lines of documented nu; §8, and §9b.3 |
-| D17 | Promoted to `monomodules/agent-notify`, a module beside `ai` and the rest | **LOCKED** (2026-09-12) | step 7 — it was never `ai`-shaped: reflecting agent state on a status bar is not provider-agnostic content generation, and being a submodule is what made every hook parse the whole `ai` tree. The directory, the command, the store at `~/.local/share/agent-notify/` and the bar prefix `an_` all carry the one name |
+| D17 | Promoted to `monomodules/agent-notify`, a module beside `ai` and the rest | **LOCKED** (2026-09-12) | step 7 — it was never `ai`-shaped: reflecting agent state on a status bar is not provider-agnostic content generation, and being a submodule is what made every hook parse the whole `ai` tree. The directory, the command, the session-store at `~/.local/share/agent-notify/` and the bar prefix `an_` all carry the one name |
 
 ---
 
@@ -733,8 +761,8 @@ Recorded so they are not reinvented:
   that happens about once a second; the failure modes (dead daemon, blocked
   writer, crash recovery) are worse than the problem.
 - **The SketchyBar poke (`--trigger` → `render.sh` → a second nu)** — in-process
-  dispatch does the same work 34.6ms cheaper and deletes two glue scripts and two
-  custom events.
+  dispatch does the same work 34.6ms cheaper and deletes two glue scripts and
+  two custom events.
 - **An append-only event log** — records plus timestamps answer every question a
   consumer has today; a log needs compaction and has no reader. Additive later.
 - **A render/model cache** — D7.
@@ -748,17 +776,17 @@ Recorded so they are not reinvented:
 ## 7. Inherited from v1 — things it got right, to be kept
 
 - Per-agent record files; atomic temp+rename writes.
-- **A tab's base name belongs to the user**, not to us: read it back from the live
-  tab title with markers stripped, so a manual rename is honoured and the last
-  agent leaving cannot erase it.
+- **A tab's base name belongs to the user**, not to us: read it back from the
+  live tab title with markers stripped, so a manual rename is honoured and the
+  last agent leaving cannot erase it.
 - **Glyphs distinguish states by shape alone**, because zellij titles carry no
   colour; the same shapes take the state hue on the bar.
 - **A fixed SketchyBar item pool** created once, `--set`-only thereafter. v1
-  attributes this to `--add`/`--remove` costing the daemon ~20ms of relayout each
-  — *that figure is v1's, not ours, and is the one inherited claim to re-measure
-  when we build the integration.*
-- **One derivation shared by every surface** (`view/`), so the bar and the picker
-  cannot drift apart.
+  attributes this to `--add`/`--remove` costing the daemon ~20ms of relayout
+  each — *that figure is v1's, not ours, and is the one inherited claim to
+  re-measure when we build the integration.*
+- **One derivation shared by every display** (`view/`), so the bar and the
+  picker cannot drift apart.
 - A blank projection **drops** our name rather than writing an empty one.
 - Liveness is all-or-nothing: an unreadable zellij means "don't prune", never
   "everything died".
@@ -778,87 +806,92 @@ different things three different ways, because they are not interchangeable:
 - **span** — nushell's own `--log-level perf` attribution, which separates
   `evaluate_commands` (parse + eval of our code) from fixed runtime overhead.
 
-Every spawn case is warmed first — a cold 40MB binary measures 11.2ms where steady
-state is 7.4ms — and `/usr/bin/true` is always measured as the floor everything
-else sits on.
+Every spawn case is warmed first — a cold 40MB binary measures 11.2ms where
+steady state is 7.4ms — and `/usr/bin/true` is always measured as the floor
+everything else sits on.
 
 Each implementation step re-runs the harness and records its numbers against the
-§3 baseline, so a regression is caught when it is introduced rather than at the end.
+§3 baseline, so a regression is caught when it is introduced rather than at the
+end.
 
 Both live in the repo, and neither is part of the module — nothing in `mod.nu`
 imports them, so `use agent-notify` never parses a byte of either:
 
 ```
 agent-notify/bench/      use agent-notify/bench   → bench floor | parse | work | rate | v2
-agent-notify/tests/      nu agent-notify/tests/store.nu        (no -I needed)
+agent-notify/tests/      nu agent-notify/tests/session-store.nu        (no -I needed)
 ```
 
 ---
 
 ## 8b. Working together — what this project has settled
 
-**Explain simply, and slowly.** Short sentences. Examples before the concept. Plain
-words. Density is a bug here, not a sign of rigour — "I am not getting it" has
-meant *go more concrete*, never *write more*. A diagram of five lines has beaten
-three paragraphs every time.
+**Explain simply, and slowly.** Short sentences. Examples before the concept.
+Plain words. Density is a bug here, not a sign of rigour — "I am not getting it"
+has meant *go more concrete*, never *write more*. A diagram of five lines has
+beaten three paragraphs every time.
 
-**One step at a time, each discussed before it is built.** Propose the shape, name
-which decisions are mine and which are yours, then implement. Steps that were
-merged (config + dispatch) went fine; steps that were split (panes before tabs,
-counters before drawers) went better.
+**One step at a time, each discussed before it is built.** Propose the shape,
+name which decisions are mine and which are yours, then implement. Steps that
+were merged (config + dispatch) went fine; steps that were split (panes before
+tabs, counters before drawers) went better.
 
-**Measure before designing, when performance is the question.** The numbers chose
-the design at least four times: parse cost chose the file layout, the event rate
-chose all-nushell, `--set` batching chose the one-message paint, and the import
-diamond chose the surface contract.
+**Measure before designing, when performance is the question.** The numbers
+chose the design at least four times: parse cost chose the file layout, the
+event rate chose all-nushell, `--set` batching chose the one-message paint, and
+the import diamond chose the display contract.
 
 **Prefer proof to heuristics.** Liveness went through a zellij pane check and a
-heartbeat before landing on the process — because those two were proxies, and each
-was wrong in a case that actually happens. *No proof, no action* is the rule that
-came out of it.
+heartbeat before landing on the process — because those two were proxies, and
+each was wrong in a case that actually happens. *No proof, no action* is the
+rule that came out of it.
 
-**One mechanism, not three layers.** "Why do we have a separate pruning process on
-the bar?" was the right question, and the answer — that there was only ever one
-prune, and the bar owned a clock that should not have been its — made the design
-smaller.
+**One mechanism, not three layers.** "Why do we have a separate pruning process
+on the bar?" was the right question, and the answer — that there was only ever
+one prune, and the bar owned a timer that should not have been its — made the
+design smaller.
 
-**Dropping a constraint beats adding machinery to preserve it.** Tab names cost a
-subprocess per repaint to respect; giving that up cost one sentence and removed a
-third of the work.
+**Dropping a constraint beats adding machinery to preserve it.** Tab names cost
+a subprocess per repaint to respect; giving that up cost one sentence and
+removed a third of the work.
 
-**Cut over early and use it.** The table in step 7 is the argument: seven defects
-that 250+ tests could not have found, all within a few hours of real use.
+**Cut over early and use it.** The table in step 7 is the argument: seven
+defects that 250+ tests could not have found, all within a few hours of real
+use.
 
 ## 9. Steps
 
-Each step: discuss the design → implement → verify against a stated done-when, and
-re-measure. v1 kept running untouched throughout; v2 used its own store dir and
-its own bar item names so both could be live at once. That is why the module was
-`agent-notify2` until step 7 promoted it — the `2` bought the whole rebuild the
-right to be wrong in public, one step at a time, with the working thing still on
-the bar.
+Each step: discuss the design → implement → verify against a stated done-when,
+and re-measure. v1 kept running untouched throughout; v2 used its own
+session-store dir and its own bar item names so both could be live at once. That
+is why the module was `agent-notify2` until step 7 promoted it — the `2` bought
+the whole rebuild the right to be wrong in public, one step at a time, with the
+working thing still on the bar.
 
 0. **Baseline** — ✅ done (§3).
-1. **Core store** — ✅ done. `core/paths.nu` + `core/schema.nu` + `core/store.nu`,
-   with the command surface in `cli/store.nu`. 32/32 checks pass; the hot cone
-   parses in +1.76ms; a foreign process reports with
-   `echo '{…}' | nu -c '… store patch <id> --stdin'` and reads back with
-   `| to json`. Two things the suite caught that review had not: an id beginning
-   with `.` (`../../etc/passwd` strips to `....etcpasswd`) produced a *hidden*
-   file — written, readable by id, and invisible to every surface; and naming a
-   command `get` silently shadows the builtin for every imported module (§10).
+1. **Core session-store** — ✅ done. `core/paths.nu` + `core/session-schema.nu` +
+   `core/session-store.nu`, with the command set in `cli/session-store.nu`.
+   32/32 checks pass; the hot cone parses in +1.76ms; a foreign process reports
+   with `echo '{…}' | nu -c '… session-store patch <id> --stdin'` and reads back
+   with `| to json`. Two things the suite caught that review had not: an id
+   beginning with `.` (`../../etc/passwd` strips to `....etcpasswd`) produced a
+   *hidden* file — written, readable by id, and invisible to every display; and
+   naming a command `get` silently shadows the builtin for every imported module
+   (§10).
 2. **Claude client + the entry point** — ✅ built and verified (37/37), not yet
-   wired into `settings.json`. `clients/claude/adapt.nu` is a pure payload→operation
-   mapping; `clients/claude/hook.nu` is the entry; `core/event.nu` holds the
-   sequence and the dispatch seam; `core/identity.nu` answers "which agent am I";
-   `cli/agent.nu` adds `report` and `name`. 21.3ms per event. Three findings:
-   subagent tool calls carry the PARENT's session id (so they fold in for free,
-   and `SubagentStop` must be ignored); `StopFailure` gives us a state v1 could
-   not express; and importing the entry with `-c` rather than running it as a
-   script saves ~9ms per event (§10).
-2b. **The client contract, proved on a second agent** — ✅ done. `clients/claude.nu`
-   and `clients/codex.nu`, one file each; `core/payload.nu` holds the two
-   transports; `agent-notify clients [wiring <name>]` lists and explains them.
+   wired into `settings.json`. `clients/claude/adapt.nu` is a pure
+   payload→operation mapping; `clients/claude/hook.nu` is the entry;
+   `core/operation.nu` holds the sequence and the dispatch seam;
+   `core/current-session.nu` answers "which agent am I"; `cli/agent.nu` adds
+   `report` and `name`. 21.3ms per event. Three findings: subagent tool calls
+   carry the PARENT's session id (so they fold in for free, and `SubagentStop`
+   must be ignored); `StopFailure` gives us a state v1 could not express; and
+   importing the entry with `-c` rather than running it as a script saves ~9ms
+   per event (§10).
+2b. **The client contract, proved on a second agent** — ✅ done.
+`clients/claude.nu`
+   and `clients/codex.nu`, one file each; `core/hook-input.nu` holds the two
+   transports; `agent-notify clients [help-setup <name>]` lists and explains them.
    85/85 across three suites, 22.8ms per event (unchanged by the refactor). Codex
    was chosen precisely because it shares almost nothing with Claude — argv
    transport, script entry, event name inside the payload, kebab-case fields, one
@@ -873,42 +906,43 @@ the bar.
    one shape difference from Claude: the event name comes from the body rather than
    our argv, which gives a single command string for all six subscriptions and no
    way for an argument to disagree with the key it is registered under.
-   103/103 across three suites, 20.7ms per event. `core/payload.nu` lost
+   103/103 across three suites, 20.7ms per event. `core/hook-input.nu` lost
    `from-args` along with its last caller — an argv agent can read its own argv in
    one line, and untested code in the core is worse than a line rewritten later.
    Written from documentation rather than observed traffic (Codex is not installed
    here), which the client's header says plainly. The suite immediately found a
-   store bug no surface had reached yet: `list` on an *emptied* store errored,
+   session-store bug no display had reached yet: `list` on an *emptied* session-store errored,
    because a glob that matches nothing is an error (§10).
 3. **Config + dispatch** — ✅ done. `core/config.nu` (the YAML file, strict
    `problems`, never-throwing `load`), `core/dispatch.nu` (the gate and the
-   fan-out), `cli/config.nu` and `cli/surfaces.nu`, and the seam in
-   `core/event.nu` is live. 139/139 across four suites. **Step 3 adds 0.76ms of
-   parse to every event** — the price of §4.4's "gate calls, not imports", which
-   parse-time `use` leaves no way around; two realistic surface modules (18KB,
-   this repo's comment-heavy style) were measured separately at 2.07ms, so the
-   budget holds through step 5. The hook is 25ms.
-   `integrations/` ships EMPTY on purpose: the contract is exercised by `tests/fake.nu`,
-   a complete surface that writes a line to a file and therefore needs nothing
-   installed — the same move that proved the client contract on Codex. One
-   consequence for the core: `drop` now reads the record before removing it, because
-   a surface cannot say whether its output changed about an agent it never saw.
-4. **zellij integration** — ✅ done, panes only. `integrations/zellij/mod.nu`: glyph plus
-   name, one call to zellij per state change and **none at all** when nothing
-   visible changed. Two of v1's three calls per event are gone, for two separate
-   reasons: the pane is known from the environment (dispatch runs inside the
-   agent's process), and the NAME IS A FACT IN THE STORE rather than something
-   parsed back out of the old title — which deletes v1's `parse-title`,
-   `bare-title` and its list of legacy glyphs outright. The cost is that a manual
-   pane rename is overwritten, which is the right trade when the store is the
-   source of truth. 170/170 across five suites; the surface machinery costs 3.87ms
-   of parse per event, the hook 28ms.
-   Two findings, both in §10: a module reached by two import paths is parsed
-   TWICE (fixing that one diamond saved 1.4ms per event and produced the
-   leaf/report rules above), and Private Use Area glyphs do not survive ordinary
-   tooling — written as literals they arrived as empty strings, and the suite
-   caught it as "every state has the same title".
-4b. **zellij tab aggregates** — ✅ done. A tab wears one glyph per agent living in
+   fan-out), `cli/config.nu` and `cli/displays.nu`, and the seam in
+   `core/operation.nu` is live. 139/139 across four suites. **Step 3 adds 0.76ms
+   of parse to every event** — the price of §4.4's "gate calls, not imports",
+   which parse-time `use` leaves no way around; two realistic display modules
+   (18KB, this repo's comment-heavy style) were measured separately at 2.07ms,
+   so the budget holds through step 5. The hook is 25ms. `integrations/` ships
+   EMPTY on purpose: the contract is exercised by `tests/fake.nu`, a complete
+   display that writes a line to a file and therefore needs nothing installed —
+   the same move that proved the client contract on Codex. One consequence for
+   the core: `drop` now reads the record before removing it, because a display
+   cannot say whether its output changed about an agent it never saw.
+4. **zellij integration** — ✅ done, panes only. `integrations/zellij/mod.nu`:
+   glyph plus name, one call to zellij per state change and **none at all** when
+   nothing visible changed. Two of v1's three calls per event are gone, for two
+   separate reasons: the pane is known from the environment (dispatch runs
+   inside the agent's process), and the NAME IS A FACT IN THE
+   SESSION-SESSION-STORE rather than something parsed back out of the old title
+   — which deletes v1's `parse-title`, `bare-title` and its list of legacy
+   glyphs outright. The cost is that a manual pane rename is overwritten, which
+   is the right trade when the session-store is the source of truth. 170/170
+   across five suites; the display machinery costs 3.87ms of parse per event,
+   the hook 28ms. Two findings, both in §10: a module reached by two import
+   paths is parsed TWICE (fixing that one diamond saved 1.4ms per event and
+   produced the leaf/report rules above), and Private Use Area glyphs do not
+   survive ordinary tooling — written as literals they arrived as empty strings,
+   and the suite caught it as "every state has the same title".
+4b. **zellij tab aggregates** — ✅ done. A tab wears one glyph per agent living
+in
    it, most urgent first, in front of its own name:
 
    ```
@@ -916,16 +950,16 @@ the bar.
     root      one working, one waiting
    ```
 
-   It fits the step-7b contract without new machinery: `project` simply emits a
+   It fits the step-7b contract without new machinery: `render-items` simply emits a
    second kind of key. When the last agent leaves a tab that key DISAPPEARS, and
    `removed` already means "undo this", so the glyphs come off by themselves.
 
    The question that had it deferred was who owns the tab's name. The answer is
-   the one already settled for panes — **the store does** — and what makes it
+   the one already settled for panes — **the session-store does** — and what makes it
    affordable is that the name is folded into a read we already needed. The
-   environment says which PANE we are in but not which TAB, so `observe` runs one
+   environment says which PANE we are in but not which TAB, so `discover-own-location` runs one
    `list-panes`; that same call returns the tab's name. Both are recorded, ONCE
-   per session, and a tab title is computed from the store ever after.
+   per session, and a tab title is computed from the session-store ever after.
 
    Rejected: reading the live tab name on every write, which is correct but costs
    a third subprocess per state change. The price paid instead is that a tab
@@ -942,8 +976,8 @@ the bar.
    Cost: `list-panes` 11ms once per session; a state change is rename-pane +
    rename-tab. 265/265 across eight suites.
 4c. **Liveness** — ✅ done. `core/proc.nu` (find the agent's process, ask `ps`
-   which are still running) and `core/janitor.nu` (the two rules), reached by
-   `agent-notify store prune` and by `surfaces refresh`, which now prunes before
+   which are still running) and `core/session-store-garbage-collector.nu` (the two rules), reached by
+   `agent-notify session-store sweep` and by `displays refresh`, which now prunes before
    it repaints. 198/198 across six suites.
    Two earlier proposals were **dropped** on the way, both correctly: a zellij
    pane check (a killed agent can leave its pane open, so it proves the wrong
@@ -951,25 +985,25 @@ the bar.
    hint — with proof available, guessing has no job). One mechanism replaced
    three layers.
    Costs: `SessionStart` 27ms → 38.6ms for the one-time walk, every other event
-   unchanged, `proc.nu` free to parse, `prune` 13ms of `ps` on a cold path.
+   unchanged, `proc.nu` free to parse, `sweep-dead-sessions` 13ms of `ps` on a cold path.
 5. **SketchyBar integration** — ✅ done, the three counters.
-   `integrations/sketchybar/`, 233/233 across seven suites, +0.82ms of parse (the
-   whole surface machinery is now +4.69ms).
-   Measured first, because the numbers chose the design: `--query bar` 5.98ms,
-   `--set` one property 6.59ms, **`--set` TEN properties in one message 6.54ms**,
-   `--add` + `--remove` one item 17.51ms. So a message costs what a process costs
-   and almost nothing per property — a whole repaint is ONE call — and v1's
-   fixed-pool rule holds, since adding items is ~3× setting them.
-   The big deletion is the paint path. v1 went `hook → --trigger → daemon →
-   render.sh → a fresh nu → load the module → read the store → --set`: a second
-   process, ~47ms, and a glue script in the bar's config. v2 goes `hook → --set`,
-   ~6.5ms, because dispatch already runs inside the agent with the store in hand.
-   **v1's `render/cache.nu` disappears too** — it existed to answer "has the model
+   `integrations/sketchybar/`, 233/233 across seven suites, +0.82ms of parse
+   (the whole display machinery is now +4.69ms). Measured first, because the
+   numbers chose the design: `--query bar` 5.98ms, `--set` one property 6.59ms,
+   **`--set` TEN properties in one message 6.54ms**, `--add` + `--remove` one
+   item 17.51ms. So a message costs what a process costs and almost nothing per
+   property — a whole repaint is ONE call — and v1's fixed-pool rule holds,
+   since adding items is ~3× setting them. The big deletion is the paint path.
+   v1 went `hook → --trigger → daemon → render.sh → a fresh nu → load the module
+   → read the session-store → --set`: a second process, ~47ms, and a glue script
+   in the bar's config. v2 goes `hook → --set`, ~6.5ms, because dispatch already
+   runs inside the agent with the session-store in hand. **v1's
+   `render/cache.nu` disappears too** — it existed to answer "has the model
    changed?", which is what the gate answers with nothing stored. The gate bites
-   harder here than for zellij: a counter shows only a NUMBER, so a new message, a
-   rename and a directory change all project identically and never reach the bar.
-   `~/.config/sketchybar` keeps ONE line, which creates the pool and then paints
-   it from the store.
+   harder here than for zellij: a counter shows only a NUMBER, so a new message,
+   a rename and a directory change all project identically and never reach the
+   bar. `~/.config/sketchybar` keeps ONE line, which creates the pool and then
+   paints it from the session-store.
 5b. **Bar drawers and the hover preview** — ✅ done. `integrations/sketchybar/`
    (`mod.nu` the contract, `items.nu` the names and the generated shell, `text.nu`
    markdown → labels), 91 assertions in its suite, 319/319 overall.
@@ -980,7 +1014,7 @@ the bar.
    per-slot comparison are replaced by nothing at all.
    **Hover was the hard part.** SketchyBar reacts to a mouse in exactly one way:
    it runs an item's `script`. v1 pointed that at `plugins/hover.sh`, which
-   started a whole nushell to read the store and wrap the text — ~47ms for every
+   started a whole nushell to read the session-store and wrap the text — ~47ms for every
    row the pointer brushed past, and a file in someone else's config directory.
    The fix is that **the paint already knows the answer**, so the script IS the
    answer: a literal `sketchybar --set …` command line written onto the row when
@@ -1001,27 +1035,26 @@ the bar.
    Markdown is stripped in nushell rather than by pandoc: v1 could afford ~30ms
    because it converted where the preview was STORED, on a path already spawning
    processes; v2's whole paint is 6.5ms, and the picker still wants the markdown.
-6. **Jump** — ✅ done. First the shape changed: `surfaces/` became
+6. **Jump** — ✅ done. First the shape changed: `displays/` became
    `integrations/` (D49) because a tool has two halves and only one of them is a
-   surface, and the config file grew `surface:`/`commands:` to match (D47).
+   display, and the config file grew `display:`/`commands:` to match (D47).
    `integrations/zellij/jump.nu`, 16 assertions, 350/350 overall. `program.nu`
-   holds the one thing both halves share: which zellij.
-   **It names no window manager and assumes no operating system** (D50). v1
-   raised the terminal through aerospace, fell back to `open -a Ghostty`, and
-   read the attached session out of the WINDOW TITLE. None of that is needed
-   here: raising a window matters only to a BAR CLICK, and the picker runs inside
-   the terminal, where the window is already in front. Running inside zellij also
-   turns "which session is asking?" into `$env.ZELLIJ_SESSION_NAME`.
-   Probing zellij first paid for itself three times: it **exits 0 on failure**
-   and puts the reason on stderr; it uses stderr for successes too ("already
-   focused"); and **`switch-session` CREATES a session it cannot find** — a stale
-   record would have spawned an empty session and gone there, which the probe
-   demonstrated by leaving an orphan server behind.
-   `jump argv <who>` is the whole decision as data (D51) and `main` is four lines
-   that run it. That is what makes the cross-session branch testable: obeying it
-   moves a real screen.
+   holds the one thing both halves share: which zellij. **It names no window
+   manager and assumes no operating system** (D50). v1 raised the terminal
+   through aerospace, fell back to `open -a Ghostty`, and read the attached
+   session out of the WINDOW TITLE. None of that is needed here: raising a
+   window matters only to a BAR CLICK, and the picker runs inside the terminal,
+   where the window is already in front. Running inside zellij also turns "which
+   session is asking?" into `$env.ZELLIJ_SESSION_NAME`. Probing zellij first
+   paid for itself three times: it **exits 0 on failure** and puts the reason on
+   stderr; it uses stderr for successes too ("already focused"); and
+   **`switch-session` CREATES a session it cannot find** — a stale record would
+   have spawned an empty session and gone there, which the probe demonstrated by
+   leaving an orphan server behind. `jump argv <who>` is the whole decision as
+   data (D51) and `main` is four lines that run it. That is what makes the
+   cross-session branch testable: obeying it moves a real screen.
 6b. **The picker** — ✅ done, and rebuilt from nothing. A skim + bat version
-   shipped first and was rejected outright, both dependencies with it. The
+   integration-registry first and was rejected outright, both dependencies with it. The
    replacement has NO external dependency at all: nushell's own `input listen`
    and zellij's `dump-screen`, and nothing else.
    **It is not in `integrations/zellij/`** (D55). Three things vary per
@@ -1031,7 +1064,7 @@ the bar.
    `picker/`, with its command in `cli/` beside the others. tmux would be one
    more `locate.nu` and one more row in `picker/locators.nu`. Which locator
    answers is asked of the RECORD, not of the config file (D56), so a mixed fleet
-   works with nothing configured and switching the zellij SURFACE off does not
+   works with nothing configured and switching the zellij DISPLAY off does not
    take the preview away.
    **It owns its event loop** (D54), because `input list` is opaque: it blocks
    and reports nothing until enter, so nothing can redraw a preview beside it. A
@@ -1041,15 +1074,15 @@ the bar.
    parse (we set the selection), nothing to poll (`input listen` blocks), nothing
    to coordinate (one pane, one process).
    **The preview was the agent's real terminal** (D57), 12ms per read, truer than
-   anything we could store — and step 8 reversed it (D58), because truer was not
+   anything we could record — and step 8 reversed it (D58), because truer was not
    readable. A `--timeout 2sec` heartbeat keeps the frame live while you sit
    still, which is still what it is for.
-   Four calls in `picker/mod.nu` touched the world — read the store, read a
+   Four calls in `picker/mod.nu` touched the world — read the session-store, read a
    screen, print, read a key — and every other line is pure: `rows.nu`,
-   `frame.nu`, `keys.nu`. Three, since the screen read went. `frame render` returns the WHOLE SCREEN as a list of strings and
+   `layout.nu`, `keys.nu`. Three, since the screen read went. `layout render` returns the WHOLE SCREEN as a list of strings and
    never prints (D34, after the bar's `message` and zellij's `commands`), so the
    suite asserts entire frames line for line with no terminal and nothing
-   installed. `tests/fake.nu` grew a fake LOCATOR beside its fake surface.
+   installed. `tests/fake.nu` grew a fake LOCATOR beside its fake display.
    82 assertions, 432/432 overall. It runs IN PLACE (D52) and does not prune (D53).
    **Four bugs the suite could not have found, all found by running it in a
    floating pane and typing at it with `send-keys`:** the default locator table
@@ -1072,21 +1105,22 @@ the bar.
 7. **Cutover** — ✅ done. **v1 was dismissed early, on purpose** (2026-09-12),
    while this was still incomplete, and DELETED once it was finished. v1's hooks
    are out of `settings.json`, its bar block is out of `sketchybarrc`,
-   `CLAUDE.md`'s session-naming rule calls `agent-notify name`, both surfaces are
-   on in `~/.config/agent-notify/config.yaml`, and the clock is a launchd job.
+   `CLAUDE.md`'s session-naming rule calls `agent-notify name`, both displays
+   are on in `~/.config/agent-notify/config.yaml`, and the prune-daemon is a
+   launchd job.
 
    **Running it for real is what found the remaining defects.** Every one of these
    was invisible to 250+ passing tests, because each needed a real machine, a real
-   agent, or a real clock:
+   agent, or a real prune-daemon:
 
    | found by | defect |
    |---|---|
-   | the cutover | a CLI write skipped the dispatch seam, so an agent using the PUBLIC API (P5) never reached a surface |
-   | the cutover | `apply` could not know what had VANISHED — an agent that ended left its glyph on its pane forever |
+   | the cutover | a CLI write skipped the dispatch seam, so an agent using the PUBLIC API (P5) never reached a display |
+   | the cutover | `push-items` could not know what had VANISHED — an agent that ended left its glyph on its pane forever |
    | a demo pane | `undo-rename-pane` POPS ONE RENAME off a stack; it does not clear our name |
    | a demo pane | "whose event is this" and "whose environment is this" were conflated — identical for a hook, different for a CLI write about another agent |
-   | the clock | a launchd job's PATH is `/usr/bin:/bin`, so `^sketchybar` was silently not found: the clock pruned correctly and never painted, while dispatch reported "applied" |
-   | the clock | `--force` passed "there was nothing before", so a forced repaint could not release what the prune had just removed |
+   | the prune-daemon | a launchd job's PATH is `/usr/bin:/bin`, so `^sketchybar` was silently not found: the prune-daemon pruned correctly and never painted, while dispatch reported "applied" |
+   | the prune-daemon | `--force` passed "there was nothing before", so a forced repaint could not release what the prune had just removed |
    | the user | a missing pid was PERMANENT — one failed lookup blinded us to that agent for its whole life |
 
    **And running it for real is what found the last one**, which nothing above
@@ -1108,57 +1142,56 @@ the bar.
    cone is measured against the thing §4.4 argued for.
 
    `agent-notify2` became `agent-notify` in one pass: the directory, every
-   reference inside it, the store at `~/.local/share/agent-notify/`, and five
+   reference inside it, the session-store at `~/.local/share/agent-notify/`, and five
    live config files — `settings.json`, `CLAUDE.md`, `sketchybarrc`,
    `config.kdl`, and the launchd plist. The `2` existed so both could be live at
    once; with v1 gone it was only a scar. The bar prefix `an_` stays: it was
    chosen to keep the two apart, and it turns out to be the right name anyway.
-   432/432, the store intact across the move, both surfaces painting.
+   432/432, the session-store intact across the move, both displays painting.
 
 8. **The picker's preview is the message** — ✅ done. The first change made by
    USING the picker rather than by building it, and it reverses D57's first half
    (D58). The preview was `zellij action dump-screen`; it is now the agent's
    stored message, flattened through the same code that fills the bar's drawer.
-   **Truer lost to readable.** A dump really is what the agent is DOING, and what
-   it looks like is the bottom of a TUI caught mid-redraw — half a spinner, a box
-   rule cut off at both edges, an input prompt. The question a picker answers is
-   "which of these wants me", and the agent already wrote that answer in a
-   sentence. Two smaller things fell out with it: no frame spawns a subprocess any
-   more (the heartbeat was doing one every 2 seconds, forever, for as long as the
-   picker sat open), and the two codepaths became one — an agent with no pane had
-   always fallen back to exactly this.
+   **Truer lost to readable.** A dump really is what the agent is DOING, and
+   what it looks like is the bottom of a TUI caught mid-redraw — half a spinner,
+   a box rule cut off at both edges, an input prompt. The question a picker
+   answers is "which of these wants me", and the agent already wrote that answer
+   in a sentence. Two smaller things fell out with it: no frame spawns a
+   subprocess any more (the heartbeat was doing one every 2 seconds, forever,
+   for as long as the picker sat open), and the two codepaths became one — an
+   agent with no pane had always fallen back to exactly this.
    **`sketchybar/text.nu` became `core/markdown.nu`.** A flattener with two
-   readers is not the bar's, and there was no second answer to have: a message is
-   markdown, and neither a SketchyBar label nor a rectangle of terminal renders
-   it. Its assertions moved too, into `tests/markdown.nu`.
-   **And what stayed behind went where it belonged.** The leftover was one
-   function — `quotable`, making text safe to single-quote (D44, D45) — which for
-   a moment was a file of its own, which is a smell. Following it found the real
-   fault: it was being applied in `project`, so the map dispatch diffs held `it’s`
+   readers is not the bar's, and there was no second answer to have: a message
+   is markdown, and neither a SketchyBar label nor a rectangle of terminal
+   renders it. Its assertions moved too, into `tests/markdown.nu`. **And what
+   stayed behind went where it belonged.** The leftover was one function —
+   `quotable`, making text safe to single-quote (D44, D45) — which for a moment
+   was a file of its own, which is a smell. Following it found the real fault:
+   it was being applied in `render-items`, so the map dispatch diffs held `it’s`
    where the agent had written `it's`, and a row's LABEL was escaped although it
-   is argv and never sees a shell. Escaping is what `apply` does to text on the
-   way out, not part of what should be SHOWN. It is now private to `items.nu` and
-   called at the single point that writes a quote, `hover-shell`. The suite tests
-   the guarantee end to end instead of testing the function: an agent's raw text
-   goes in and a command that cannot break out comes back.
-   **The locator contract lost a question** (D55): `claims`, `place`, `go`. A
-   locator now asks only what the multiplexer alone can answer. `screen` and its
-   `--session` care are written up in §9b.5, for a `watch` command where a whole
-   live terminal would be the point.
-   **And the preview became testable**, which it never was: it was the one part
-   of a frame the suite could not assert, because asserting it meant running
-   zellij. `picker/preview.nu` is pure like everything else in that directory,
-   and `picker/mod.nu` is down to three calls that touch the world.
-   439/439.
+   is argv and never sees a shell. Escaping is what `push-items` does to text on
+   the way out, not part of what should be SHOWN. It is now private to
+   `items.nu` and called at the single point that writes a quote, `hover-shell`.
+   The suite tests the guarantee end to end instead of testing the function: an
+   agent's raw text goes in and a command that cannot break out comes back.
+   **The locator contract lost a question** (D55): `owns`, `location-label`,
+   `go`. A locator now asks only what the multiplexer alone can answer. `screen`
+   and its `--session` care are written up in §9b.5, for a `watch` command where
+   a whole live terminal would be the point. **And the preview became
+   testable**, which it never was: it was the one part of a frame the suite
+   could not assert, because asserting it meant running zellij.
+   `picker/preview.nu` is pure like everything else in that directory, and
+   `picker/mod.nu` is down to three calls that touch the world. 439/439.
 
 > **Reordered after step 1** (was: write API → config → zellij → client). Two
 > reasons. The old step 2 largely landed inside step 1 — `patch`, `changed` and
 > validation are done, and what remains of it (write-once policy, `view/`) belongs
-> to the steps that actually need it. And the old order built a surface before
+> to the steps that actually need it. And the old order built a display before
 > anything fed it, so zellij would have been judged against hand-written fixtures.
-> The distinction that settles it: **writers need no opt-in, surfaces do.** An
+> The distinction that settles it: **writers need no opt-in, displays do.** An
 > agent reporting itself just calls the command; there is nothing to enable. So
-> the client can land before config, and config can wait until a surface makes it
+> the client can land before config, and config can wait until a display makes it
 > concrete.
 
 ---
@@ -1179,7 +1212,7 @@ the bar.
    the name was in the payload all along; what was missing was the thing it
    pointed at, because `SessionEnd` had unlinked it.
    **`name` is the only field a record cannot recompute.** `cwd` and `state` come
-   back from the next hook, the pane from `observe`, the pid from the walk, the
+   back from the next hook, the pane from `discover-own-location`, the pid from the walk, the
    message from the next `Stop`. A name is authored once — by a human, or by an
    agent following an instruction — and nothing ever says it again. So `drop` was
    the one data-loss event in the system, and it fired on every normal exit.
@@ -1190,23 +1223,23 @@ the bar.
    it is in. We were the only one disagreeing.
    So `SessionEnd` now MOVES the record to `ended/` and a create moves it back
    (D59). The textbook soft delete — a flag on the record, readers filter — was
-   measured and rejected: `store list` runs on every event and costs 0.4ms at 3
+   measured and rejected: `session-store list` runs on every event and costs 0.4ms at 3
    records, **36.9ms at 600**, so a month of history would have gone straight
    onto every tool call. A second directory the hot path never opens costs
    nothing, and the move is a rename: nothing is read, parsed or rewritten.
-   **A restore brings back the SESSION, not the run it was in** — `schema
+   **A restore brings back the SESSION, not the run it was in** — `session-schema
    durable`, which is the core fields and not one namespace. That is the
-   schema's own line rather than a list of exceptions, and it closes the one way
-   this could have done harm: a stale `proc` would let the janitor prove the
+   session-schema's own line rather than a list of exceptions, and it closes the one way
+   this could have done harm: a stale `proc` would let the session-store-garbage-collector prove the
    resumed session dead and file it away again within 30s, and a stale `zellij`
    would rename a pane that had moved on. The defaults still apply on top, so a
    resumed session is idle until you type.
-   The janitor archives too — an agent that was killed is no less resumable than
+   The session-store-garbage-collector archives too — an agent that was killed is no less resumable than
    one that quit. Reaping is by MTIME and runs ON ARCHIVE, the only moment the
    directory can grow: scanning 600 files costs 2.5ms where parsing them costs
-   36.9ms, and the 30s clock gains no new job. **Seven days** — long enough to
+   36.9ms, and the 30s prune-daemon gains no new job. **Seven days** — long enough to
    pick something back up after a weekend, short enough that the directory never
-   becomes an archive nobody asked for. `agent-notify store list --ended` is the
+   becomes an archive nobody asked for. `agent-notify session-store list --ended` is the
    way to look.
    **And `agent-notify name` grew `--if-unnamed`**, which is what lets the rule in
    `CLAUDE.md` be one line with no qualification: *run this at every session
@@ -1219,12 +1252,12 @@ the bar.
    would never get named.
    452/452. The hot path is untouched — `ended/` is not in any read it makes.
    **Also measured, and deliberately not acted on:** SQLite. `nu` has good
-   builtin support, and it beat the JSON store on every axis — 0.12ms to write
+   builtin support, and it beat the JSON session-store on every axis — 0.12ms to write
    against 0.46ms, 0.12ms to read the live set against 0.41ms at three records
    and 36.9ms at six hundred, and eight concurrent writers doing 320 updates with
    zero failures, which is the contention D8 was locked against. Not taken here:
-   the record is an open schema (D11c) so it would live in a JSON column, `cat
-   agents/<id>.json` stops being how the store is inspected (P5 leans on that),
+   the record is an open session-schema (D11c) so it would live in a JSON column, `cat
+   agents/<id>.json` stops being how the session-store is inspected (P5 leans on that),
    and the cold cost inside a real hook was never measured. Reopening D8 deserves
    its own step, not a decision made on the way past.
 
@@ -1232,14 +1265,15 @@ the bar.
 
 ## 9b. Deferred — what is not built, and what each one waits on
 
-Every step in §9 is done. These are not unfinished steps; they are work set aside
-on purpose, each for a reason that has not changed. Written down because the
-alternative is rediscovering them — and because the first and the third are
-blocked on a DECISION rather than on effort, which is a different kind of waiting
-and needs saying out loud. §9b.5 is the odd one: the code for it was written,
-shipped, lived with and deleted, and what is deferred is the SHAPE it should have
-come in. The fourth is not work at all: it is a behaviour that looks like a bug
-and is not, recorded so it does not get filed as one.
+Every step in §9 is done. These are not unfinished steps; they are work set
+aside on purpose, each for a reason that has not changed. Written down because
+the alternative is rediscovering them — and because the first and the third are
+blocked on a DECISION rather than on effort, which is a different kind of
+waiting and needs saying out loud. §9b.5 is the odd one: the code for it was
+written, integration-registry, lived with and deleted, and what is deferred is
+the SHAPE it should have come in. The fourth is not work at all: it is a
+behaviour that looks like a bug and is not, recorded so it does not get filed as
+one.
 
 ### 9b.1 A click on a bar row should jump
 
@@ -1257,8 +1291,8 @@ mechanism with `jump.sh`; what it did not have was D44.
 **What blocks it is the RAISE, and only the raise.** A bar click arrives from a
 desktop, not from a terminal, so before focusing a pane you have to bring the
 terminal's WINDOW to the front — and that is a window manager's job. The picker
-never needed this, which is exactly why the picker shipped first: it runs inside
-the terminal, where the window is already in front.
+never needed this, which is exactly why the picker integration-registry first:
+it runs inside the terminal, where the window is already in front.
 
 D50 says this module names no window manager and assumes no operating system.
 v1 broke both — it called aerospace, fell back to `open -a Ghostty`, and read
@@ -1279,34 +1313,34 @@ another step.
 
 **What is done.** The PREVIEW is painted, and only its two kinds: a heading in
 `yellow_bold` and a code block in `blue`, which on this machine's Rosé Pine are
-rose and iris — the same two meanings the drawer paints, said in each surface's
-own vocabulary. `INK` in `frame.nu` is the whole of it, and a kind that is not in
-that map is not painted at all.
+rose and iris — the same two meanings the drawer paints, said in each display's
+own vocabulary. `INK` in `layout.nu` is the whole of it, and a kind that is not
+in that map is not painted at all.
 
 **All three constraints below held**, and the way they held is the part worth
-copying. Colour goes on LAST, after `clean` and `clip`: the strip stays a defence
-against an escape in an agent's own text, the clip still measures what a reader
-sees, and the suite's whole-frame assertions stay escape-free because the kind
-they use (`text`) is not in the map. One assertion pins the ordering directly —
-a painted row, clipped to a narrow pane, is still the right width after `ansi
-strip`.
+copying. Colour goes on LAST, after `clean` and `clip`: the strip stays a
+defence against an escape in an agent's own text, the clip still measures what a
+reader sees, and the suite's whole-frame assertions stay escape-free because the
+kind they use (`text`) is not in the map. One assertion pins the ordering
+directly — a painted row, clipped to a narrow pane, is still the right width
+after `ansi strip`.
 
 **And then the rest of it (D64).** The list, the rules and the footer. A state
 wears the colour it wears on the bar and in the pane titles — foam turning, gold
-talking to you, love stuck — the selection is rose, a place is dim, and a key on
+talking to you, love stuck — the selection is rose, a location is dim, and a key on
 the footer is iris because a key is a thing you invoke. The mechanism is what
 made it small: a line is built as `{c, t}` PIECES and inked last, so the same
 eight lines lay out a row, a bar and a preview line.
 
 **Two things it had to decide, and one it had to not break.**
 
-- **ANSI names, or hex?** The old picker used ANSI NAMES on purpose: the bar sits
-  on a desktop and picks its own colours, but a terminal has a theme and the
-  surface inside it should obey. That reasoning survives even though the code
-  that held it does not.
+- **ANSI names, or hex?** The old picker used ANSI NAMES on purpose: the bar
+  sits on a desktop and picks its own colours, but a terminal has a theme and
+  the display inside it should obey. That reasoning survives even though the
+  code that held it does not.
 - **Where does it come from?** Not the config file. The picker reads no settings
   and that is a constraint, not an omission (D48, D54) — so the palette is a
-  constant in `frame.nu` or it is nothing.
+  constant in `layout.nu` or it is nothing.
 - **THE SUITE ASSERTS WHOLE FRAMES, line for line** (D34). Colour introduced
   naively turns every one of those assertions into an escape-code diff, which is
   how a readable suite becomes an unreadable one. The precedent is the old
@@ -1319,9 +1353,9 @@ eight lines lay out a row, a bar and a preview line.
 
 Still genuinely open, and the only OPEN row left. ~350 lines under `bench/`, not
 part of the module — nothing in `mod.nu` imports it, so `use agent-notify` never
-parses a byte. §8 promises every step re-measures, which is why it is in the repo
-rather than in a scratch directory. The question is only whether that is where it
-stays now that the steps are done.
+parses a byte. §8 promises every step re-measures, which is why it is in the
+repo rather than in a scratch directory. The question is only whether that is
+where it stays now that the steps are done.
 
 ### 9b.5 A `watch` command — the live pane, where it belongs
 
@@ -1345,33 +1379,36 @@ it is asked to show is its OWN — the deleted code did.
 
 ### 9b.4 ~~Known and accepted: a resumed session starts nameless~~ — FIXED in step 9
 
-**Wrong, and fixed** (2026-09-13). This said a resumed session gets a NEW id from
-Claude Code and that carrying a name across would need a heuristic. Both halves
-were false, and neither had been checked: `--resume` hands back the SAME id
-(`--fork-session` exists precisely to opt out of it), so the id that would find
-the name is in the payload — we had simply deleted what it pointed at. See step 9.
+**Wrong, and fixed** (2026-09-13). This said a resumed session gets a NEW id
+from Claude Code and that carrying a name across would need a heuristic. Both
+halves were false, and neither had been checked: `--resume` hands back the SAME
+id (`--fork-session` exists precisely to opt out of it), so the id that would
+find the name is in the payload — we had simply deleted what it pointed at. See
+step 9.
 
 ---
 
 ## 10. Nushell notes (hard-won)
 
-Things that cost time once and should not cost it twice. All verified on 0.115.1.
+Things that cost time once and should not cost it twice. All verified on
+0.115.1.
 
 **A def named after a builtin shadows that builtin for every module the file
-imports** — whatever the order of the `use` statements, and the error surfaces
-somewhere else entirely. `core/store.nu` defining `export def get` made
-`core/schema.nu` fail to parse on `get -o $f` with "the `get` command doesn't have
-flag `-o`", a file that never mentions `get` as a name. Worse, a *bare* `get $x`
-in that position would not error at all — it would silently call ours.
+imports** — whatever the order of the `use` statements, and the error displays
+somewhere else entirely. `core/session-store.nu` defining `export def get` made
+`core/session-schema.nu` fail to parse on `get -o $f` with "the `get` command
+doesn't have flag `-o`", a file that never mentions `get` as a name. Worse, a
+*bare* `get $x` in that position would not error at all — it would silently call
+ours.
 
 | | |
 |---|---|
 | `export def get` (before or after `use`) | poisons imported modules |
 | `export def read` | fine |
-| `export def "store get"` | **fine** — multi-word subcommands are exempt |
+| `export def "session-store get"` | **fine** — multi-word subcommands are exempt |
 
 So: library functions avoid builtin names (`read`/`remove`, not `get`/`drop`),
-and the command surface uses multi-word names, which is what we wanted it to read
+and the command set uses multi-word names, which is what we wanted it to read
 as anyway. Only `get` and `drop` collide among the verbs this module wants;
 `set`, `list`, `patch`, `read`, `remove` and `write` are all free.
 
@@ -1385,17 +1422,17 @@ nushell file pulled in with `source` (§4.5).
 Rome and read in UTC would differ textually. Timestamps are stored as explicit
 UTC ISO-8601 strings, which also makes lexicographic order chronological.
 
-**Records compare structurally and order-insensitively** (`{a:1,b:2} == {b:2,a:1}`
-is true, nested too), which is what lets `changed` be a plain `!=` rather than a
-canonicalising walk.
+**Records compare structurally and order-insensitively** (`{a:1,b:2} ==
+{b:2,a:1}` is true, nested too), which is what lets `changed` be a plain `!=`
+rather than a canonicalising walk.
 
 **Running a file as a script with `main` + arguments costs ~7.5ms more than the
-same file imported as a module**, because nu evaluates twice — a synthetic command
-line on top of the file itself (`eval_source <commandline>` nested inside
-`evaluate_file`, visible under `--log-level perf`). A script with only top-level
-code does not pay it. Measured on the real entry: 29.3ms as a script against
-20.4ms via `-c 'use <abs path>; hook <Event>'`, which is why the hook command line
-is spelled the second way.
+same file imported as a module**, because nu evaluates twice — a synthetic
+command line on top of the file itself (`eval_source <commandline>` nested
+inside `evaluate_file`, visible under `--log-level perf`). A script with only
+top-level code does not pay it. Measured on the real entry: 29.3ms as a script
+against 20.4ms via `-c 'use <abs path>; hook <Event>'`, which is why the hook
+command line is spelled the second way.
 
 > That rule bit three times in one afternoon while writing the clients: `def
 > ignore` (shadowing the builtin the next line pipes to), `export def all` in the
@@ -1404,15 +1441,17 @@ is spelled the second way.
 > export a command with its own name** — `clients.nu` must export `main`, not
 > `clients`.
 
-**Reading stdin blocks until the writer closes it.** `open --raw /dev/stdin` in an
-entry point run by hand hangs with no clue why; `is-terminal --stdin` guards it.
+**Reading stdin blocks until the writer closes it.** `open --raw /dev/stdin` in
+an entry point run by hand hangs with no clue why; `is-terminal --stdin` guards
+it.
 
 **A module reached by two import paths is PARSED TWICE.** There is no cache
-across `use` paths, and the cost is worse than additive. Measured: `store.nu`
-alone +1.32ms, `zellij.nu` (which imports it) alone +2.25ms, both together
+across `use` paths, and the cost is worse than additive. Measured:
+`session-store.nu` alone +1.32ms, `zellij.nu` (which imports it) alone +2.25ms,
+both together
 +4.51ms where a re-parse alone predicts +3.57ms. Keep the import cone a tree:
-the fix was to stop a surface importing the store at all, which took the whole
-dispatch cone from +5.28ms to +3.87ms per event.
+the fix was to stop a display importing the session-store at all, which took the
+whole dispatch cone from +5.28ms to +3.87ms per event.
 
 **Private Use Area glyphs do not survive ordinary tooling.** Nerd Font icons
 written as literal characters arrived in the file as empty strings — silently,
@@ -1420,23 +1459,24 @@ with no error anywhere. Write them as `"\u{f021}"`. The tests caught it only
 because they asserted a title's exact contents.
 
 **A LAUNCHD JOB'S PATH IS SMALLER THAN A HOOK'S**, which is smaller than your
-shell's: the clock runs with `/usr/bin:/bin` and nothing else, so `^sketchybar`
-and `^zellij` silently did nothing there — the clock pruned correctly and never
-painted, while dispatch reported "applied". Every external program a surface
-calls is now resolved to an ABSOLUTE path in `settings`, where a missing one is a
-loud error instead of a surface that paints nothing. The same rule already
-applied to `nu` itself in the wiring blocks; it applies to everything.
+shell's: the prune-daemon runs with `/usr/bin:/bin` and nothing else, so
+`^sketchybar` and `^zellij` silently did nothing there — the prune-daemon pruned
+correctly and never painted, while dispatch reported "applied". Every external
+program a display calls is now resolved to an ABSOLUTE path in `settings`, where
+a missing one is a loud error instead of a display that paints nothing. The same
+rule already applied to `nu` itself in the help-setup blocks; it applies to
+everything.
 
 **`job spawn` runs a thread INSIDE the process.** It dies when that process
 exits, and so does any external command it started — both verified. Nothing a
-hook spawns can outlive the hook, so nothing spawned can be a clock.
+hook spawns can outlive the hook, so nothing spawned can look again later.
 
 **The builtin-shadowing rule bit a FOURTH time**, and this one was the most
 remote: `tests/mod.nu` exported `def all`, which silently broke `| all { … }`
-inside `tests/clock.nu` — a file that never mentions the name and was written
-weeks later. The runner is `export def main` now, so it is spelled `tests` and
-can poison nothing. When a library command wants a builtin's name, the answer is
-always the same: pick another name, or make it multi-word.
+inside `tests/prune-daemon.nu` — a file that never mentions the name and was
+written weeks later. The runner is `export def main` now, so it is spelled
+`tests` and can poison nothing. When a library command wants a builtin's name,
+the answer is always the same: pick another name, or make it multi-word.
 
 **Some names are PARSER KEYWORDS and cannot be commands at all** — `run` among
 them. A louder failure than builtin shadowing (it names the rule and refuses to
@@ -1446,21 +1486,22 @@ project`, not `dispatch run`.
 **A def annotated `-> nothing` cannot END in `error make`**, because `error` is
 not `nothing`. Drop the return type on commands whose job is to fail.
 
-**A comment may not sit between an `@attribute` and its `def`.** "Attributes must
-be followed by a definition" — put the prose above the attributes.
+**A comment may not sit between an `@attribute` and its `def`.** "Attributes
+must be followed by a definition" — put the prose above the attributes.
 
-**An operator cannot start a continuation line, and a boolean expression does not
-continue across lines at all.** A leading `and` is read as a command (`Command
-'and' not found`); moving it to the end of the previous line gives "incomplete
-math expression" instead. Bind the halves with `let` and compare them on one line.
+**An operator cannot start a continuation line, and a boolean expression does
+not continue across lines at all.** A leading `and` is read as a command
+(`Command 'and' not found`); moving it to the end of the previous line gives
+"incomplete math expression" instead. Bind the halves with `let` and compare
+them on one line.
 
 **A flag cannot start a continuation line.** `summarise (…)\n  --title "x"` is a
 parse error; bind the argument to a `let` and keep the call on one line.
 
 **`ls` on a glob that matches nothing is an ERROR**, not an empty list — and a
-directory that outlives its contents is the ordinary case for a store whose last
-agent has just ended. `try { ls … } catch { [] }`, or the first empty store takes
-every surface down with it.
+directory that outlives its contents is the ordinary case for a session-store
+whose last agent has just ended. `try { ls … } catch { [] }`, or the first empty
+session-store takes every display down with it.
 
 **`reject` errors on a missing column**; `reject --optional` does not.
 
@@ -1470,10 +1511,10 @@ anything a script means to show needs an explicit `print`.
 **An error raised INSIDE a `catch` block escapes that `try`** — and nushell then
 reports the ORIGINAL error, at the ORIGINAL span. So it looks exactly like a
 `try` that does not catch, and you will go looking in the wrong place. Found by
-writing `catch {|e| {msg: $e.msg, json: ($e | to json)} }`: **`to json` throws on
-a caught error record**, the catch died, and the report pointed at the `input
-listen` two lines above. `$e.msg` is safe; nothing else in a catch should be able
-to fail.
+writing `catch {|e| {msg: $e.msg, json: ($e | to json)} }`: **`to json` throws
+on a caught error record**, the catch died, and the report pointed at the `input
+listen` two lines above. `$e.msg` is safe; nothing else in a catch should be
+able to fail.
 
 **`input listen --timeout` THROWS on expiry** rather than returning null, so a
 heartbeat is a caught error. And the catch must be able to tell that expiry from
@@ -1485,46 +1526,49 @@ and the wording belongs to nushell.
 **`input listen` spells a held modifier `keymodifiers(control)`**, not `control`
 — a Debug format leaking into the record. `"control" in $ev.modifiers` is false
 for every control key there is, so ctrl-u types a `u` and ctrl-c types a `c`
-instead of leaving. Match on CONTAINS so both spellings work. The suite could not
-catch this: it builds its own events, spelled the way the docs say.
+instead of leaving. Match on CONTAINS so both spellings work. The suite could
+not catch this: it builds its own events, spelled the way the docs say.
 
 **`term size` answers 80×24 when there is no terminal** rather than failing, so
 it cannot be used to find out whether there is one.
 
 **An explicit `{}` is not null, so `default` does not fire on it.** "Use the
-shipped table" and "use an empty table" must not be spelled the same way — they
-were, and the picker silently claimed nothing, previewed nothing and showed no
-places until it was run. Relatedly: a LITERAL `null` cannot be passed to a typed
-optional parameter (parse error), but a VARIABLE holding null can, and `default`
-then works — which is how an optional is threaded through a caller.
+integration-registry table" and "use an empty table" must not be spelled the
+same way — they were, and the picker silently claimed nothing, previewed nothing
+and showed no places until it was run. Relatedly: a LITERAL `null` cannot be
+passed to a typed optional parameter (parse error), but a VARIABLE holding null
+can, and `default` then works — which is how an optional is threaded through a
+caller.
 
 **`str downcase` is deprecated** (0.114) in favour of `str lowercase`.
 
-**Arithmetic does not continue across lines either**, with the operator at either
-end — the same rule as booleans. `+ (…)` on its own line is read as a fresh
-pipeline and fails with "Command `+` not found".
+**Arithmetic does not continue across lines either**, with the operator at
+either end — the same rule as booleans. `+ (…)` on its own line is read as a
+fresh pipeline and fails with "Command `+` not found".
 
 ---
 
 ## 11. Platform notes (hard-won)
 
-Not nushell — the programs underneath. Same rule as §10: cost time once, not twice.
+Not nushell — the programs underneath. Same rule as §10: cost time once, not
+twice.
 
 **zellij**
 
 - `undo-rename-pane` / `undo-rename-tab` **pop one rename off a stack**. They do
-  not clear our name. After a session's worth of state changes, an undo leaves the
-  second-to-last agent title sitting there. Write the name you want instead;
+  not clear our name. After a session's worth of state changes, an undo leaves
+  the second-to-last agent title sitting there. Write the name you want instead;
   blank-means-undo is right only for a pane that never had one.
 - **There is no tab environment variable.** `ZELLIJ`, `ZELLIJ_PANE_ID` and
   `ZELLIJ_SESSION_NAME`, and nothing else — so learning which tab a pane is in
   costs a `list-panes`.
-- `action list-panes -t -j` is the one call worth making: a flat list of panes with
-  `id`, `title`, `tab_id`, `tab_name`, `tab_position`, `pane_command`, `pane_cwd`,
-  `is_plugin`, `exited`. It answers pane→tab, tab names and liveness at once.
-- **`tab_id` is not `tab_position`.** `rename-tab --tab-id` wants the id; ids are
-  not renumbered when tabs move, and `query-tab-names` returns names in POSITION
-  order with no ids, so it cannot be used for renaming.
+- `action list-panes -t -j` is the one call worth making: a flat list of panes
+  with `id`, `title`, `tab_id`, `tab_name`, `tab_position`, `pane_command`,
+  `pane_cwd`, `is_plugin`, `exited`. It answers pane→tab, tab names and liveness
+  at once.
+- **`tab_id` is not `tab_position`.** `rename-tab --tab-id` wants the id; ids
+  are not renumbered when tabs move, and `query-tab-names` returns names in
+  POSITION order with no ids, so it cannot be used for renaming.
 - **`action dump-screen --pane-id` reads ANY pane's live screen** for **12ms**.
   `--full` for scrollback, `--ansi` to keep styling, `--path` to a file. It was
   the picker's preview until step 8 (D58) and nothing calls it today; the note
@@ -1532,13 +1576,14 @@ Not nushell — the programs underneath. Same rule as §10: cost time once, not 
   point.
 - **PANE IDS ARE PER SESSION, so `--session` is not optional.** Probed with two
   sessions, both holding a pane 0 and different contents: `action dump-screen
-  --pane-id terminal_0` with no `--session` reads whichever session the process is
-  attached to. An agent living anywhere else would show A STRANGER'S TERMINAL,
-  silently, with no error — the same failure class that got the screen-scraping
-  picker rejected. `jump` always passed `--session`; so must anything else.
+  --pane-id terminal_0` with no `--session` reads whichever session the process
+  is attached to. An agent living anywhere else would show A STRANGER'S
+  TERMINAL, silently, with no error — the same failure class that got the
+  screen-scraping picker rejected. `jump` always passed `--session`; so must
+  anything else.
 - `action send-keys --pane-id <id> "Down" "Ctrl u"` drives any pane's keyboard
-  **without focusing it**, and `action close-pane --pane-id` closes any pane, not
-  only the focused one. With `dump-screen`, that is the whole technique for
+  **without focusing it**, and `action close-pane --pane-id` closes any pane,
+  not only the focused one. With `dump-screen`, that is the whole technique for
   testing an interactive program: `zellij run --floating … -- nu -n probe.nu`,
   screenshot it, type at it.
 - **A dump races the redraw.** `send-keys` then `dump-screen` in the same breath
@@ -1547,23 +1592,24 @@ Not nushell — the programs underneath. Same rule as §10: cost time once, not 
 - `--session <name>` on every action makes it work from anywhere, including a
   process with no ambient `$ZELLIJ`.
 - **It exits 0 whether or not the action worked.** The reason arrives on STDERR:
-  `Pane with id Terminal(99999) not found`, `Session 'x' not found`. The exit code
-  is worthless; stderr is the whole answer — the same shape as macOS `ps` below.
-- …and stderr is not only for failures. `Pane Terminal(3) is already focused` is a
-  jump that SUCCEEDED. So the benign messages have to be named and everything else
-  raised; the other way round makes a real failure silent.
-- **`switch-session` CREATES a session it cannot find**, so a stale name does not
-  fail — it spawns an empty session and takes you there. Check `list-sessions
-  --short --no-formatting` before switching. (`--short` prints one bare name per
-  line, which is the only parseable form.)
-- A pane is `terminal_7` to `switch-session --pane-id` and either `terminal_7` or
-  `7` to `focus-pane-id`. The store holds the short form.
-- `zellij action list-clients` shows which clients are attached and which pane each
-  one has focused — the only way to tell whether a session is being LOOKED at, as
-  opposed to merely running. `ps` cannot: a client's argv still says `zellij attach
-  <original>` after it has switched sessions.
-- `delete-session <name> --force` removes a running session; without `--force` it
-  refuses and says so.
+  `Pane with id Terminal(99999) not found`, `Session 'x' not found`. The exit
+  code is worthless; stderr is the whole answer — the same shape as macOS `ps`
+  below.
+- …and stderr is not only for failures. `Pane Terminal(3) is already focused` is
+  a jump that SUCCEEDED. So the benign messages have to be named and everything
+  else raised; the other way round makes a real failure silent.
+- **`switch-session` CREATES a session it cannot find**, so a stale name does
+  not fail — it spawns an empty session and takes you there. Check
+  `list-sessions --short --no-formatting` before switching. (`--short` prints
+  one bare name per line, which is the only parseable form.)
+- A pane is `terminal_7` to `switch-session --pane-id` and either `terminal_7`
+  or `7` to `focus-pane-id`. The session-store holds the short form.
+- `zellij action list-clients` shows which clients are attached and which pane
+  each one has focused — the only way to tell whether a session is being LOOKED
+  at, as opposed to merely running. `ps` cannot: a client's argv still says
+  `zellij attach <original>` after it has switched sessions.
+- `delete-session <name> --force` removes a running session; without `--force`
+  it refuses and says so.
 
 **Claude Code**
 
@@ -1572,21 +1618,22 @@ Not nushell — the programs underneath. Same rule as §10: cost time once, not 
   Claude Code repaints its own ("◐ <session summary>") right after every hook —
   so a pane rename lands and is clobbered a moment later. v1 found this the hard
   way; **v2 depends on the fix and never mentions it**, which is why it is here:
-  `"env": {"CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1"}` in `~/.claude/settings.json`.
-  Remove it and every pane title in this module silently stops working, with
-  nothing in any log. It takes effect for NEW sessions only.
-  Diagnosis: `zellij --session S action list-panes -t -j` and look at `title` —
-  a Claude spinner glyph there means the OSC won.
+  `"env": {"CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1"}` in
+  `~/.claude/settings.json`. Remove it and every pane title in this module
+  silently stops working, with nothing in any log. It takes effect for NEW
+  sessions only. Diagnosis: `zellij --session S action list-panes -t -j` and
+  look at `title` — a Claude spinner glyph there means the OSC won.
 - **`--resume` REUSES THE SESSION ID.** `--fork-session` exists to opt out and
   mint a new one. `SessionStart` also carries `source`: `startup`, `resume`,
   `clear`, `compact`. Probed with `claude -p … --output-format json`, which
-  prints the id it used — the cheapest way to settle any question of this shape.
-- **`--settings <file>` REPLACES the user's settings rather than merging**, which
-  makes it the safe way to probe hook payloads: point a throwaway `SessionStart`
-  hook at `cat >> somewhere` and the real hooks never fire.
+  prints the id it used — the cheapest way to keep-in-view any question of this
+  shape.
+- **`--settings <file>` REPLACES the user's settings rather than merging**,
+  which makes it the safe way to probe hook payloads: point a throwaway
+  `SessionStart` hook at `cat >> somewhere` and the real hooks never fire.
 - **Hooks are loaded at session start**, so a `settings.json` edit reaches only
-  sessions started after it. Half a fleet on the old wiring is the normal state
-  of things for an hour after any change.
+  sessions started after it. Half a fleet on the old help-setup is the normal
+  state of things for an hour after any change.
 - **A subagent's tool calls carry the PARENT's session id**, so they fold into
   the parent's record for free — and `SubagentStop` must be ignored, or the
   parent reads as finished while it is still working.
@@ -1595,9 +1642,9 @@ Not nushell — the programs underneath. Same rule as §10: cost time once, not 
 
 - A message costs what a process costs and almost nothing per property: `--set`
   with one property 6.59ms, with ten 6.54ms. **Batch everything into one call.**
-- `--add` + `--remove` of a single item is 17.51ms, ~3× a whole repaint. Create the
-  item pool ONCE and never touch it again — v1 learned this by pinning the daemon
-  near 40% CPU.
+- `--add` + `--remove` of a single item is 17.51ms, ~3× a whole repaint. Create
+  the item pool ONCE and never touch it again — v1 learned this by pinning the
+  daemon near 40% CPU.
 - `--query <item>` returns JSON with `script`, `click_script` and `update_freq`
   under `scripting`, not at the top level.
 - **An item's `script` is run by a SHELL**, so it can be a whole command line
@@ -1608,8 +1655,8 @@ Not nushell — the programs underneath. Same rule as §10: cost time once, not 
 - **A `script` also runs on a forced `--update`**, which the bar sends at load,
   with `SENDER=forced`. Every script needs a `[ "$SENDER" = … ] || exit 0` guard
   or the bar opens things nobody hovered.
-- `mouse.exited.global` IS delivered to a `drawing=off` item, so a behaviour that
-  never changes can live on an invisible item of its own instead of being
+- `mouse.exited.global` IS delivered to a `drawing=off` item, so a behaviour
+  that never changes can live on an invisible item of its own instead of being
   rewritten onto a visible one by every paint.
 - `--add` of an item that already exists is a no-op, but `--remove /regex/` is
   the only way to shrink a pool; the regex needs the literal dot (`/an_x\..*/`)
@@ -1622,20 +1669,24 @@ Not nushell — the programs underneath. Same rule as §10: cost time once, not 
 
 **launchd**
 
-- `StartInterval` IS a clock: no daemon, no lock file, no pid to supervise, and it
-  survives logout and reboot.
-- **A job's PATH is `/usr/bin:/bin`.** Every program a job calls needs an absolute
-  path — this silently broke the clock's repaint while its prune worked fine.
+- `StartInterval` needs no daemon of ours: no daemon, no lock file, no pid to
+  supervise, and it survives logout and reboot.
+- **A job's PATH is `/usr/bin:/bin`.** Every program a job calls needs an
+  absolute path — this silently broke the prune-daemon's repaint while its prune
+  worked fine.
 - `bootstrap gui/$UID <plist>` to load, `bootout gui/$UID/<label>` to unload;
-  bootout first when reinstalling, and ignore its failure when nothing is loaded.
-- `launchctl list | grep <label>` gives pid and last exit status — the only cheap
-  way to notice a tick that fails every 30 seconds. Set `StandardErrorPath`.
+  bootout first when reinstalling, and ignore its failure when nothing is
+  loaded.
+- `launchctl list | grep <label>` gives pid and last exit status — the only
+  cheap way to notice a tick that fails every 30 seconds. Set
+  `StandardErrorPath`.
 
 **macOS `ps`**
 
 - `ps -o ppid=,lstart=,comm= -p <pid>` is one line: ppid, then `lstart` as FIVE
   whitespace-separated tokens, then the command.
-- `ps -o pid= -p a,b,c` returns only the pids that are alive and exits 1 when none
-  are — but it also exits 1, **with something on stderr**, when a pid is
+- `ps -o pid= -p a,b,c` returns only the pids that are alive and exits 1 when
+  none are — but it also exits 1, **with something on stderr**, when a pid is
   out of range. Stderr is what tells "none alive" from "the question was wrong".
-- A pid alone is not an identity: pids are recycled. Store the start time with it.
+- A pid alone does not identify a session: pids are recycled. Store the start
+  time with it.

@@ -1,11 +1,11 @@
-# Case group 3 — THE OUTSIDE WORLD: what the store and the three external tools
-# cost once a process is up. One of these — zellij's per-event query, which v1
-# runs on EVERY apply — is a candidate for dominating everything the parse budget
-# argues about, which is the point of measuring it.
+# Case group 3 — THE OUTSIDE WORLD: what the session-store and the three
+# external tools cost once a process is up. One of these — zellij's per-event
+# query, which v1 runs on EVERY apply — is a candidate for dominating everything
+# the parse budget argues about, which is the point of measuring it.
 #
 # (Store I/O lives in store_bench.nu, which needs its own XDG_DATA_HOME.)
 #
-# SAFETY — nothing here may disturb the live surfaces:
+# SAFETY — nothing here may disturb the live displays:
 #   - zellij reads (`list-panes`, `list-sessions`) are read-only, run against the
 #     real session.
 #   - the zellij WRITE targets pane id 99999, which does not exist: the

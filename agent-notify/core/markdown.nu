@@ -1,18 +1,18 @@
 # Markdown in, display rows out.
 #
 # A LEAF, AND SHARED. It was `integrations/sketchybar/text.nu` while the bar was
-# the only thing that had to show an agent's message; the picker's preview is the
-# second (step 8), and a flattener that two surfaces read is not the bar's. It
-# imports nothing and touches nothing, so anything may take it — including the
-# hot half, though nothing there needs it yet.
+# the only thing that had to show an agent's message; the picker's preview is
+# the second (step 8), and a flattener that two displays read is not the bar's.
+# It imports nothing and touches nothing, so anything may take it — including
+# the hot half, though nothing there needs it yet.
 #
 # WHAT IT IS FOR, in both callers: a stored message is markdown, and the places
 # it has to appear are not. A SketchyBar label takes ONE font and ONE colour and
 # holds ONE line; a picker preview is a fixed rectangle of a terminal with no
 # renderer behind it. Neither can show a heading as a heading. So: parse, then
-# lay the blocks out in characters, which is the only ink either surface has.
+# lay the blocks out in characters, which is the only ink either display has.
 #
-# ── WHY IT IS A PARSER NOW, AND NOT SEVEN REGEXES (D60) ──────────────────────
+# ── WHY IT IS A PARSER NOW, AND NOT SEVEN REGEXES (D60) ───────────────────────
 # `from md --verbose` is a BUILT-IN — nushell 0.115 — so the "why not pandoc"
 # argument that shaped the first version does not reach it: there is no
 # subprocess and no ~30ms. It returns the real document, and three things fall
@@ -28,7 +28,7 @@
 #   alignment row, so a table is PADDED INTO COLUMNS instead of reaching the
 #   screen as the pipes the agent typed.
 #
-# ── AND WHY IT WRAPS, WHICH REVERSES THE RULE ABOVE IT (D61) ─────────────────
+# ── AND WHY IT WRAPS, WHICH REVERSES THE RULE ABOVE IT (D61) ──────────────────
 # The first version said NOTHING IS WRAPPED: a drawer is 110 characters wide, a
 # fold eats one of twelve slots, and two rows read as two thoughts. That was
 # reasoned about markdown a person hard-wraps at 80. It is not what an agent
@@ -43,7 +43,7 @@
 # cut, never folded, and a table is padded to fit. Fewer rows reach the screen
 # and all of them are whole sentences.
 #
-# ── AND WHY IT TAKES A LINE BUDGET ───────────────────────────────────────────
+# ── AND WHY IT TAKES A LINE BUDGET ────────────────────────────────────────────
 # Parsing is cheap and WRAPPING KILOBYTES IS NOT, so the number of rows the
 # caller can actually show is an argument. A drawer is twelve rows; a 3.5KB
 # message is seventy blocks; sixty of them can never be seen. With the budget
@@ -53,9 +53,9 @@
 # NOTHING HERE KNOWS ABOUT ITS CALLER. It is given a width and a line budget and
 # returns rows — text, and what each row IS. Which colour that becomes, the item
 # names, the shell and the escaping that shell needs all live next door, in
-# `integrations/sketchybar/items.nu` and `picker/frame.nu`.
+# `integrations/sketchybar/items.nu` and `picker/layout.nu`.
 
-# ── measuring ────────────────────────────────────────────────────────────────
+# ── measuring ─────────────────────────────────────────────────────────────────
 # By CHARACTER, not by byte. Slicing a string at a byte offset can land inside a
 # codepoint and turn an em dash into a replacement glyph — and a character is
 # also what a label's width actually counts. `str length` and `str substring`
@@ -83,9 +83,9 @@ def rep [s: string, n: int]: nothing -> string {
     1..$n | each {|| $s } | str join
 }
 
-# ── the vocabulary a single font has ─────────────────────────────────────────
+# ── the vocabulary a single font has ──────────────────────────────────────────
 # Every one of these is a CHARACTER, because a character is all this file can
-# spend: colour is per ROW and belongs to the surface (D62), so anything finer
+# spend: colour is per ROW and belongs to the display (D62), so anything finer
 # than a row has to be said in the text itself. Emphasis and inline code are the
 # two that cannot be — they are runs INSIDE a line — so they are not marked at
 # all. Colour cannot rescue them either; they would need a font.
@@ -94,8 +94,8 @@ export const STYLE = {
     # single marker said so equally — which flattens a document into a run of
     # equally loud announcements. These are one block at full, three-quarter and
     # half width, so the hierarchy is legible before a word is read. All three
-    # stay BARS: an eighth-width block was the obvious third step and it reads as
-    # a thin rule, which is what `quote` already is.
+    # stay BARS: an eighth-width block was the obvious third step and it reads
+    # as a thin rule, which is what `quote` already is.
     head: ["█ " "▊ " "▌ "]
     # By depth, and cycling. Indentation alone is ambiguous once a long item
     # wraps, because its continuation is indented too.
@@ -114,8 +114,8 @@ export const STYLE = {
 }
 
 # A hard break inside a paragraph, carried through the flattening as a character
-# no agent can type. Both surfaces scrub control characters on the way out
-# (`frame.nu` cleans them, `items.nu` quotes them), so a leak degrades to a
+# no agent can type. Both displays scrub control characters on the way out
+# (`layout.nu` cleans them, `items.nu` quotes them), so a leak degrades to a
 # space rather than to a broken line.
 const BR = "\u{b}"
 
@@ -128,12 +128,12 @@ def strip-tags [s: string]: nothing -> string {
     $s | str replace --all --regex '<[^>]*>' '' | str trim
 }
 
-# A soft wrap in the SOURCE is not a line break in the MESSAGE — an editor put it
-# there, not the agent — so it becomes a space and the surface decides where the
-# line ends.
+# A soft wrap in the SOURCE is not a line break in the MESSAGE — an editor put
+# it there, not the agent — so it becomes a space and the display decides where
+# the line ends.
 def unfold [s: string]: nothing -> string { $s | str replace --all "\n" " " }
 
-# ── inline: a run of nodes, flattened to one string ──────────────────────────
+# ── inline: a run of nodes, flattened to one string ───────────────────────────
 # Recursive, because `strong`, `emphasis`, `delete` and `link` wrap their text in
 # children. Every one of them loses its syntax and keeps its words; a link keeps
 # the words and drops the URL, which is never readable at this size.
@@ -156,7 +156,7 @@ def inline [nodes: list<any>]: nothing -> string {
     $s
 }
 
-# ── grouping: a flat node list → blocks ──────────────────────────────────────
+# ── grouping: a flat node list → blocks ───────────────────────────────────────
 # THE PARSER EMITS NO PARAGRAPH NODE. A paragraph's inline nodes are siblings of
 # every block around them, so what separates two paragraphs is a BLANK SOURCE
 # LINE and the only evidence of one is the gap between a node's end line and the
@@ -221,7 +221,7 @@ def span [b: record, nodes: list<any>]: nothing -> record {
                 e: ($nodes | last | get position.end.line)}
 }
 
-# ── wrapping ─────────────────────────────────────────────────────────────────
+# ── wrapping ──────────────────────────────────────────────────────────────────
 # BY THE ROW, NOT BY THE WORD. The obvious greedy fill costs one loop turn per
 # word and a message is hundreds of them; taking `width + 1` characters and
 # cutting back to the last space costs one turn per ROW, which is the number the
@@ -258,20 +258,21 @@ def flow [text: string, width: int, budget: int]: nothing -> list<string> {
     $t | split row $BR | each {|seg| wrap ($seg | str trim) $width } | flatten | first $budget
 }
 
-# ── rows, and what each one IS ───────────────────────────────────────────────
+# ── rows, and what each one IS ────────────────────────────────────────────────
 # A row is `{k, t}`: the text, and the kind of thing it is.
 #
 # WHY THE KIND LEAVES THIS FILE. Colour is the one piece of formatting neither
-# surface can take from a string. SketchyBar has no ANSI at all — a row is an
+# display can take from a string. SketchyBar has no ANSI at all — a row is an
 # item and an item has ONE `label.color`, set over the wire — and the picker
 # strips escapes out of every frame on purpose, because the text in them is
-# agent-authored. So the two surfaces cannot share a coloured string, and this
-# file must not try to write one: it says WHAT the row is, and each surface
+# agent-authored. So the two displays cannot share a coloured string, and this
+# file must not try to write one: it says WHAT the row is, and each display
 # paints it with the mechanism it actually has (D62).
 #
 # THREE KINDS, WHICH IS ALL THAT EARNS ONE. `head` and `code` are the two things
-# a marker alone leaves ambiguous at a glance; everything else is `text`. A quote
-# has a gutter and a list has a bullet, and neither needs a colour to be read.
+# a marker alone leaves ambiguous at a glance; everything else is `text`. A
+# quote has a gutter and a list has a bullet, and neither needs a colour to be
+# read.
 def tag [k: string, ls: list<string>]: nothing -> list<record> {
     $ls | each {|t| {k: $k, t: $t} }
 }
@@ -286,7 +287,7 @@ def hang [rs: list<record>, pad: string]: nothing -> list<record> {
     }
 }
 
-# ── tables ───────────────────────────────────────────────────────────────────
+# ── tables ────────────────────────────────────────────────────────────────────
 # Real columns: every cell padded to the widest in its column and the alignment
 # row obeyed, then squeezed proportionally if the whole row is wider than the
 # rectangle. A cell is CUT rather than wrapped — a table whose rows are different
@@ -333,7 +334,7 @@ def render-table [b: record, width: int, style: record]: nothing -> list<string>
     ([($rows | first)] ++ [$across] ++ ($rows | skip 1))
 }
 
-# ── blocks → rows ────────────────────────────────────────────────────────────
+# ── blocks → rows ─────────────────────────────────────────────────────────────
 def render-block [b: record, width: int, style: record, src: list<string>, budget: int]: nothing -> list<record> {
     match $b.k {
         "para" => (tag "text" (flow (inline $b.nodes) $width $budget))
@@ -351,9 +352,9 @@ def render-block [b: record, width: int, style: record, src: list<string>, budge
             # One line: a call does not continue across lines (plan.md §10).
             hang (tag "head" (flow ($m + (inline ($b.node.children? | default []))) $width $budget)) (rep " " (width-of $m))
         }
-        # A marker goes on the first row and the kinds underneath are left alone:
-        # a fenced block inside a list item is still code, and a quoted heading
-        # is still a heading.
+        # A marker goes on the first row and the kinds underneath are left
+        # alone: a fenced block inside a list item is still code, and a quoted
+        # heading is still a heading.
         "item" => {
             let lead = (rep "  " ($b.node.attrs | get -o level | default 0)) + (marker $b.node.attrs $b.s $src $style)
             let body = stack (group ($b.node.children? | default []) $budget) ($width - (width-of $lead)) $style $src $budget
@@ -380,13 +381,14 @@ def led [rs: list<record>, lead: string]: nothing -> list<record> {
 }
 
 # What goes in front of a list item. A task list is the interesting one — the
-# parser reports `checked`, so `- [x] done` can be a box that is actually ticked.
+# parser reports `checked`, so `- [x] done` can be a box that is actually
+# ticked.
 #
 # AN ORDERED ITEM'S NUMBER IS READ BACK OUT OF THE SOURCE. The parser reports
 # POSITION, not the number typed: a list written `5. 6. 7.` arrives as index 0,
 # 1, 2 and would be renumbered from one. That is what a browser does and it is
-# not what this module does anywhere else — the store keeps what the agent wrote
-# (D14) — so the marker line is re-read and the digits taken off it.
+# not what this module does anywhere else — the session-store keeps what the
+# agent wrote (D14) — so the marker line is re-read and the digits taken off it.
 def marker [a: record, line: int, src: list<string>, style: record]: nothing -> string {
     let checked = $a | get -o checked
     if $checked != null { return (if $checked { $style.done } else { $style.todo }) }
@@ -398,7 +400,7 @@ def marker [a: record, line: int, src: list<string>, style: record]: nothing -> 
     $"($typed | default (($a | get -o index | default 0) + 1 | into string)). "
 }
 
-# ── blocks → a page ──────────────────────────────────────────────────────────
+# ── blocks → a page ───────────────────────────────────────────────────────────
 # Blocks, in order, and the air between them.
 #
 # THE SOURCE'S BLANK LINES ARE THE DEFAULT, NOT THE RULE. Markdown needs a blank
@@ -409,7 +411,7 @@ def marker [a: record, line: int, src: list<string>, style: record]: nothing -> 
 #   A HEADING TAKES ITS AIR ABOVE. It belongs to the section beneath it, so the
 #   blank goes before it and never after. That is what makes it read as a
 #   heading rather than as a line floating between two paragraphs — and it hands
-#   the row back, which on this surface is the same argument twice.
+#   the row back, which on this display is the same argument twice.
 #
 #   SIBLING LIST ITEMS ARE NEVER SEPARATED. Whether a list is "loose" is a
 #   distinction HTML cares about; a list of four things is a list of four things.
@@ -437,21 +439,21 @@ def spaced [kind: string, start: int, last: string, prev: int]: nothing -> bool 
     ($start - $prev) >= 2
 }
 
-# ── the whole of it ──────────────────────────────────────────────────────────
+# ── the whole of it ───────────────────────────────────────────────────────────
 
 # Markdown in, display rows out: already reflowed, already wrapped to `width`,
 # and never more than `budget` of them. Ask for one row MORE than the rectangle
 # holds and `lay-out` can tell that something was left over.
 #
-# A LONG MESSAGE IS READ IN A PREFIX FIRST. Parsing is the one cost that does not
-# care about the budget — 31KB took 4ms of a 5ms render — and a drawer twelve
-# rows tall cannot be showing more than the first hundred-odd lines of anything.
-# So a generous prefix is tried, and the whole text only if the prefix did not
-# fill the rectangle. That second pass is what makes it a shortcut rather than a
-# guess: no ratio of source lines to rows is safe in general — a screenful of
-# `---` is a hundred lines and no rows at all — so the cheap answer is checked
-# rather than trusted.
-export def plain [md: string, width: int, budget: int]: nothing -> list<record> {
+# A LONG MESSAGE IS READ IN A PREFIX FIRST. Parsing is the one cost that does
+# not care about the budget — 31KB took 4ms of a 5ms render — and a drawer
+# twelve rows tall cannot be showing more than the first hundred-odd lines of
+# anything. So a generous prefix is tried, and the whole text only if the prefix
+# did not fill the rectangle. That second pass is what makes it a shortcut
+# rather than a guess: no ratio of source lines to rows is safe in general — a
+# screenful of `---` is a hundred lines and no rows at all — so the cheap answer
+# is checked rather than trusted.
+export def plain-md [md: string, width: int, budget: int]: nothing -> list<record> {
     let src = $md | default "" | str replace --all "\t" "    " | str replace --all "\r" "" | lines
     let head = ($budget * 8) + 16
     if ($src | length) > $head {
@@ -465,7 +467,7 @@ def render [src: list<string>, width: int, budget: int]: nothing -> list<record>
     let text = $src | str join "\n"
     # A message that will not parse must still be shown. There is no input that
     # does this today — an unclosed fence, a stray backtick and raw HTML all
-    # parse — but a surface that paints nothing is the worst failure here.
+    # parse — but a display that paints nothing is the worst failure here.
     let nodes = try { $text | from md --verbose } catch { [] }
     if ($nodes | is-empty) { return (tag "text" (flow (unfold $text) $width $budget)) }
     stack (group $nodes $budget) $width $STYLE $src $budget
@@ -474,7 +476,7 @@ def render [src: list<string>, width: int, budget: int]: nothing -> list<record>
 # The text of a set of rows, for a caller that has no way to colour them.
 export def text [rows: list<record>]: nothing -> list<string> { $rows | get t }
 
-# ── laying out ───────────────────────────────────────────────────────────────
+# ── laying out ────────────────────────────────────────────────────────────────
 
 # Rows in, rows out: blanks collapsed to one, the whole thing capped, and the
 # last line told to say so if anything was dropped. `plain` has already wrapped

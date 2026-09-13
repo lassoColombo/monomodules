@@ -1,8 +1,8 @@
 # Where an agent lives, and how to get there.
 #
-# THE PULL HALF'S OTHER CONTRACT. `mod.nu` is the surface (push) and `jump.nu` is
-# a command (pull); this is what the PICKER needs from a tool, and it is three
-# questions the picker cannot answer for itself:
+# THE PULL HALF'S OTHER CONTRACT. `mod.nu` is the display (push) and `jump.nu`
+# is a command (pull); this is what the PICKER needs from a tool, and it is
+# three questions the picker cannot answer for itself:
 #
 #   claims   is this record yours?          it has a `zellij` namespace
 #   place    where does it live?            home/root
@@ -12,10 +12,10 @@
 # `picker/locators.nu`. Nothing in `picker/` changes. That is the whole reason
 # this file exists rather than the picker calling zellij directly.
 #
-# ── THERE WAS A FOURTH, AND IT WAS THE BIG ONE ───────────────────────────────
+# ── THERE WAS A FOURTH, AND IT WAS THE BIG ONE ────────────────────────────────
 # `screen` dumped the pane, and the picker's preview was that dump: `zellij
 # action dump-screen` reads any pane's live terminal in 12ms, which is truer than
-# anything we could store — the `message` is what the agent last SAID, a screen is
+# anything we could record — the `message` is what the agent last SAID, a screen is
 # what it is DOING. Step 8 took it out anyway (D58). Truer was not more readable:
 # what came back was the bottom of a TUI mid-redraw, half a spinner and a box rule
 # cut off at both edges, when the question a picker answers is "which of these
@@ -38,14 +38,14 @@ def zellij-of [rec: record]: nothing -> record { $rec.zellij? | default {} }
 # A record is ours when it says WHERE it is, completely. A half-known pane — a
 # session with no id — is not claimed, so the picker falls back rather than
 # guessing at a pane number.
-export def claims [rec: record]: nothing -> bool {
+export def owns [rec: record]: nothing -> bool {
     let z = zellij-of $rec
     (($z.session? | default "") | is-not-empty) and (($z.pane_id? | default "") | is-not-empty)
 }
 
 # One short string for the `where` column. The tab's own name when we learned it
-# (`observe` does, once per session), its id when we did not.
-export def place [rec: record]: nothing -> string {
+# (`discover-own-location` does, once per session), its id when we did not.
+export def location-label [rec: record]: nothing -> string {
     let z = zellij-of $rec
     let session = $z.session? | default ""
     if ($session | is-empty) { return "" }

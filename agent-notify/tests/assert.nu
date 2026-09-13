@@ -1,8 +1,8 @@
-# The little that a test needs: compare, expect-an-error, and print a verdict.
+# The little that a test needs: compare, expect-an-error, and print a result.
 #
-# Deliberately not a framework. The suites are plain nushell scripts that build a
-# list of results and hand it here, which means a suite can be read top to bottom
-# as a description of what the module promises.
+# Deliberately not a framework. The suites are plain nushell scripts that build
+# a list of results and hand it here, which means a suite can be read top to
+# bottom as a description of what the module promises.
 
 export def check [label: string, got: any, want: any]: nothing -> record {
     if $got == $want {

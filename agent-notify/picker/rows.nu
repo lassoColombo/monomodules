@@ -1,13 +1,13 @@
 # Records in, rows out — and what is still possible once the list moves.
 #
-# PURE, all three of them. No terminal, no zellij, no store: hand them data and
-# they hand data back, which is what lets the suite assert a whole picker without
-# anything installed (D34, the same split as the bar's `message` and zellij's
-# `commands`).
+# PURE, all three of them. No terminal, no zellij, no session-store: hand them
+# data and they hand data back, which is what lets the suite assert a whole
+# picker without anything installed (D34, the same split as the bar's `message`
+# and zellij's `commands`).
 #
-# ── A ROW ────────────────────────────────────────────────────────────────────
+# ── A ROW ─────────────────────────────────────────────────────────────────────
 #
-#   {id:    "6923c0bc-…"        the agent, and the SELECTION KEY — see `settle`
+#   {id:    "6923c0bc-…"        the agent, and the SELECTION KEY — see `keep-in-view`
 #    state: "awaiting"
 #    name:  "monomodules"
 #    place: "home/root"         from the locator; "" when nothing claims it
@@ -15,13 +15,13 @@
 #    rec:   {…}                 the record, for the locator and for the caller
 #    via:   {claims, place, screen, go} | null}
 #
-# `match` IS EXACTLY WHAT THE ROW SHOWS, and it was not always: the first version
-# folded the agent's last message in too, so that a phrase you remembered would
-# find it. Running it settled the question in one keystroke. An agent's message
-# is prose — several kilobytes of it — so a two-letter query matched an agent
-# with no `sn` anywhere on its row, at character 4195 of something it said an
-# hour ago. A row that stays for an invisible reason reads as a broken filter,
-# and short queries stop narrowing anything at all.
+# `match` IS EXACTLY WHAT THE ROW SHOWS, and it was not always: the first
+# version folded the agent's last message in too, so that a phrase you
+# remembered would find it. Running it settled the question in one keystroke. An
+# agent's message is prose — several kilobytes of it — so a two-letter query
+# matched an agent with no `sn` anywhere on its row, at character 4195 of
+# something it said an hour ago. A row that stays for an invisible reason reads
+# as a broken filter, and short queries stop narrowing anything at all.
 #
 # So the filter can only match what you can see. Nothing is lost that matters:
 # the preview already shows what the selected agent is saying, in full and live.
@@ -37,8 +37,8 @@ def rank [state: string]: nothing -> int {
     $URGENCY | enumerate | where item == $state | get -o 0.index | default ($URGENCY | length)
 }
 
-# What to call an agent: what it called itself, else the directory it is in, else
-# enough of its id to tell it from the others.
+# What to call an agent: what it called itself, else the directory it is in,
+# else enough of its id to tell it from the others.
 def label-of [rec: record]: nothing -> string {
     let name = $rec.name? | default "" | str trim
     if ($name | is-not-empty) { return $name }
@@ -55,32 +55,37 @@ def flatten-text [text: string]: nothing -> string {
 # `table` is OPTIONAL and the default is resolved HERE, not by the caller. An
 # empty record is a perfectly good table meaning "nothing claims anything" — it
 # is how the unclaimed case is tested — and `{}` is not null, so `default` would
-# never fire on it (§10). Spelling "use the shipped locators" as `{}` would have
-# meant a picker that silently shows no places and no live previews, which is
-# exactly what it did until this was found by running it.
+# never fire on it (§10). Spelling "use the integration-registry locators" as
+# `{}` would have meant a picker that silently shows no places and no live
+# previews, which is exactly what it did until this was found by running it.
 export def build [records: list<record>, table?: record]: nothing -> list<record> {
-    let t = $table | default (locators shipped)
+    let t = $table | default (locators integration-registry)
     $records
     | each {|r|
         let via = locators owner $r --table $t
         let state = $r.state? | default "idle"
         let name = label-of $r
-        let place = if ($via == null) { "" } else { try { do $via.place $r } catch { "" } }
+        let location_label = if ($via == null) { "" } else { try { do $via.location-label $r } catch { "" } }
         { id: ($r.id? | default "")
           state: $state
           name: $name
-          place: $place
-          match: (flatten-text $"($state) ($name) ($place)" | str lowercase)
+          location-label: $location_label
+          match: (flatten-text $"($state) ($name) ($location_label)" | str lowercase)
           rec: $r
           via: $via }
       }
-    | sort-by {|c| rank $c.state } {|c| $c.place } {|c| $c.name }
+    | sort-by {|c| rank $c.state } {|c| $c.location-label } {|c| $c.name }
 }
 
 # The filter. Case-insensitive substring, and nothing cleverer on purpose: a
-# substring is PREDICTABLE, and a fleet is small enough that fuzzy matching would
-# buy ranking nobody asked for at the cost of code nobody can debug.
-export def narrow [rows: list<record>, query: string]: nothing -> list<record> {
+# substring is PREDICTABLE, and a fleet is small enough that fuzzy matching
+# would buy ranking nobody asked for at the cost of code nobody can debug.
+#
+# THIS NAME SHADOWS THE BUILTIN `filter` FOR THIS FILE (§10), which is why
+# everything below reaches for `where` instead. Callers are unaffected — they
+# say `rows filter` — and the trap is only ever one file wide, but it is a trap,
+# so it is written down here rather than discovered.
+export def filter [rows: list<record>, query: string]: nothing -> list<record> {
     let q = $query | str trim | str lowercase
     if ($q | is-empty) { return $rows }
     $rows | where {|r| $r.match | str contains $q }
@@ -89,15 +94,15 @@ export def narrow [rows: list<record>, query: string]: nothing -> list<record> {
 # What is still possible. Run AFTER the list is rebuilt and BEFORE it is drawn.
 #
 # THE SELECTION IS AN AGENT ID, NEVER AN INDEX, and this is the function that
-# makes that pay. The list is live — the store is re-read every frame, for 0.33ms
-# — so an agent changing state RE-SORTS the list while you are looking at it. An
-# index would leave your cursor pointing at whoever slid into that slot, and you
-# would jump to the wrong agent. An id cannot do that: it either still exists, or
-# it does not and we fall to the top.
+# makes that pay. The list is live — the session-store is re-read every frame,
+# for 0.33ms — so an agent changing state RE-SORTS the list while you are
+# looking at it. An index would leave your cursor pointing at whoever slid into
+# that slot, and you would jump to the wrong agent. An id cannot do that: it
+# either still exists, or it does not and we fall to the top.
 #
 # `top` is the first visible row, and it only ever moves far enough to keep the
 # selection on screen.
-export def settle [view: record, rows: list<record>, height: int]: nothing -> record {
+export def keep-in-view [view: record, rows: list<record>, height: int]: nothing -> record {
     let n = $rows | length
     if $n == 0 { return ($view | merge {sel: "", top: 0}) }
 
@@ -120,9 +125,9 @@ export def settle [view: record, rows: list<record>, height: int]: nothing -> re
     $view | merge {sel: $sel, top: $top, pv_top: (if $stayed { $view.pv_top? | default 0 } else { 0 })}
 }
 
-# Where the selection is in the list, and which row that is. Both answer "nothing"
-# on an empty list rather than erroring, because an empty store is an ordinary
-# state for a picker to be in.
+# Where the selection is in the list, and which row that is. Both answer
+# "nothing" on an empty list rather than erroring, because an empty
+# session-store is an ordinary state for a picker to be in.
 export def index-of [rows: list<record>, view: record]: nothing -> int {
     let hit = $rows | enumerate | where {|e| $e.item.id == ($view.sel? | default "") } | get -o 0
     if ($hit == null) { -1 } else { $hit.index }

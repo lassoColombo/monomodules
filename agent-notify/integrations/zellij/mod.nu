@@ -1,4 +1,4 @@
-# zellij pane titles. The first real surface, and the smallest useful one.
+# zellij pane titles. The first real display, and the smallest useful one.
 #
 #     monomodules                 idle — just the name
 #      monomodules               working
@@ -15,19 +15,21 @@
 #
 # THE FIRST: WE NEVER READ A TITLE BACK. v1 recovered a pane's name by reading
 # its current title and stripping our glyph off the front — sixty lines of
-# parsing, plus a list of old glyphs we no longer write but must still recognise.
-# v2 needs none of it, because the NAME IS A FACT AND FACTS LIVE IN THE STORE:
-# `agent-notify name "monomodules"`, or the last component of the cwd when
-# nobody said otherwise. The title is computed, never parsed. The price is that
-# renaming a pane by hand gets overwritten on the next state change, which is the
-# right trade when the store is the source of truth.
+# parsing, plus a list of old glyphs we no longer write but must still
+# recognise. v2 needs none of it, because the NAME IS A FACT AND FACTS LIVE IN
+# THE SESSION-STORE: `agent-notify name "monomodules"`, or the last component of
+# the cwd when nobody said otherwise. The title is computed, never parsed. The
+# price is that renaming a pane by hand gets overwritten on the next state
+# change, which is the right trade when the session-store is the source of
+# truth.
 #
 # THE SECOND: WE ALREADY KNOW WHERE WE ARE. Dispatch runs inside the agent's own
 # process, so `$env.ZELLIJ_SESSION_NAME` and `$env.ZELLIJ_PANE_ID` are simply
-# there — no lookup. That is what `observe` reports, and dispatch writes it into
-# this surface's namespace on the record before projecting. So `project` never
-# reads the environment and never has to ask "is this record me?": by the time it
-# runs, where we are is just another fact in the store.
+# there — no lookup. That is what `discover-own-location` reports, and dispatch
+# writes it into this display's namespace on the record before projecting. So
+# `render-items` never reads the environment and never has to ask "is this
+# record me?": by the time it runs, where we are is just another fact in the
+# session-store.
 #
 # TABS. A tab shows one glyph per agent living in it, in front of its own name:
 #
@@ -35,15 +37,17 @@
 #      root      one working, one waiting
 #
 # A tab's name is not ours, so it has to be read at least once. The cost is kept
-# to ONCE PER SESSION by folding it into the read we already need: the environment
-# says which PANE we are in but not which TAB, so `observe` runs one `list-panes`
-# the first time — and that same call returns the tab's name. Both are recorded,
-# and after that a tab title is computed from the store like everything else.
+# to ONCE PER SESSION by folding it into the read we already need: the
+# environment says which PANE we are in but not which TAB, so
+# `discover-own-location` runs one `list-panes` the first time — and that same
+# call returns the tab's name. Both are recorded, and after that a tab title is
+# computed from the session-store like everything else.
 #
 # The price is that a tab renamed LATER is overwritten on the next state change,
-# the same bargain already struck for pane names: the store owns the name.
+# the same bargain already struck for pane names: the session-store owns the
+# name.
 
-use ../../core/schema.nu
+use ../../core/session-schema.nu STATES
 use program.nu
 
 export const INFO = {name: "zellij", title: "zellij pane and tab titles"}
@@ -65,10 +69,11 @@ const DEFAULT_GLYPHS = {
     idle: ""                      # nothing: a quiet agent shows only its name
 }
 
-# The config namespace, strictly. Nothing else — where we are is `observe`'s job.
+# The config namespace, strictly. Nothing else — where we are is
+# `discover-own-location`'s job.
 #
 # Strict HERE rather than in `core/config.nu` because these are our fields: the
-# core must never have to learn what a surface's settings look like.
+# core must never have to learn what a display's settings look like.
 export def settings [given: record]: nothing -> record {
     for k in ($given | columns | where {|k| $k not-in ["glyphs" "binary"] }) {
         error make --unspanned {msg: $"zellij: '($k)' is not a setting \(try: glyphs, binary\)"}
@@ -78,8 +83,8 @@ export def settings [given: record]: nothing -> record {
         error make --unspanned {msg: $"zellij: `glyphs` must be a map of state → glyph, got ($g | describe)"}
     }
     for k in ($g | columns) {
-        if ($k not-in $schema.STATES) {
-            error make --unspanned {msg: $"zellij: '($k)' is not a state \(want one of: ($schema.STATES | str join ', ')\)"}
+        if ($k not-in $STATES) {
+            error make --unspanned {msg: $"zellij: '($k)' is not a state \(want one of: ($STATES | str join ', ')\)"}
         }
         if (($g | get $k | describe) != "string") {
             error make --unspanned {msg: $"zellij: the glyph for '($k)' must be a string"}
@@ -107,15 +112,16 @@ def pane-info [binary: string, session: string, pane: string]: nothing -> any {
     $ps | where {|p| ($p.id | into string) == $pane } | get -o 0
 }
 
-# What this process can see about itself. Empty when we are not in zellij at all,
-# which is how a bare terminal costs nothing.
+# What this process can see about itself. Empty when we are not in zellij at
+# all, which is how a bare terminal costs nothing.
 #
-# `known` is what the store already holds for us, and it exists so this can be
-# CHEAP: the environment gives the pane for free, but the tab needs a
-# `list-panes` — so that call is made only when the tab is unknown or the pane has
-# moved. Once per session, the same shape as the pid walk. The same call also
-# returns the tab's NAME, which is why a tab title never has to be read again.
-export def observe [known: record, settings: record]: nothing -> record {
+# `stored` is what the session-store already holds for us, and it exists so this
+# can be CHEAP: the environment gives the pane for free, but the tab needs a
+# `list-panes` — so that call is made only when the tab is unknown or the pane
+# has moved. Once per session, the same shape as the pid walk. The same call
+# also returns the tab's NAME, which is why a tab title never has to be read
+# again.
+export def discover-own-location [stored: record, settings: record]: nothing -> record {
     let session = $env.ZELLIJ_SESSION_NAME? | default ""
     let pane = $env.ZELLIJ_PANE_ID? | default ""
     if ($session | is-empty) or ($pane | is-empty) { return {} }
@@ -123,8 +129,8 @@ export def observe [known: record, settings: record]: nothing -> record {
     let here = {session: $session, pane_id: $pane}
     # Bound in two, because a boolean expression does not continue across lines
     # with the operator at either end (§10).
-    let same_pane = (($known.session? | default "") == $session) and (($known.pane_id? | default "") == $pane)
-    if $same_pane and ($known.tab_id? != null) { return $here }
+    let same_pane = (($stored.session? | default "") == $session) and (($stored.pane_id? | default "") == $pane)
+    if $same_pane and ($stored.tab_id? != null) { return $here }
 
     let info = pane-info $settings.binary $session $pane
     if $info == null { return $here }
@@ -135,7 +141,7 @@ export def observe [known: record, settings: record]: nothing -> record {
 }
 
 # The title one record deserves. Empty means "we have nothing to say", which
-# `apply` turns into dropping our name rather than writing a blank one.
+# `push-items` turns into dropping our name rather than writing a blank one.
 
 def base-for [rec: record]: nothing -> string {
     let named = $rec.name? | default "" | str trim
@@ -149,24 +155,24 @@ def title-for [rec: record, glyphs: record]: nothing -> string {
 
 # PURE: what every pane and every tab should say.
 #
-# Two kinds of key, and the value carries everything `apply` needs — the key is
-# only an identity for dispatch to diff on. `base` is the title WITHOUT the
-# glyphs: what the pane or tab should say once its agents are gone, carried here
-# so that releasing one needs no lookup.
+# Two kinds of key, and the value carries everything `push-items` needs — the
+# key is only an current-session for dispatch to diff on. `base` is the title
+# WITHOUT the glyphs: what the pane or tab should say once its agents are gone,
+# carried here so that releasing one needs no lookup.
 #
-# An agent whose pane the store does not know projects to nothing, which is how a
-# bare terminal, and an agent that has not painted yet, both cost zero.
-export def project [records: list<record>, settings: record]: nothing -> record {
+# An agent whose pane the session-store does not know projects to nothing, which
+# is how a bare terminal, and an agent that has not painted yet, both cost zero.
+export def render-items [records: list<record>, settings: record]: nothing -> record {
     mut out = {}
 
-    for r in $records {
-        let session = $r.zellij?.session? | default ""
-        let pane = $r.zellij?.pane_id? | default ""
+    for record in $records {
+        let session = $record.zellij?.session? | default ""
+        let pane = $record.zellij?.pane_id? | default ""
         if ($session | is-not-empty) and ($pane | is-not-empty) {
             $out = ($out | upsert $"pane|($session)|($pane)" {
                 kind: "pane", session: $session, pane_id: $pane
-                title: (title-for $r $settings.glyphs)
-                base: (base-for $r)
+                title: (title-for $record $settings.glyphs)
+                base: (base-for $record)
             })
         }
     }
@@ -178,9 +184,9 @@ export def project [records: list<record>, settings: record]: nothing -> record 
     for t in ($placed | each {|r| $"($r.zellij.session)|($r.zellij.tab_id)" } | uniq) {
         let members = $placed | where {|r| $"($r.zellij.session)|($r.zellij.tab_id)" == $t }
         let glyphs = aggregate $members $settings.glyphs
-        # Two agents in one tab could disagree about its name, but only if it was
-        # renamed between them starting. Lowest id wins: arbitrary, and stable, so
-        # the title cannot flicker between two answers.
+        # Two agents in one tab could disagree about its name, but only if it
+        # was renamed between them starting. Lowest id wins: arbitrary, and
+        # stable, so the title cannot flicker between two answers.
         let named = $members | sort-by id | where {|m| ($m.zellij.tab_base? | default "") != "" } | get -o 0
         let base = if ($named == null) { "" } else { $named.zellij.tab_base }
         let first = $members | first
@@ -210,55 +216,56 @@ def aggregate [members: list<record>, glyphs: record]: nothing -> string {
     | str join " "
 }
 
-# A blank name means UNDO rather than writing an empty title, so zellij falls back
-# to what it would have shown anyway.
-def argv [binary: string, v: record, name: string]: nothing -> list<string> {
-    let tab = $v.kind == "tab"
+# A blank name means UNDO rather than writing an empty title, so zellij falls
+# back to what it would have shown anyway.
+def argv [binary: string, value: record, name: string]: nothing -> list<string> {
+    let tab = $value.kind == "tab"
     let verb = if ($name | str trim | is-empty) {
         if $tab { "undo-rename-tab" } else { "undo-rename-pane" }
     } else {
         if $tab { "rename-tab" } else { "rename-pane" }
     }
     let flag = if $tab { "--tab-id" } else { "--pane-id" }
-    let id = if $tab { $v.tab_id } else { $v.pane_id }
-    let head = [$binary "--session" $v.session "action" $verb $flag $id]
+    let id = if $tab { $value.tab_id } else { $value.pane_id }
+    let head = [$binary "--session" $value.session "action" $verb $flag $id]
     if ($name | str trim | is-empty) { $head } else { $head ++ [$name] }
 }
 
-# The only impure half — and it does NOT touch the store. A surface reports what
-# it learned and dispatch records it; that keeps "the store is the core, surfaces
-# read it" true without exception, and keeps this file a LEAF of the import tree,
-# which is worth about 2.5ms on every event (§10: a module reached by two import
-# paths is parsed twice).
+# The only impure half — and it does NOT touch the session-store. A display
+# reports what it learned and dispatch records it; that keeps "the session-store
+# is the core, displays read it" true without exception, and keeps this file a
+# LEAF of the import tree, which is worth about 2.5ms on every event (§10: a
+# module reached by two import paths is parsed twice).
 #
 # What it learns is where this agent lives, and it matters because a repaint
-# started from outside zellij — `agent-notify surfaces refresh`, run from the bar
-# — has no environment to read and can only find a pane if the store remembers it.
+# started from outside zellij — `agent-notify displays refresh`, run from the
+# bar — has no environment to read and can only find a pane if the session-store
+# remembers it.
 #
 # No title is read back before writing. The gate in core/dispatch.nu has already
 # established that the projection changed; asking zellij to confirm would cost a
 # second subprocess to learn something we decided ourselves.
 # Write what moved; hand back what we no longer own.
 #
-# A released pane gets its `base` — the same title with the glyph taken off. NOT a
-# blank one, which would mean undo-rename-pane, and undo POPS ONE RENAME off a
-# stack rather than clearing our name: after a session's worth of state changes it
-# would leave the second-to-last agent title sitting there. Verified the hard way
-# on a real pane. A blank still means undo, and is still right for an agent that
-# never had a name to show.
+# A released pane gets its `base` — the same title with the glyph taken off. NOT
+# a blank one, which would mean undo-rename-pane, and undo POPS ONE RENAME off a
+# stack rather than clearing our name: after a session's worth of state changes
+# it would leave the second-to-last agent title sitting there. Verified the hard
+# way on a real pane. A blank still means undo, and is still right for an agent
+# that never had a name to show.
 #
 # No title is read back before writing. Dispatch has already established which
-# keys moved; asking zellij to confirm would cost a subprocess to learn something
-# we decided ourselves.
-# As DATA first — one argv per pane — so what would be run can be read and
-# asserted without a zellij to rename (D34), exactly as SketchyBar's `message` is.
+# keys moved; asking zellij to confirm would cost a subprocess to learn
+# something we decided ourselves. As DATA first — one argv per pane — so what
+# would be run can be read and asserted without a zellij to rename (D34),
+# exactly as SketchyBar's `message` is.
 export def commands [changed: record, removed: record, settings: record]: nothing -> list<list<string>> {
     let writes = $changed | columns | each {|k| argv $settings.binary ($changed | get $k) ($changed | get $k | get title) }
     let undos = $removed | columns | each {|k| argv $settings.binary ($removed | get $k) (($removed | get $k).base? | default "") }
     $writes ++ $undos
 }
 
-export def apply [changed: record, removed: record, settings: record]: nothing -> nothing {
+export def push-items [changed: record, removed: record, settings: record]: nothing -> nothing {
     for c in (commands $changed $removed $settings) {
         try { ^($c | first) ...($c | skip 1) | complete | ignore }
     }

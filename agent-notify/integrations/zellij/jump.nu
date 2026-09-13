@@ -1,7 +1,7 @@
 # `agent-notify jump <who>` — go to an agent's pane.
 #
 # The PULL half of the zellij integration. Nothing dispatches to it and nothing
-# in `surfaces:` turns it on: it runs because you ran it (plan.md D47). The
+# in `displays:` turns it on: it runs because you ran it (plan.md D47). The
 # picker's last line is a call to this, and a click on a bar row will be too.
 #
 # THREE THINGS ZELLIJ DOES THAT THE CODE HAS TO KNOW. All three were probed
@@ -27,15 +27,16 @@
 #      spelling; `switch-session --pane-id` takes only the long one. The store
 #      holds the short one, so the conversion lives in one place below.
 #
-# WHAT IS DELIBERATELY NOT HERE: any window manager. Raising the terminal's window
-# is a different problem with a different caller — the picker runs INSIDE the
-# terminal, where the window is already in front, and a bar click is the only case
-# that needs it. Leaving it until the click is built is what keeps this file from
-# naming a program we do not ship or assuming an operating system. v1 did both,
-# and read the attached session out of the terminal's WINDOW TITLE besides;
-# running inside zellij makes that a lookup of `$env.ZELLIJ_SESSION_NAME`.
+# WHAT IS DELIBERATELY NOT HERE: any window manager. Raising the terminal's
+# window is a different problem with a different caller — the picker runs INSIDE
+# the terminal, where the window is already in front, and a bar click is the
+# only case that needs it. Leaving it until the click is built is what keeps
+# this file from naming a program we do not ship or assuming an operating
+# system. v1 did both, and read the attached session out of the terminal's
+# WINDOW TITLE besides; running inside zellij makes that a lookup of
+# `$env.ZELLIJ_SESSION_NAME`.
 
-use ../../core/store.nu
+use ../../core/session-store.nu
 use ../../core/config.nu
 use program.nu
 
@@ -43,9 +44,9 @@ use program.nu
 const BENIGN = ["already focused"]
 
 # The `commands` half of this tool's namespace, plus what it shares with the
-# surface half — which today is the whole of it.
+# display half — which today is the whole of it.
 def settings []: nothing -> record {
-    let given = config section (config load) "zellij" "commands"
+    let given = config settings-for (config load) "zellij" "commands"
     {binary: (program resolve ($given.binary? | default ""))}
 }
 
@@ -54,9 +55,9 @@ def pane-ref [id: string]: nothing -> string {
     if ($id | str starts-with "terminal_") { $id } else { $"terminal_($id)" }
 }
 
-# Every session zellij currently has — see note 2. Empty when it cannot be asked,
-# which reads as "do not switch": refusing to move is recoverable, and creating a
-# session nobody asked for is not.
+# Every session zellij currently has — see note 2. Empty when it cannot be
+# asked, which reads as "do not switch": refusing to move is recoverable, and
+# creating a session nobody asked for is not.
 def sessions [binary: string]: nothing -> list<string> {
     let r = try { ^$binary list-sessions --short --no-formatting | complete } catch { null }
     if ($r == null) { return [] }
@@ -75,7 +76,7 @@ def sessions [binary: string]: nothing -> list<string> {
 export def find [
     who: string     # an agent's id, a unique prefix of one, or its name
 ] {
-    let all = store list
+    let all = session-store list
     let exact = $all | where {|r| ($r.id? | default "") == $who }
     if ($exact | is-not-empty) { return ($exact | first) }
 
@@ -84,7 +85,7 @@ export def find [
     let hits = ($byname ++ $prefix) | uniq-by id
     if ($hits | length) == 1 { return ($hits | first) }
     if ($hits | is-empty) {
-        error make --unspanned {msg: $"agent-notify: no agent called '($who)' \(try: agent-notify store list\)"}
+        error make --unspanned {msg: $"agent-notify: no agent called '($who)' \(try: agent-notify session-store list\)"}
     }
     let which = $hits | each {|r| $"($r.id) \(($r.name? | default '-')\)" } | str join ", "
     error make --unspanned {msg: $"agent-notify: '($who)' could be any of: ($which)"}

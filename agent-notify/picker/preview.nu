@@ -6,7 +6,7 @@
 # was the one part of the frame the suite could not assert. It is now a function
 # of the record, so it moved out here and got its own assertions.
 #
-# ── WHY THE STORED MESSAGE BEAT THE REAL SCREEN (reverses D57, see D58) ──────
+# ── WHY THE STORED MESSAGE BEAT THE REAL SCREEN (reverses D57, see D58) ───────
 # A pane dump is TRUER — it is what the agent is doing, not what it last said —
 # and it was still the wrong thing to show. Three reasons, in the order they
 # matter:
@@ -30,7 +30,7 @@
 # stopped, so a long turn shows the previous answer. That is what the STATE
 # column is for — `working` beside a stale message reads correctly.
 #
-# ── AND WHY IT IS THE BAR'S RENDERING ────────────────────────────────────────
+# ── AND WHY IT IS THE BAR'S RENDERING ─────────────────────────────────────────
 # `core/markdown.nu`, the same flattener the drawer uses. The bar reached the
 # right answer first and there is no second answer to have: a message is
 # markdown, and neither a label nor a terminal rectangle can render it. One
@@ -50,21 +50,21 @@ const NOTHING = {k: "text", t: "—"}
 # last line is its current one — and losing that asymmetry is a simplification,
 # not a loss: a message's first line is its point, and everything after it is
 # elaboration.
-# ── SCROLLING, AND WHY THIS IS THE ONLY PLACE THAT CAN CLAMP IT (D63) ────────
+# ── SCROLLING, AND WHY THIS IS THE ONLY PLACE THAT CAN CLAMP IT (D63) ─────────
 # `at` is the message's first visible row — `top` for the other rectangle on the
 # screen. A key can only ever say "further down": HOW FAR DOWN A MESSAGE GOES IS
-# NOT KNOWN UNTIL IT IS REACHED, because `markdown plain` is given a line budget
+# NOT KNOWN UNTIL IT IS REACHED, because `markdown plain-md` is given a line budget
 # and stops there (D61), so nothing renders the whole of a message just to count
 # it. Asking for one row more than the pane holds is what makes the end
 # detectable: getting FEWER back than were asked for is the proof that there is
 # no more, and it is the only moment a last page can be worked out.
 #
 # So the offset is CORRECTED here and handed back with the rows, the way `rows
-# settle` corrects the list's. `mod.nu` writes it into the view, and holding
-# ctrl-d at the bottom of a message stops rather than running up a number that
-# then needs undoing.
+# keep-in-view` corrects the list's. `mod.nu` writes it into the view, and
+# holding ctrl-d at the bottom of a message stops rather than running up a
+# number that then needs undoing.
 #
-# ROWS, NOT STRINGS: `{k, t}`, because what a row IS is what `frame.nu` colours
+# ROWS, NOT STRINGS: `{k, t}`, because what a row IS is what `layout.nu` colours
 # it by. Nothing is painted here — this file is a function of the record and
 # knows nothing about a terminal (D62).
 export def of [row: any, height: int, width: int, at: int = 0]: nothing -> record {
@@ -74,7 +74,7 @@ export def of [row: any, height: int, width: int, at: int = 0]: nothing -> recor
     # index — `skip` refuses one, and the picker would go down with it.
     let from = [0 $at] | math max
     let want = $from + $height + 1
-    let all = markdown plain $said $width $want
+    let all = markdown plain-md $said $width $want
     # Fewer rows than were asked for means the message ended inside them, which
     # is the only case where the last page is knowable.
     let last = if (($all | length) < $want) { [0 (($all | length) - $height)] | math max } else { $from }

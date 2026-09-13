@@ -3,14 +3,14 @@
 # NOT ONE JUMP HAPPENS HERE, and that is the point of the file's shape. The
 # cross-session branch moves a real screen to a real other session, which a test
 # suite may not do — so `argv` is the whole decision as DATA and `main` is four
-# lines that run it, exactly as `commands`/`apply` split the surface.
+# lines that run it, exactly as `commands`/`push-items` split the display.
 #
-# One real zellij session IS created, detached and named after this suite, because
-# the switch branch refuses to run against a session that does not exist (zellij
-# would CREATE it) and that refusal is the thing worth proving.
+# One real zellij session IS created, detached and named after this suite,
+# because the switch branch refuses to run against a session that does not exist
+# (zellij would CREATE it) and that refusal is the thing worth proving.
 
 use ../integrations/zellij/jump.nu
-use ../core/store.nu
+use ../core/session-store.nu
 use assert.nu *
 
 const TMP = ($nu.temp-dir | path join "agent-notify-tests-jump")
@@ -28,16 +28,16 @@ def probe-session [action: string] {
 export def main [] {
     if ($TMP | path exists) { rm --recursive --force $TMP }
     $env.XDG_DATA_HOME = $TMP
-    # A config that does not exist: nothing here may reach a real surface.
+    # A config that does not exist: nothing here may reach a real display.
     $env.AGENT_NOTIFY_CONFIG = ($TMP | path join "no-config.yaml")
 
-    store patch "1111aaaa-0000" {client: "claude", state: "working", name: "alpha"
+    session-store patch "1111aaaa-0000" {client: "claude", state: "working", name: "alpha"
                                  zellij: {session: "home", pane_id: "7"}}
-    store patch "2222bbbb-0000" {client: "claude", state: "awaiting", name: "beta"
+    session-store patch "2222bbbb-0000" {client: "claude", state: "awaiting", name: "beta"
                                  zellij: {session: "elsewhere", pane_id: "terminal_9"}}
-    store patch "2222cccc-0000" {client: "claude", state: "idle", name: "gamma"}
+    session-store patch "2222cccc-0000" {client: "claude", state: "idle", name: "gamma"}
 
-    # ── which agent you meant ────────────────────────────────────────────────
+    # ── which agent you meant ─────────────────────────────────────────────────
     # An id is a uuid. Nobody types one, so neither should this command insist.
     let a = [
         (check "an exact id finds it" (jump find "1111aaaa-0000" | get name) "alpha")
@@ -53,7 +53,7 @@ export def main [] {
         (check-err "…naming them" "2222bbbb-0000" {|| jump find "2222" })
     ]
 
-    # ── what zellij is asked ─────────────────────────────────────────────────
+    # ── what zellij is asked ──────────────────────────────────────────────────
     # Same session: focus the pane, and nothing else. No `list-sessions` is run
     # on this path — a session that is gone answers for itself.
     $env.ZELLIJ_SESSION_NAME = "home"
@@ -74,7 +74,7 @@ export def main [] {
                ["--session" "home" "action" "focus-pane-id" "terminal_7"])
     ]
 
-    # ── the switch, which is where the danger is ─────────────────────────────
+    # ── the switch, which is where the danger is ──────────────────────────────
     # `switch-session` CREATES a session it cannot find, so a record naming one
     # that has been killed must be refused rather than obeyed.
     $env.ZELLIJ_SESSION_NAME = "home"
@@ -87,7 +87,7 @@ export def main [] {
     # And against one that really is there, the switch is spelled out — note the
     # pane id, which `switch-session` will only take in its long form.
     probe-session "up"
-    store patch "2222bbbb-0000" {zellij: {session: $PROBE}}
+    session-store patch "2222bbbb-0000" {zellij: {session: $PROBE}}
     let live = jump argv "beta"
     probe-session "down"
     let e = [
@@ -98,7 +98,7 @@ export def main [] {
                ($live | last) "terminal_9")
     ]
 
-    # ── agents there is nowhere to jump to ───────────────────────────────────
+    # ── agents there is nowhere to jump to ────────────────────────────────────
     let f = [
         (check-err "an agent that was never seen in a pane is a clear no, not a crash"
                    "is not in a zellij pane" {|| jump argv "gamma" })

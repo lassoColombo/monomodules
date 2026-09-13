@@ -43,9 +43,9 @@ export def stats [label: string, times: list<duration>] {
       p95: (pct $times 0.95) }
 }
 
-# Durations print as "13ms 452µs 167ns", which in a table of ten cases wraps into
-# unreadable soup. Everything here is milliseconds, so say so once in the header
-# and render plain numbers.
+# Durations print as "13ms 452µs 167ns", which in a table of ten cases wraps
+# into unreadable soup. Everything here is milliseconds, so say so once in the
+# header and render plain numbers.
 def msf [d: any] { if ($d == null) { null } else { ((($d / 1ms) * 100) | math round) / 100 } }
 
 export def fmt [] {
@@ -89,10 +89,10 @@ export def wall [
     } else {
         {|| try { $stdin | ^$exe ...$rest out+err> /dev/null } }
     }
-    # `--prepare` runs OUTSIDE the timed window, before each round. Needed for any
-    # command that is idempotent in effect: writing a record makes the next run
-    # take the early-return path, so measuring "the first time" repeatedly means
-    # undoing the write between rounds.
+    # `--prepare` runs OUTSIDE the timed window, before each round. Needed for
+    # any command that is idempotent in effect: writing a record makes the next
+    # run take the early-return path, so measuring "the first time" repeatedly
+    # means undoing the write between rounds.
     let times = with-env $vars {
         for _ in 1..$warmup { if ($prepare != null) { do $prepare }; do $run }
         1..$rounds | each {
@@ -134,9 +134,10 @@ def time-l [src: string, envr: record] {
 # A failing command would abort nu's `each` on the first iteration and the
 # subtraction would quietly come out near zero — which is how this read "0sec"
 # for the cases whose module could not be found (NU_LIB_DIRS does not survive
-# two hops: nu turns it into a list internally and exports that list stringified,
-# so the grandchild gets nonsense. Pass `-I` instead of the env var). So the
-# command is run once up front and a non-zero exit is reported, never averaged.
+# two hops: nu turns it into a list internally and exports that list
+# stringified, so the grandchild gets nonsense. Pass `-I` instead of the env
+# var). So the command is run once up front and a non-zero exit is reported,
+# never averaged.
 export def cpu [
     label: string
     cmd: list<string>
@@ -179,7 +180,7 @@ export def span [
     stats $label $times
 }
 
-# ── in-process: for store ops and pure functions ──────────────────────────────
+# ── in-process: for session-store ops and pure functions ──────────────────────
 
 export def inproc [
     label: string

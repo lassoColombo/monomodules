@@ -2,8 +2,8 @@
 #
 # PURE, AND IT NEVER PRINTS. That is D34 for the third time — after the bar's
 # `message` and zellij's `commands` — and here it is what makes an interactive
-# program testable at all: a suite asserts an entire picker frame, line for line,
-# with no terminal, no subprocess and no zellij.
+# program testable at all: a suite asserts an entire picker frame, line for
+# line, with no terminal, no subprocess and no zellij.
 #
 #   agents ❯ zz                              ● 1 awaiting  ● 2 working
 #   ──────────────────────────────────────────────────────────────────
@@ -15,21 +15,21 @@
 #   ──────────────────────────────────────────────────────────────────
 #   ↑↓ move · ^j^k read · ^d^u page · enter jump · esc cancel  ▾ 12
 #
-# ── COLOUR (§9b.2 — the rest of it, D64) ─────────────────────────────────────
+# ── COLOUR (§9b.2 — the rest of it, D64) ──────────────────────────────────────
 # ANSI NAMES, NOT HEX, which is the half of §9b.2 that was decided before any of
 # it was written: the bar sits on a desktop and picks its own colours, but a
-# terminal has a theme and a surface inside it should obey. One consequence is
+# terminal has a theme and a display inside it should obey. One consequence is
 # worth knowing on this machine's Rosé Pine: ANSI 8 — `dark_gray` — is the
 # OVERLAY tone, the colour a selection is drawn ON, so as text it is very nearly
 # the background. Dim chrome is `white_dimmed` instead, the same way cmdprompt
 # draws its box.
 #
 # THE STATES KEEP THEIR MEANINGS. Foam is turning, gold is talking to you, love
-# is stuck — the three the SketchyBar counters wear and the three the zellij pane
-# titles carry. One vocabulary, learned once, said here in ANSI because that is
-# what a terminal speaks.
+# is stuck — the three the SketchyBar counters wear and the three the zellij
+# pane titles carry. One vocabulary, learned once, said here in ANSI because
+# that is what a terminal speaks.
 #
-# ── WIDTH ────────────────────────────────────────────────────────────────────
+# ── WIDTH ─────────────────────────────────────────────────────────────────────
 # Every line is truncated to the terminal's width, and every line is cleaned of
 # control characters first. Both are belts: the real protection is that the loop
 # turns AUTOWRAP OFF (`picker/tty.nu`), so a line too long for the terminal is
@@ -74,7 +74,7 @@ const INK = {
     # points at — are the same hue in BOLD, which is what keeps them louder than
     # a line that runs the width of the terminal.
     rule: "yellow"
-    place: "white_dimmed"
+    location-label: "white_dimmed"
     # the states, in the vocabulary the bar and the pane titles already use
     needs-attention: "red"     # love
     awaiting: "magenta"        # gold, on this palette
@@ -119,7 +119,7 @@ def pad [s: string, width: int]: nothing -> string {
     clean $s | fill --width $width --alignment left
 }
 
-# ── pieces ───────────────────────────────────────────────────────────────────
+# ── pieces ────────────────────────────────────────────────────────────────────
 # A line is built as `{c, t}` — an ink, and the text it covers — and MEASURED IN
 # PLAIN TEXT, coloured only at the end. Same order as the preview, for the same
 # two reasons: a terminal counts what a reader sees rather than what a line
@@ -129,10 +129,10 @@ def wide [ps: list<record>]: nothing -> int {
     $ps | each {|p| $p.t | str length --grapheme-clusters } | append 0 | math sum
 }
 
-# Pieces to a finished line. What falls past the right edge is dropped, the piece
-# straddling it is cut, and the tail is trimmed — a repaint finishes every line
-# with EL, so a trailing space is never needed and would only mean the suite
-# asserting invisible characters.
+# Pieces to a finished line. What falls past the right edge is dropped, the
+# piece straddling it is cut, and the tail is trimmed — a repaint finishes every
+# line with EL, so a trailing space is never needed and would only mean the
+# suite asserting invisible characters.
 def line [ps: list<record>, width: int]: nothing -> string {
     mut kept = []
     mut room = $width
@@ -178,16 +178,16 @@ def bar [left: list<record>, right: list<record>, width: int]: nothing -> string
 # and the preview. Counted wrong, the frame is one line taller than the terminal
 # — which scrolls it, and the next repaint homes to the wrong row and stays
 # wrong. The cap at the end of `render` is the belt; this is the braces.
-const CHROME = 5
+const NON_LIST_LINES = 5
 
 # How the screen is divided. The list takes what it needs up to half of what is
 # left; the preview takes the rest — which is the right way round, because the
 # rows say WHICH agents exist and the preview says what the one under the cursor
 # actually wants from you.
-export def layout [size: record, count: int]: nothing -> record {
+export def measure [size: record, count: int]: nothing -> record {
     let height = $size.rows? | default 24
     let width = $size.columns? | default 80
-    let avail = $height - $CHROME
+    let avail = $height - $NON_LIST_LINES
     if $avail < 2 {
         return {list: 1, preview: 0, width: $width, height: $height}
     }
@@ -208,7 +208,7 @@ export def caret [view: record]: nothing -> int {
 }
 
 # What the fleet is doing, at a glance, while you read one agent's answer. A
-# state nothing is in is not shown: a zero is not news, and the row is narrow.
+# state nothing is in is not shown: a zero is not news, and the row is filter.
 def tally [rows: list<record>]: nothing -> list<record> {
     $COUNTED | each {|st|
         let n = $rows | where state == $st | length
@@ -217,15 +217,15 @@ def tally [rows: list<record>]: nothing -> list<record> {
 }
 
 # One agent. The state carries its own colour, the place is dim because it is
-# context rather than identity, and the SELECTION IS ROSE — the marker and the
-# name together, so the cursor is one object rather than a stray `>`.
+# context rather than current-session, and the SELECTION IS ROSE — the marker
+# and the name together, so the cursor is one object rather than a stray `>`.
 def listing [r: record, on: bool, ws: record]: nothing -> list<record> {
     [ {c: (if $on { "mark" } else { null }), t: (if $on { "> " } else { "  " })}
       {c: $r.state, t: (pad $r.state $ws.state)}
       {c: null, t: "  "}
       {c: (if $on { "mark" } else { null }), t: (pad $r.name $ws.name)}
       {c: null, t: "  "}
-      {c: "place", t: $r.place} ]
+      {c: "location-label", t: $r.location-label} ]
 }
 
 export def render [

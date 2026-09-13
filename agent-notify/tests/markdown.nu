@@ -9,23 +9,23 @@
 # takes a string, a width and a line budget.
 #
 # THE GLYPHS ARE ASSERTED ON PURPOSE. They are the whole of the vocabulary — one
-# font, one colour, no ANSI — so a marker quietly changing is a surface changing
+# font, one colour, no ANSI — so a marker quietly changing is a display changing
 # its mind about what a heading looks like, and that should not pass silently.
 
 use ../core/markdown.nu
 use assert.nu *
 
-# `plain` returns ROWS — `{k, t}` — because what a row IS is what a surface
+# `plain` returns ROWS — `{k, t}` — because what a row IS is what a display
 # colours it by (D62). Most of what is asserted here is the text, so it is
 # flattened at the call; the kinds get assertions of their own below.
 def flat [md: string, width: int, budget: int]: nothing -> list<string> {
-    markdown text (markdown plain $md $width $budget)
+    markdown text (markdown plain-md $md $width $budget)
 }
 
 def rows [ls: list<string>]: nothing -> list<record> { $ls | each {|t| {k: "text", t: $t} } }
 
 export def main [] {
-    # ── what the markdown MEANT ──────────────────────────────────────────────
+    # ── what the markdown MEANT ───────────────────────────────────────────────
     # The parser knows a heading is a heading and how deep it is, that a list is
     # ordered, and which box is ticked. All of that used to be thrown away.
     let a = [
@@ -49,7 +49,7 @@ export def main [] {
                (flat "a\n\n---\n\nb" 40 9) ["a" "" "b"])
     ]
 
-    # ── code and tables: the two things that must not be reflowed ────────────
+    # ── code and tables: the two things that must not be reflowed ─────────────
     let b = [
         (check "a fence is a toggle, and what it wraps is INDENTED rather than guttered — a gutter would read as the quote's"
                (flat "```nu\nlet a = 1\n    deeper\n```" 40 9) ["  let a = 1" "      deeper"])
@@ -61,7 +61,7 @@ export def main [] {
                (flat "| | |\n|---|---|\n| a | b |" 40 9) ["a │ b"])
     ]
 
-    # ── the air between blocks ───────────────────────────────────────────────
+    # ── the air between blocks ────────────────────────────────────────────────
     # Markdown needs a blank line between two blocks whether or not a reader
     # wants one there. On a drawer twelve rows tall that is a row of the message
     # lost, so the source's blanks are the default and typography overrules them.
@@ -79,7 +79,7 @@ export def main [] {
                (flat "- said:\n\n  ```\n  x\n  ```" 40 9) ["• said:" "" "    x"])
     ]
 
-    # ── reflowing and wrapping (D61) ─────────────────────────────────────────
+    # ── reflowing and wrapping (D61) ──────────────────────────────────────────
     # A message's paragraphs are one source line each — 435 characters was the
     # longest measured — so one row per source line meant cutting every one of
     # them at the width and throwing the rest away.
@@ -101,7 +101,7 @@ export def main [] {
         (check "and an empty one is empty" (flat "" 40 9) [])
     ]
 
-    # ── laid out to fit ──────────────────────────────────────────────────────
+    # ── laid out to fit ───────────────────────────────────────────────────────
     # `plain` has already wrapped to this width, so the cut here is the belt
     # that catches a renderer which got the arithmetic wrong.
     let e = [

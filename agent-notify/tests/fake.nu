@@ -1,13 +1,13 @@
-# A surface that needs nothing installed: it writes a line to a file.
+# A display that needs nothing installed: it writes a line to a file.
 #
-# It exists so the gate and the diff can be tested for real — two store
+# It exists so the gate and the diff can be tested for real — two session-store
 # snapshots, a config file, a map in and a map out — on a machine with no zellij
-# and no bar. Same move as `clients/codex.nu`: prove the contract on something we
-# can actually run.
+# and no bar. Same move as `clients/codex.nu`: prove the contract on something
+# we can actually run.
 #
-# It is a complete surface, deliberately: the four parts, the pure/impure split,
-# its own strict settings. If a real surface cannot be written in this shape, the
-# shape is wrong and this file is where that shows up first.
+# It is a complete display, deliberately: the four parts, the pure/impure split,
+# its own strict settings. If a real display cannot be written in this shape,
+# the shape is wrong and this file is where that shows up first.
 
 export const INFO = {name: "fake", title: "a line in a file, for tests"}
 
@@ -23,7 +23,7 @@ export def settings [given: record]: nothing -> record {
 # PURE, and keyed by agent. Note what it does NOT read: `message`, `updated_at`,
 # `cwd`. That is the whole point of the gate — a turn that only changes the
 # message projects to the same map, so nothing is written.
-export def project [records: list<record>, settings: record]: nothing -> record {
+export def render-items [records: list<record>, settings: record]: nothing -> record {
     mut out = {}
     for r in $records {
         $out = ($out | upsert $r.id (($settings.glyphs | get -o $r.state) | default "?"))
@@ -31,13 +31,13 @@ export def project [records: list<record>, settings: record]: nothing -> record 
     $out
 }
 
-export def apply [changed: record, removed: record, settings: record]: nothing -> nothing {
+export def push-items [changed: record, removed: record, settings: record]: nothing -> nothing {
     let wrote = $changed | columns | each {|k| $"($changed | get $k)($k)" }
     let undid = $removed | columns | each {|k| $"-($k)" }
     $"(($wrote ++ $undid) | str join ' ')\n" | save --append $settings.log
 }
 
-# ── and a LOCATOR, for the picker ────────────────────────────────────────────
+# ── and a LOCATOR, for the picker ─────────────────────────────────────────────
 #
 # The other half of an integration, in the same spirit: three questions answered
 # out of the record itself, so the whole picker — rows, filtering, scrolling,
@@ -45,21 +45,21 @@ export def apply [changed: record, removed: record, settings: record]: nothing -
 #
 #   {fake: {where: "box/one"}}
 #
-# `go` does nothing. Where a jump would take you is `jump argv`'s business and it
-# has its own suite; what this file proves is that the CONTRACT is answerable
+# `go` does nothing. Where a jump would take you is `jump argv`'s business and
+# it has its own suite; what this file proves is that the CONTRACT is answerable
 # without the tool, which is the only claim `picker/locators.nu` makes.
 
 export const LOCATOR_INFO = {name: "fake", title: "a pane in a record, for tests"}
 
-export def locates [rec: record]: nothing -> bool {
+export def owns [rec: record]: nothing -> bool {
     (($rec.fake?.where? | default "") | is-not-empty)
 }
 
-export def lives [rec: record]: nothing -> string { $rec.fake?.where? | default "" }
+export def location-label [rec: record]: nothing -> string { $rec.fake?.where? | default "" }
 
 export def locator []: nothing -> record {
     { fake: {info: $LOCATOR_INFO
-             claims: {|rec| locates $rec }
-             place:  {|rec| lives $rec }
+             owns: {|rec| owns $rec }
+             location-label:  {|rec| location-label $rec }
              go:     {|rec| null }} }
 }

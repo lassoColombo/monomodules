@@ -19,9 +19,9 @@
 # sequence arriving as `f5` or `insert` must not end up in the query, where it
 # would silently filter the list down to nothing and look like a broken picker.
 #
-# A NON-KEY EVENT IS IGNORED TOO. The loop subscribes to keys alone today, but an
-# event with no `code` must never reach `$ev.code` — that would throw inside the
-# loop and take the picker down with it.
+# A NON-KEY EVENT IS IGNORED TOO. The loop subscribes to keys alone today, but
+# an event with no `code` must never reach `$ev.code` — that would throw inside
+# the loop and take the picker down with it.
 
 use rows.nu
 
@@ -29,10 +29,10 @@ use rows.nu
 #
 # nushell 0.115 reports a held control key as the string `keymodifiers(control)`
 # — a Debug format leaking into the record — where the documented value is
-# `control`. So `"control" in $ev.modifiers` is false for every control key there
-# is, and EVERY CTRL COMBINATION FALLS THROUGH TO THE PRINTABLE BRANCH: ctrl-u
-# types a `u`, ctrl-c types a `c` instead of leaving. Found by running it, not by
-# the suite — the synthetic events it builds were spelled the way the
+# `control`. So `"control" in $ev.modifiers` is false for every control key
+# there is, and EVERY CTRL COMBINATION FALLS THROUGH TO THE PRINTABLE BRANCH:
+# ctrl-u types a `u`, ctrl-c types a `c` instead of leaving. Found by running
+# it, not by the suite — the synthetic events it builds were spelled the way the
 # documentation says.
 #
 # Matching on CONTAINS rather than equals takes both spellings, so this keeps
@@ -49,8 +49,8 @@ def abort? [code: string, ctrl: bool]: nothing -> bool {
 }
 
 # Moving the cursor RETURNS THE PREVIEW TO THE TOP, because the preview is a
-# different agent's message now and the row you had reached in the last one means
-# nothing in this one.
+# different agent's message now and the row you had reached in the last one
+# means nothing in this one.
 def move [view: record, rows: list<record>, by: int]: nothing -> record {
     let n = $rows | length
     if $n == 0 { return $view }
@@ -63,16 +63,17 @@ def move [view: record, rows: list<record>, by: int]: nothing -> record {
 }
 
 # A changed filter always returns to the top of the list. The alternative — try
-# to keep the same agent selected — means the cursor lands somewhere unrelated as
-# rows disappear underneath it; `settle` then re-anchors on whatever survives.
+# to keep the same agent selected — means the cursor lands somewhere unrelated
+# as rows disappear underneath it; `keep-in-view` then re-anchors on whatever
+# survives.
 def typed [view: record, query: string]: nothing -> record {
     $view | merge {query: $query, sel: "", top: 0, pv_top: 0}
 }
 
-# THE PREVIEW SCROLLS AND THE LIST DOES NOT MOVE. `pv_top` is the message's first
-# visible row; it is floored at zero here and NOT capped, because how far down a
-# message goes is known only to the thing that rendered it. `preview of` corrects
-# it and hands the corrected value back (D63).
+# THE PREVIEW SCROLLS AND THE LIST DOES NOT MOVE. `pv_top` is the message's
+# first visible row; it is floored at zero here and NOT capped, because how far
+# down a message goes is known only to the thing that rendered it. `preview of`
+# corrects it and hands the corrected value back (D63).
 def scroll [view: record, by: int]: nothing -> record {
     $view | merge {pv_top: ([0 (($view.pv_top? | default 0) + $by)] | math max)}
 }
@@ -111,9 +112,9 @@ export def step [ev: record, view: record, rows: list<record>, page: int]: nothi
     if $ctrl and $code == "u" { return {view: (scroll $view (0 - $half)), action: ""} }
     # CLEARING THE FILTER MOVED HERE, off ctrl-u, when the preview learned to
     # scroll: ctrl-d/ctrl-u are one gesture and splitting them would be worse
-    # than moving a binding nothing else wants. ctrl-w is readline's neighbouring
-    # kill, and on a filter this short "kill a word" and "kill the line" are the
-    # same keystroke anyway.
+    # than moving a binding nothing else wants. ctrl-w is readline's
+    # neighbouring kill, and on a filter this short "kill a word" and "kill the
+    # line" are the same keystroke anyway.
     if $ctrl and $code == "w" { return {view: (typed $view ""), action: ""} }
     if (not $ctrl) and (not $alt) and ($code == "backspace") {
         if ($query | is-empty) { return $stay }
