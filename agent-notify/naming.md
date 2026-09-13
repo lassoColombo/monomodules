@@ -103,6 +103,9 @@ Two things it deliberately did NOT do, because neither is a file of ours:
        rm ~/Library/LaunchAgents/com.agent-notify.clock.plist
        nu -c 'use agent-notify; agent-notify prune-daemon install'
 
+   (`install` is gone since D69 — the prune-daemon prints its setup rather than
+   applying it. Left as written because this is a record of what was run.)
+
 2. `~/.config/sketchybar/sketchybarrc` holds the one line that asks this module
    to build its items, and it named `surfaces install`. It now says `displays
    install` (backed up beside it as `.bak-rename-20260913`). That line is the

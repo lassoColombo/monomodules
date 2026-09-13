@@ -20,6 +20,8 @@ use ../core/prune-daemon/systemd.nu
 use assert.nu *
 
 const TMP = ($nu.temp-dir | path join "agent-notify-tests-prune-daemon")
+const SELF = path self
+const CLI = ($SELF | path dirname | path dirname | path join "cli" "prune-daemon.nu")
 
 export def main [] {
     $env.XDG_STATE_HOME = $TMP
@@ -113,18 +115,55 @@ export def main [] {
                (if ($nu.os-info.name == "macos") { systemd available | get ok } else { false }) false)
     ]
 
-    # ── the refusals, every one of them before anything is written ───────────
+    # ── help-setup: printed, never applied (D20) ─────────────────────────────
+    # The launcher this machine CANNOT run is the interesting one, and it is the
+    # only case a test can assert on both platforms: reading the systemd files
+    # from a Mac is the case that must keep working, not the case that is
+    # refused.
     let other = if ($nu.os-info.name == "macos") { "systemd" } else { "launchd" }
+    let mine = if ($nu.os-info.name == "macos") { "launchd" } else { "systemd" }
+    let help = agent-notify prune-daemon help-setup $mine
+    let foreign = agent-notify prune-daemon help-setup $other
     let e = [
+        (check "the setup help lays out every file the launcher wants"
+               (prune-daemon unit-files $mine 30 | all {|f| $help | str contains $f.path }) true)
+        (check "…with their contents, not just their names"
+               ($help | str contains (prune-daemon unit-files $mine 30 | get 0.text | lines | first)) true)
+        (check "…the commands that load them"
+               ($help | str contains "Load it:") true)
+        (check "…and the way back out, which no command of ours performs"
+               ($help | str contains "To undo") true)
+        (check "IT SAYS IT IS NOT APPLYING ANY OF IT"
+               ($help | str contains "Nothing below is applied") true)
+        (check "the log directory is made by the reader too, or a failing tick is silent"
+               ($help | str contains "mkdir -p") true)
+        # THE THING THAT MUST NOT REGRESS: printing is harmless, so a launcher
+        # this machine cannot run is described, never refused. That is how the
+        # systemd files get written and read at all.
+        (check "a launcher this machine cannot run is still described in full"
+               ($foreign | str contains "Write ") true)
+        (check "…and says so at the top rather than refusing"
+               ($foreign | str starts-with "NOTE: this machine cannot run") true)
         (check-err "an interval that would be a busy loop is refused"
-                   "busy loop" {|| agent-notify prune-daemon install launchd --interval 5 })
+                   "busy loop" {|| agent-notify prune-daemon help-setup launchd --interval 5 })
         (check-err "a launcher that does not exist is refused, with the ones that do"
-                   "try: launchd, systemd" {|| agent-notify prune-daemon install lolcat })
-        (check-err "a launcher this machine cannot run is refused BY NAME"
-                   $"($other) cannot run here" {|| agent-notify prune-daemon install $other })
-        (check-err "…and says what it probed, not what the launcher's stderr said"
-                   "not on PATH" {|| agent-notify prune-daemon install $other })
+                   "try: launchd, systemd" {|| agent-notify prune-daemon help-setup lolcat })
     ]
 
-    summarise ($a ++ $b ++ $c ++ $d ++ $e) --title "prune-daemon"
+    # Nothing here writes a unit file or speaks to a launcher, so there is no
+    # `install` to call by accident and no `uninstall` to undo it (D69).
+    #
+    # Read off the CLI FILE rather than asked of the running scope: `scope
+    # commands` answers about whoever is calling, and `scope modules` only knows
+    # the module if the caller imported it — standalone that is this file, under
+    # `tests` it is the runner, and the two disagree. The file does not.
+    let f = [
+        (check "the command surface is help-setup, status, command — nothing that acts"
+               (open --raw $CLI | lines
+                | each {|l| $l | parse --regex '^export def "([^"]+)"' | get -o 0.capture0 }
+                | compact | sort)
+               ["prune-daemon command" "prune-daemon help-setup" "prune-daemon status"])
+    ]
+
+    summarise ($a ++ $b ++ $c ++ $d ++ $e ++ $f) --title "prune-daemon"
 }

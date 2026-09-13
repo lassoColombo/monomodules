@@ -126,22 +126,21 @@ export def unit-files [tick: list<string>, log: string, interval: int]: nothing 
      {path: (timer-path), text: $timer}]
 }
 
-# `daemon-reload` first, or systemd runs the file it read last time — which on a
-# re-install is the OLD interval, with no complaint. `enable --now` both starts
-# the timer and makes it come back at the next login.
-export def register []: nothing -> record {
-    ^systemctl --user daemon-reload | complete | ignore
-    let r = ^systemctl --user enable --now $"($UNIT).timer" | complete
-    {ok: ($r.exit_code == 0), why: (if ($r.exit_code == 0) { "" } else { $r.stderr | str trim })}
+# ── the commands, as DATA ─────────────────────────────────────────────────────
+# Built, never run (D20). `daemon-reload` comes FIRST, or systemd runs the file
+# it read last time — which on a re-setup is the old interval, with no complaint.
+# `enable --now` both starts the timer and makes it come back at the next login.
+export def load-commands []: nothing -> list<string> {
+    [ "systemctl --user daemon-reload"
+      $"systemctl --user enable --now ($UNIT).timer" ]
 }
 
-# `disable --now` stops the timer and removes the symlink `enable` made — which
-# lives outside our two files, and is the one thing deleting them would leave
-# behind. The `daemon-reload` after is for the files mod.nu is about to remove.
-export def unregister []: nothing -> record {
-    let r = ^systemctl --user disable --now $"($UNIT).timer" | complete
-    ^systemctl --user daemon-reload | complete | ignore
-    {ok: ($r.exit_code == 0), why: (if ($r.exit_code == 0) { "" } else { $r.stderr | str trim })}
+# `disable --now` stops the timer AND removes the symlink `enable` made — which
+# lives outside our two files, and is the one thing deleting them would strand.
+# The reload after is for the files that are about to go.
+export def unload-commands []: nothing -> list<string> {
+    [ $"systemctl --user disable --now ($UNIT).timer"
+      "systemctl --user daemon-reload" ]
 }
 
 # `show` answers for a unit that does not exist too, which is why `installed` is

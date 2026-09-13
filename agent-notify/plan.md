@@ -601,36 +601,50 @@ core/prune-daemon/systemd.nu   Linux   — a .service and a .timer, user scope
 
 Each launcher answers the same five questions: `INFO`, `available` (a **probe**,
 returning `{ok, why}`), `unit-files` (**PURE** — the files, written nowhere),
-`register`/`unregister`, and `status` (which reads the interval back **out of
-the unit file**, because the file is what the launcher obeys and what someone
-typed once is only a memory of it).
+`load-commands`/`unload-commands` (**PURE** too — the lines that load them,
+built and never run), and `status` (which reads the interval back **out of the
+unit file**, because the file is what the launcher obeys and what someone typed
+once is only a memory of it).
 
 **`unit-files` being pure is what makes this testable on one machine.** The
 systemd timer is asserted in full by `tests/prune-daemon.nu` running on a Mac
 with no systemd on it. Same split as `render-items` / `push-items`.
 
-**Nothing autodetects (D67).** `install` takes the launcher as a required
+**Nothing autodetects (D67).** `help-setup` takes the launcher as a required
 argument with a completer; the machine is not asked. Autodetection would be
 right nearly always and invisible when wrong — and wrong looks exactly like
-"dead agents linger", with nothing in any log. So `available` turns from a
-chooser into a **validator**, and its `why` is shown verbatim, because a refusal
-is the whole of the UX for a choice the user made:
+"dead agents linger", with nothing in any log. So the user names it, and the
+completer's `description` column carries the explanation the detection would
+have hidden.
+
+**And nothing is applied (D69).** There is no `install`, so there is nothing to
+`uninstall`. `help-setup <launcher>` prints the unit files, the commands that
+load them, and the way back out — the same rule D20 already holds for an agent's
+hooks and for the one `sketchybarrc` line, and these are the most privileged
+configs of the four: a thing that runs on a timer forever whether or not you
+remember agreeing to it.
+
+Which is what empties the launcher contract of side effects. `load-commands`
+BUILDS the lines instead of running them, the same rule as zellij's `commands`
+and the bar's `message` — so everything left that touches the world is
+`available` and `status`, both read-only, both answering a question somebody
+asked.
+
+**`available` stops being a veto.** It was a validator while `install` existed;
+now it is a note at the top, because printing is harmless and printing the
+systemd files ON A MAC is the useful case:
 
 ```
-agent-notify: systemd cannot run here — systemctl is not on PATH (this machine is macos)
+NOTE: this machine cannot run systemd — systemctl is not on PATH (this machine is macos).
+      The files below are still right for one that can.
 ```
 
-**The asymmetry is deliberate: you name a launcher to CREATE one, never to ask
-about one or to destroy one.** `status` reports every launcher — so "is it
-running?" is answerable without remembering what you installed six months ago,
-and a unit file that arrived with someone's dotfiles is visible rather than
-immortal. `uninstall` sweeps them all, so a launcher can never be left armed
-because detection would now answer differently. That drift-proofing is why there
-is no state file recording what was installed.
+`status` still reports **every** launcher, so "is it running?" is answerable
+without remembering which one you set up, and a unit file that arrived with
+someone's dotfiles is visible rather than immortal.
 
-Two refusals fire before anything touches the disk: a launcher that cannot run
-here, and a second launcher already loaded (harmless — a sweep and a repaint are
-both idempotent — but never what anyone meant).
+Two things are still refused, both before any text is built: a launcher that
+does not exist, and an interval under 10s.
 
 **What a launcher may touch: only files it named, only units it created.** One
 plist; one `.service` and one `.timer`, both named after us, both under
@@ -769,7 +783,7 @@ committed. Each display is wrapped alone, so one failing cannot stop the next.
 | D14 | Store the message as written; derive the flattened form at paint time | **LOCKED** | step 5b — built: `integrations/sketchybar/text.nu` flattens at paint, the session-store keeps the markdown. It is what let the picker later take a different view of the same field, and then stop needing it at all (D57) |
 | D18 | One FILE per agent, not a declarative mapping table | **LOCKED** | §4.6 — transport, reply contract and current-session all vary; a map would become a worse nushell |
 | D19 | Agents are discovered by the agent's own config naming the file; no registry | **LOCKED** | adding an agent is one new file |
-| D20 | Setup help is printed, never applied | **LOCKED** | four foreign configs in three formats |
+| D20 | Setup help is printed, never applied | **LOCKED** | five foreign configs in four formats, since D69 brought the prune-daemon's LaunchAgent and systemd units under the same rule. The one exception stays `displays install sketchybar`, and only because a bar item is runtime state rather than a file anyone could write |
 | D21 | An agent module uses ONE transport, even when its agent offers several | **LOCKED** | §4.6 — Codex's `notify` and hooks key on different ids; running both double-counts one agent |
 | D22 | Fix an agent's transport before inferring states it does not report | **LOCKED** | §4.6 — the session-store must not hold a confident fact nothing supports |
 | D23 | The projection gate: compare `render-items(before)` with `render-items(after)` | **LOCKED** | §4.7 — replaces v1's bash gate, trigger dedup and session-store-garbage-collector with one comparison, and no state |
@@ -816,8 +830,9 @@ committed. Each display is wrapped alone, so one failing cannot stop the next.
 | D64 | The picker's chrome is coloured, and a line is built as PIECES | **LOCKED** | step 10 — closes §9b.2. A line is `{c, t}` pieces, measured in plain text and inked last, which is the only order that works: the width a terminal cares about is the one a reader sees, and a row's name and location are agent-authored so the strip in `clean` has to stay a defence. Two things the list could not say got a home in the bars — a fleet tally on the top, `▾ n` on the bottom when the preview is scrolled — and both are RIGHT-ALIGNED so they drop first on a narrow terminal and never move the caret. One palette gotcha worth keeping: ANSI 8 (`dark_gray`) is Rosé Pine's OVERLAY tone, what a selection is drawn *on*, so as text it is nearly the background; dim chrome is `white_dimmed`, the way cmdprompt draws its box |
 | D65 | The vocabulary is **session / agent / integration**; nothing is a `client` | **LOCKED** | the rename (naming.md 34) — `client` named a role in a protocol this module does not have: there is no server, and zellij reads the store as much as Claude Code writes it, so the word drew no line. The three nouns each name their subject instead — a SESSION is a row in the store, an AGENT is the program a session runs, an INTEGRATION is a tool that shows them — and read/write is a consequence rather than a name. It also removes the ambiguity `agents/` would otherwise have: rows are sessions, so `agents/claude.nu` can only be read as the file about the Claude Code PROGRAM. Carried out as a rename plus a one-shot over the live `client` field, the same treatment the `v` field got. The store directory followed (naming.md 35): `agents/` held rows, and a row is a session |
 | D66 | The launcher is a TABLE, and `unit-files` is pure | **LOCKED** | §4.6c — launchd was the one genuinely platform-locked thing in `core/`, and nushell is not. Two launchers today (`launchd`, `systemd`), each answering the same five questions, registered by hand like the display registry because a name cannot become a module at runtime. The pure half is what pays for itself immediately: the systemd `.service` and `.timer` are asserted IN FULL by `tests/prune-daemon.nu` on a Mac with no systemd on it — the same `render-items` / `push-items` split, for the same reason. Windows was scoped out on purpose: a one-minute floor in Task Scheduler, and no zellij and no SketchyBar to paint |
-| D67 | The launcher is NAMED at install, never detected — with a completer | **LOCKED** | §4.6c — autodetection would be right nearly always and INVISIBLE WHEN WRONG, and wrong looks exactly like "dead agents linger", with nothing in any log. So `available` stops being a chooser and becomes a validator whose `why` is shown verbatim, the completer's `description` column carries the explanation the detection used to hide, and the asymmetry is the rule: **you name a launcher to create one, never to ask about one or destroy one**. `status` reports every launcher, `uninstall` sweeps them all — which is also why there is no state file recording what was installed, and why re-detecting differently can never leave one armed |
-| D68 | systemd's `AccuracySec=` is PINNED to 1s, in our own timer | **LOCKED** | §11 — it defaults to ONE MINUTE, and the default silently makes `--interval 30` a lie: the expiry lands at a stable, host-wide position inside the window, synchronised across every local timer, so a 30s timer snaps to the shared 60s grid and ticks every 60s forever. Not jitter — steady state. Pinned so that `install launchd --interval 30` and `install systemd --interval 30` MEAN THE SAME THING; if the launchers disagree about what the number means, the abstraction is not one. Per-unit, in the `[Timer]` section of the file we write — the global knob is a different setting with a different name (`DefaultTimerAccuracySec=` in `user.conf`) and nothing here goes near it |
+| D67 | The launcher is NAMED, never detected — with a completer | **LOCKED** | §4.6c — autodetection would be right nearly always and INVISIBLE WHEN WRONG, and wrong looks exactly like "dead agents linger", with nothing in any log. So the user names it and the completer's `description` column carries the explanation the detection used to hide. `status` still reports EVERY launcher, so asking whether the prune-daemon is running never depends on remembering which one was set up — which is also why no state file records it. REVISED BY D69: `available` was a validator that refused an `install`; with nothing installed, it is a note at the top of the printed help instead |
+| D68 | systemd's `AccuracySec=` is PINNED to 1s, in our own timer | **LOCKED** | §11 — it defaults to ONE MINUTE, and the default silently makes `--interval 30` a lie: the expiry lands at a stable, host-wide position inside the window, synchronised across every local timer, so a 30s timer snaps to the shared 60s grid and ticks every 60s forever. Not jitter — steady state. Pinned so that `--interval 30` MEANS THE SAME THING under both launchers; if the launchers disagree about what the number means, the abstraction is not one. Per-unit, in the `[Timer]` section of the file we write — the global knob is a different setting with a different name (`DefaultTimerAccuracySec=` in `user.conf`) and nothing here goes near it |
+| D69 | The prune-daemon is PRINTED, never installed — no `install`, no `uninstall` | **LOCKED** | D20 reaches the last thing that was still applying itself. A LaunchAgent and a systemd timer are the most privileged configs this module knows how to describe — something that runs on a timer forever whether or not you remember agreeing to it — so `help-setup <launcher>` lays out the files, the commands that load them, and the way back out, and runs none of it. What it buys beyond consistency: the launcher contract has NO side effect left in it. `load-commands` builds lines instead of running them (zellij's `commands`, the bar's `message`, rule 3 in integrations/mod.nu), so all that touches the world is `available` and `status`, both read-only. And `available` stops being a veto — printing is harmless, and printing the systemd files ON A MAC is the useful case, so an unavailable launcher gets a NOTE at the top rather than a refusal. Cost, accepted: setting the prune-daemon up is now four pasted lines instead of one command, and `naming.md`'s migration record names an `install` that no longer exists |
 | D15 | Replace pandoc with a nu-native flattener | **LOCKED** (step 5b) | done: `integrations/sketchybar/text.nu` does it in nushell. 25.1ms off the event path and a dependency gone. v1 could afford pandoc because it converted where the preview was STORED, on a path already spawning processes; v2's whole paint is 6.5ms. Superseded in part by D60 — the flattener is a parser now, and still no subprocess |
 | D16 | Where the bench harness lives | **OPEN** | the only open row left. ~350 lines of documented nu; §8, and §9b.3 |
 | D17 | Promoted to `monomodules/agent-notify`, a module beside `ai` and the rest | **LOCKED** (2026-09-12) | step 7 — it was never `ai`-shaped: reflecting agent state on a status bar is not provider-agnostic content generation, and being a submodule is what made every hook parse the whole `ai` tree. The directory, the command, the session-store at `~/.local/share/agent-notify/` and the bar prefix `an_` all carry the one name |

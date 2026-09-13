@@ -299,5 +299,5 @@ export def help-setup []: nothing -> string {
        "The periodic check that removes dead agents is NOT here: it is its own"
        "thing, so that turning the bar off cannot turn it off too."
        ""
-       "  agent-notify prune-daemon install" ] | str join "\n")
+       "  agent-notify prune-daemon help-setup launchd" ] | str join "\n")
 }

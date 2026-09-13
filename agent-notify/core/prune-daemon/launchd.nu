@@ -58,17 +58,22 @@ export def unit-files [tick: list<string>, log: string, interval: int]: nothing 
     [{path: (plist-path), text: $text}]
 }
 
-# `bootout` first so re-installing picks up a changed interval or path. It fails
-# when nothing is loaded, which is the normal case and not an error.
-export def register []: nothing -> record {
-    ^launchctl bootout $"(domain)/($LABEL)" | complete | ignore
-    let r = ^launchctl bootstrap (domain) (plist-path) | complete
-    {ok: ($r.exit_code == 0), why: (if ($r.exit_code == 0) { "" } else { $r.stderr | str trim })}
+# ── the commands, as DATA ─────────────────────────────────────────────────────
+# Built, never run (D20) — the same rule as zellij's `commands` and the bar's
+# `message`. `bootout` comes first on load so a re-install picks up a changed
+# interval or path; it fails when nothing is loaded, which is the normal case
+# and why the printed line says so.
+#
+# The uid is baked in rather than left as `$(id -u)`, so the line works pasted
+# into any shell — nushell included, where that spelling is not the one. It is
+# the only thing either of these reads.
+export def load-commands []: nothing -> list<string> {
+    [ $"launchctl bootout (domain)/($LABEL)   # fails when nothing is loaded — normal"
+      $"launchctl bootstrap (domain) (plist-path)" ]
 }
 
-export def unregister []: nothing -> record {
-    let r = ^launchctl bootout $"(domain)/($LABEL)" | complete
-    {ok: ($r.exit_code == 0), why: (if ($r.exit_code == 0) { "" } else { $r.stderr | str trim })}
+export def unload-commands []: nothing -> list<string> {
+    [ $"launchctl bootout (domain)/($LABEL)" ]
 }
 
 # `launchctl list` gives the pid (or `-` when it is between runs) and the last

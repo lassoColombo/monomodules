@@ -31,51 +31,62 @@
 # ── WHY THERE IS MORE THAN ONE ────────────────────────────────────────────────
 # nushell is cross-platform and launchd is not, so the ONE genuinely
 # platform-locked thing in `core/` became a table (D66). Two launchers today,
-# and each is the same four questions:
+# and each is the same five questions:
 #
-#   INFO         what it is, for `agent-notify prune-daemon status`
-#   available    CAN this launcher run here? A PROBE, not a guess — the binary
-#                and, for systemd, a user manager that actually answers. It
-#                returns {ok, why}, and `why` is shown to the user verbatim,
-#                because a refusal is the whole of the UX for a choice they made.
-#   unit-files   PURE: (tick, log, interval) → the files to write, as
-#                {path, text}. Nothing is written and no subprocess runs, which
-#                is what lets `tests/prune-daemon.nu` assert a systemd timer from
-#                a Mac — and what `prune-daemon unit <launcher>` prints.
-#   register     load the files just written. `unregister` is its undo.
-#   status       installed / loaded / last exit / the interval read back OUT of
-#                the unit file, because the file is the truth and not what
-#                someone typed once.
+#   INFO             what it is, for `agent-notify prune-daemon status`
+#   available        CAN this launcher run here? A PROBE, not a guess — the
+#                    binary and, for systemd, a user manager that actually
+#                    answers. Returns {ok, why}, and `why` is shown verbatim.
+#   unit-files       PURE: (tick, log, interval) → the files to write, as
+#                    {path, text}.
+#   load-commands    PURE: the lines that load those files. `unload-commands` is
+#                    its undo.
+#   status           installed / loaded / last exit / the interval read back OUT
+#                    of the unit file, because the file is the truth and not
+#                    what someone typed once.
 #
-# ── AND WHY NOTHING AUTODETECTS ───────────────────────────────────────────────
-# `prune-daemon install` takes the launcher as a REQUIRED argument (D67). The
-# machine is not asked. Autodetection would be right ~always and invisible when
-# wrong — and wrong looks exactly like "dead agents linger", with nothing in any
-# log. So the user names it, the completer offers the two with a description
-# each, and `available` turns from a chooser into a VALIDATOR whose error names
-# what it probed and what to try instead.
+# ── AND NOTHING HERE IS APPLIED (D20) ─────────────────────────────────────────
+# THE ONLY WRITER IS YOU. There is no `install`, and so there is nothing to
+# `uninstall`: `help-setup` prints the files and the commands, the same as the
+# hook wiring for an agent and the one line for a `sketchybarrc`. Four foreign
+# configs in four formats now, and a LaunchAgent and a systemd unit are the most
+# privileged of them — a thing that runs on a timer forever whether or not you
+# remember agreeing to it.
 #
-# THE ASYMMETRY IS DELIBERATE: you name a launcher to CREATE one, never to ask
-# about one or to destroy one. `status` reports every launcher, so "is the
-# prune-daemon running?" is answerable without remembering what you installed
-# six months ago; `uninstall` sweeps them all, so a launcher can never be left
-# armed because detection would now answer differently.
+# Which is why the launcher contract has no side effect left in it at all.
+# `load-commands` BUILDS the lines rather than running them, the same rule as
+# zellij's `commands` and the bar's `message` (integrations/mod.nu, rule 3), and
+# the whole of this file that touches the world is `available` and `status` —
+# both read-only, both answering questions somebody asked.
+#
+# ── NOTHING AUTODETECTS EITHER ────────────────────────────────────────────────
+# `help-setup` takes the launcher as a REQUIRED argument (D67). The machine is
+# not asked. Autodetection would be right ~always and invisible when wrong — and
+# wrong looks exactly like "dead agents linger", with nothing in any log. So the
+# user names it and the completer offers the two with a description each.
+#
+# But `available` is NOT a veto here, because printing is harmless: asking for
+# the systemd files ON A MAC is the useful case, and it is how they are written
+# and read. It puts a line at the top instead.
+#
+# `status` still answers for EVERY launcher, so "is the prune-daemon running?"
+# never depends on remembering which one you set up.
 #
 # ── WHAT A LAUNCHER MAY TOUCH ─────────────────────────────────────────────────
-# ONLY FILES IT NAMED, AND ONLY UNITS IT CREATED. The launchd backend owns one
-# plist; the systemd backend owns one `.service` and one `.timer`, both named
+# ONLY FILES IT NAMED, AND ONLY UNITS IT CREATED. The launchd launcher owns one
+# plist; the systemd launcher owns one `.service` and one `.timer`, both named
 # after us, both under `~/.config/systemd/user/`. Neither reads or writes
 # `user.conf`, `system.conf`, `DefaultTimerAccuracySec=`, or any unit it did not
-# create, and `uninstall` leaves nothing behind. Same contract on both sides,
-# and the same spirit as the line in ../../mod.nu about nothing of ours living
-# in anyone else's config directory: a unit we own and can fully remove is ours;
-# another tool's config file is not.
+# create — and the teardown `help-setup` prints leaves nothing behind. Same
+# spirit as the line in ../../mod.nu about nothing of ours living in anyone
+# else's config directory: a unit we own and can fully remove is ours; another
+# tool's config file is not.
 #
-# The exports are `install-job` / `uninstall-job` / `status-of-job` /
-# `prune-command` rather than the obvious install / uninstall / status /
-# command, because `cli/prune-daemon.nu` publishes those as `prune-daemon
-# install` and friends — and a command calling the name it is defining calls
-# itself. Third time that rule has bitten (plan.md §10).
+# The exports are `setup-help` / `status-of-job` / `prune-command` rather than
+# the obvious help-setup / status / command, because `cli/prune-daemon.nu`
+# publishes those as `prune-daemon status` and friends — and a command calling
+# the name it is defining calls itself. FOURTH time that rule has bitten — this
+# one on `help-setup`, in the file that documents it (plan.md §10).
 
 use launchd.nu
 use systemd.nu
@@ -104,14 +115,14 @@ export def launcher-registry []: nothing -> record {
     { launchd: {info: $launchd.INFO
                 available: {|| launchd available }
                 unit-files: {|tick, log, interval| launchd unit-files $tick $log $interval }
-                register: {|| launchd register }
-                unregister: {|| launchd unregister }
+                load-commands: {|| launchd load-commands }
+                unload-commands: {|| launchd unload-commands }
                 status: {|| launchd status }}
       systemd: {info: $systemd.INFO
                 available: {|| systemd available }
                 unit-files: {|tick, log, interval| systemd unit-files $tick $log $interval }
-                register: {|| systemd register }
-                unregister: {|| systemd unregister }
+                load-commands: {|| systemd load-commands }
+                unload-commands: {|| systemd unload-commands }
                 status: {|| systemd status }} }
 }
 
@@ -128,73 +139,66 @@ def resolve [launcher: string]: nothing -> record {
     $entry
 }
 
-# What this launcher would write, without writing it. The pure half of the
-# contract, exposed: it is how the systemd files are developed and asserted from
-# a Mac, and how anyone can read what `install` is about to do.
+# What this launcher would have you write. PURE — it is how the systemd files
+# are developed and asserted from a Mac, and what `help-setup` lays out.
 export def unit-files [launcher: string, interval: int]: nothing -> table {
     do (resolve $launcher).unit-files (prune-command) (log-path) $interval
 }
 
-# The paths a launcher owns, for the two callers that want to delete them or ask
-# whether they exist. No path has the interval in it, so any value will do — the
-# 0 is there to say this is not a question about the contents.
+# The paths a launcher owns, for the one caller that only wants to know whether
+# they exist. No path has the interval in it, so any value will do — the 0 is
+# there to say this is not a question about the contents.
 def unit-paths [entry: record]: nothing -> list<string> {
     do $entry.unit-files (prune-command) (log-path) 0 | get path
 }
 
-# ── install ───────────────────────────────────────────────────────────────────
-# Validate, then refuse the two cases that would be quietly wrong, then write and
-# load. The order matters: nothing touches the disk until both refusals have had
-# their say.
-export def install-job [launcher: string, interval: int]: nothing -> record {
+# ── help-setup ────────────────────────────────────────────────────────────────
+# The files, then the commands, then the way back out. Printed, never applied.
+export def setup-help [launcher: string, interval: int]: nothing -> string {
     let entry = resolve $launcher
-
     let can = do $entry.available
-    if not $can.ok {
-        error make --unspanned {msg: $"agent-notify: ($launcher) cannot run here — ($can.why)"}
-    }
-
-    # Two launchers ticking is harmless — a sweep and a repaint are both
-    # idempotent — but it is confusing, and it is never what anyone meant.
-    let armed = status-of-job | where {|r| ($r.launcher != $launcher) and $r.loaded }
-    if ($armed | is-not-empty) {
-        let other = $armed | get 0.launcher
-        error make --unspanned {msg: $"agent-notify: ($other) is already running the prune-daemon — `agent-notify prune-daemon uninstall` first"}
-    }
-
     let files = unit-files $launcher $interval
-    mkdir (log-path | path dirname)
-    for f in $files {
-        mkdir ($f.path | path dirname)
-        $f.text | save --force $f.path
+    let log = log-path
+
+    let preface = if $can.ok { [] } else {
+        [ $"NOTE: this machine cannot run ($launcher) — ($can.why)."
+          "      The files below are still right for one that can."
+          "" ]
     }
 
-    let r = do $entry.register
-    { launcher: $launcher
-      interval: $interval
-      files: ($files | get path)
-      loaded: $r.ok
-      why: $r.why }
-}
+    let write = $files | each {|f|
+        [ $"Write ($f.path):"
+          ""
+          ($f.text | lines | each {|l| $"    ($l)" } | str join "\n")
+          "" ]
+    } | flatten
 
-# ── uninstall ─────────────────────────────────────────────────────────────────
-# EVERY launcher, not the one you name — see the asymmetry above. Unload where
-# the launcher can answer; delete the files always, because a unit file that
-# arrived with someone's dotfiles is inert but should not be immortal.
-export def uninstall-job []: nothing -> table {
-    launcher-registry | transpose name entry | each {|l|
-        let can = do $l.entry.available
-        let unloaded = if $can.ok { (do $l.entry.unregister).ok } else { false }
-        let present = unit-paths $l.entry | where {|f| $f | path exists }
-        for f in $present { rm --force $f }
-        {launcher: $l.name, unloaded: $unloaded, removed: ($present | length), files: $present}
-    }
+    ([ ...$preface
+       $"The prune-daemon looks every ($interval)s under ($entry.info.title)."
+       "Nothing below is applied — run it yourself, or do not."
+       ""
+       "Make the log directory, or a failing tick has nowhere to say so:"
+       ""
+       $"    mkdir -p ($log | path dirname)"
+       ""
+       ...$write
+       "Load it:"
+       ""
+       ...(do $entry.load-commands | each {|c| $"    ($c)" })
+       ""
+       "`agent-notify prune-daemon status` says whether it took."
+       ""
+       "To undo, in this order — deleting the files does not unload them, and"
+       "the unload may clean up things that are not files:"
+       ""
+       ...(do $entry.unload-commands | each {|c| $"    ($c)" })
+       ...($files | each {|f| $"    rm ($f.path)" }) ] | str join "\n")
 }
 
 # ── status ────────────────────────────────────────────────────────────────────
 # One row per launcher, whatever the machine is. A launcher that cannot run here
-# still reports whether its files are lying around, which is the only way the
-# dotfiles case is ever visible.
+# still reports whether its files are lying around, which is the only way a unit
+# that arrived with someone's dotfiles is ever visible.
 export def status-of-job []: nothing -> table {
     let log = log-path
     launcher-registry | transpose name entry | each {|l|
