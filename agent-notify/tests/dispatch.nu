@@ -8,7 +8,7 @@
 use ../../agent-notify
 use ../core/config.nu
 use ../core/dispatch.nu
-use ../core/operation.nu
+use ../core/session-change.nu
 use ../core/session-store.nu
 use fake.nu
 use assert.nu *
@@ -206,9 +206,9 @@ export def main [] {
     let c4 = dispatch repaint [] [$one] --table (displays)
     let c_nofile = [ (check "no config file means no displays, not an error" $c4 []) ]
 
-    # ── D. the seam in operation.nu ───────────────────────────────────────────
-    let d1 = operation apply {operation-kind: "patch", id: "d1", changes: {agent: "claude", state: "working"}}
-    let d2 = operation apply {operation-kind: "end", id: "d1"}
+    # ── D. the seam in session-change.nu ───────────────────────────────────────────
+    let d1 = session-change apply {change-kind: "patch", id: "d1", changes: {agent: "claude", state: "working"}}
+    let d2 = session-change apply {change-kind: "end", id: "d1"}
     let d = [
         (check "a write still reports what it did" $d1.changed true)
         (check "dispatch cannot break a session-store write" ($d1.after.state) "working")
@@ -216,7 +216,7 @@ export def main [] {
                ($d2.before.id) "d1")
         (check "…and reports that it happened" $d2.changed true)
         (check "dropping nothing is still nothing"
-               (operation apply {operation-kind: "end", id: "d1"} | get changed) false)
+               (session-change apply {change-kind: "end", id: "d1"} | get changed) false)
     ]
 
     # ── E. the halves reach the right place ───────────────────────────────────

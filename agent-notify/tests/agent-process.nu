@@ -10,7 +10,7 @@
 # never become deleting it.
 
 use ../../agent-notify
-use ../core/proc.nu
+use ../core/agent-process.nu
 use ../core/store-garbage-collector.nu
 use assert.nu *
 
@@ -27,43 +27,43 @@ export def main [] {
     $env.AGENT_NOTIFY_CONFIG = ($TMP | path join "no-config.yaml")
     hide-env --ignore-errors AGENT_NOTIFY_PID
 
-    let me = proc find "nu"
+    let me = agent-process find-mine "nu"
     let gone = dead-pid
 
     # ── finding the process ───────────────────────────────────────────────────
     let a = [
         (check "walking up finds a process by name — ours is nu" $me.pid $nu.pid)
         (check "…and records when it started" (($me.started | str length) > 10) true)
-        (check "a name nothing is running is not invented" (proc find "no-such-program-xyz") null)
-        (check "an empty name finds nothing rather than guessing" (proc find "") null)
+        (check "a name nothing is running is not invented" (agent-process find-mine "no-such-program-xyz") null)
+        (check "an empty name finds nothing rather than guessing" (agent-process find-mine "") null)
     ]
 
     $env.AGENT_NOTIFY_PID = ($nu.pid | into string)
-    let told = proc find "no-such-program-xyz"
+    let told = agent-process find-mine "no-such-program-xyz"
     let b = [
         (check "an agent that exports its own pid skips the walk entirely" $told.pid $nu.pid)
         (check "…and is believed over the name" ($told != null) true)
     ]
     $env.AGENT_NOTIFY_PID = ($gone | into string)
     let c = [ (check "a pid that exports a lie is not turned into a fact"
-                     (proc find "no-such-program-xyz") null) ]
+                     (agent-process find-mine "no-such-program-xyz") null) ]
     hide-env AGENT_NOTIFY_PID
 
     # ── liveness ──────────────────────────────────────────────────────────────
     let d = [
-        (check "we are alive" (proc living [$me]) [$nu.pid])
-        (check "a finished process is not" (proc living [{pid: $gone, started: "whenever"}]) [])
+        (check "we are alive" (agent-process still-running [$me]) [$nu.pid])
+        (check "a finished process is not" (agent-process still-running [{pid: $gone, started: "whenever"}]) [])
         (check "the living are told from the dead in one answer"
-               (proc living [$me {pid: $gone, started: "whenever"}]) [$nu.pid])
+               (agent-process still-running [$me {pid: $gone, started: "whenever"}]) [$nu.pid])
         (check "a RECYCLED pid is not our process: same number, wrong start time"
-               (proc living [{pid: $nu.pid, started: "Fri Jan  1 00:00:00 2000"}]) [])
-        (check "nothing to ask about is an empty answer, not an error" (proc living []) [])
+               (agent-process still-running [{pid: $nu.pid, started: "Fri Jan  1 00:00:00 2000"}]) [])
+        (check "nothing to ask about is an empty answer, not an error" (agent-process still-running []) [])
     ]
 
     # ── the store-garbage-collector ───────────────────────────────────────────
-    agent-notify session-store patch "alive-1" {agent: "claude", state: "working", proc: $me} | ignore
+    agent-notify session-store patch "alive-1" {agent: "claude", state: "working", process: $me} | ignore
     agent-notify session-store patch "dead-1" {agent: "claude", state: "working"
-                                        proc: {pid: $gone, started: "whenever"}} | ignore
+                                        process: {pid: $gone, started: "whenever"}} | ignore
     agent-notify session-store patch "untracked-1" {agent: "claude", state: "awaiting"} | ignore
 
     let dropped = store-garbage-collector sweep-dead-sessions
@@ -81,8 +81,8 @@ export def main [] {
     # ── /clear: one live process, two records ─────────────────────────────────
     # The same agent started a fresh session in the same process. The older record
     # is finished, even though its pid is genuinely alive.
-    agent-notify session-store patch "cleared-old" {agent: "claude", state: "awaiting", proc: $me} | ignore
-    agent-notify session-store patch "cleared-new" {agent: "claude", state: "working", proc: $me} | ignore
+    agent-notify session-store patch "cleared-old" {agent: "claude", state: "awaiting", process: $me} | ignore
+    agent-notify session-store patch "cleared-new" {agent: "claude", state: "working", process: $me} | ignore
     let dropped2 = store-garbage-collector sweep-dead-sessions
     let left2 = agent-notify session-store list | get id | sort
     let f = [

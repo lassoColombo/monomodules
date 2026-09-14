@@ -96,7 +96,7 @@ export def main [] {
     # name is authored once and then never said again by anybody.
     agent-notify session-store patch "resume-me" {
         agent: "claude", state: "working", name: "the-name", cwd: "/tmp/proj"
-        message: "last thing", proc: {pid: 99999, started: "2026-01-01"}
+        message: "last thing", process: {pid: 99999, started: "2026-01-01"}
         zellij: {session: "home", pane_id: "7"}
     } | ignore
     agent-notify session-store end "resume-me" | ignore
@@ -121,7 +121,7 @@ export def main [] {
         (check "THE RUN IT WAS IN DOES NOT COME BACK — a stale pid would let the store-garbage-collector
            prove a live session dead within 30s, and a stale pane would rename
            a pane that has moved on"
-               ($back | columns | where {|c| $c in ["proc" "zellij"] }) [])
+               ($back | columns | where {|c| $c in ["process" "zellij"] }) [])
         (check "…and the filed copy is consumed, not left in both places"
                (agent-notify session-store list --ended | where id == "resume-me") [])
         (check "a session nobody filed away is created, not reopened"

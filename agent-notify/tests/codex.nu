@@ -12,7 +12,7 @@
 
 use ../../agent-notify
 use ../agents/codex.nu
-use ../core/operation.nu
+use ../core/session-change.nu
 use assert.nu *
 
 const TMP = ($nu.temp-dir | path join "agent-notify-tests-codex")
@@ -46,53 +46,53 @@ export def main [] {
     # ── the mapping, as a pure function ───────────────────────────────────────
     let m = [
         (check "SessionStart carries current-session, not state"
-               (codex to-operation "SessionStart" (hook-input) | get changes | columns | sort)
+               (codex to-session-change "SessionStart" (hook-input) | get changes | columns | sort)
                ["agent" "codex" "cwd"])
         (check "…and offers idle only as a create-time default"
-               (codex to-operation "SessionStart" (hook-input) | get defaults) {state: "idle"})
+               (codex to-session-change "SessionStart" (hook-input) | get defaults) {state: "idle"})
         (check "SessionStart keeps the transcript path in its own namespace"
-               (codex to-operation "SessionStart" (hook-input) | get changes.codex.transcript_path) "/tmp/cx.jsonl")
+               (codex to-session-change "SessionStart" (hook-input) | get changes.codex.transcript_path) "/tmp/cx.jsonl")
 
         (check "UserPromptSubmit → working"
-               (codex to-operation "UserPromptSubmit" (hook-input {prompt: "do the thing"}) | get changes.state)
+               (codex to-session-change "UserPromptSubmit" (hook-input {prompt: "do the thing"}) | get changes.state)
                "working")
         (check "PostToolUse → working"
-               (codex to-operation "PostToolUse" (hook-input {tool_name: "Bash"}) | get changes.state) "working")
+               (codex to-session-change "PostToolUse" (hook-input {tool_name: "Bash"}) | get changes.state) "working")
 
         (check "Stop → awaiting, with the message"
-               (codex to-operation "Stop" (hook-input {last_assistant_message: "Renamed and built."})
+               (codex to-session-change "Stop" (hook-input {last_assistant_message: "Renamed and built."})
                 | get changes.message) "Renamed and built.")
         (check "…and hands control back"
-               (codex to-operation "Stop" (hook-input) | get changes.state) "awaiting")
+               (codex to-session-change "Stop" (hook-input) | get changes.state) "awaiting")
         (check "Stop with no message CLEARS rather than keeping a stale one"
-               (codex to-operation "Stop" (hook-input) | get changes.message) null)
+               (codex to-session-change "Stop" (hook-input) | get changes.message) null)
 
         (check "a permission request needs attention"
-               (codex to-operation "PermissionRequest" (hook-input {tool_name: "Bash"}) | get changes.state)
+               (codex to-session-change "PermissionRequest" (hook-input {tool_name: "Bash"}) | get changes.state)
                "needs-attention")
         (check "…and says what is held up"
-               (codex to-operation "PermissionRequest"
+               (codex to-session-change "PermissionRequest"
                         (hook-input {tool_name: "Bash", tool_input: {description: "delete the build dir"}})
                 | get changes.message) "permission needed (Bash): delete the build dir")
         (check "…falling back to the tool name when it gives no reason"
-               (codex to-operation "PermissionRequest" (hook-input {tool_name: "apply_patch"}) | get changes.message)
+               (codex to-session-change "PermissionRequest" (hook-input {tool_name: "apply_patch"}) | get changes.message)
                "permission needed: apply_patch")
 
-        (check "SessionEnd drops" (codex to-operation "SessionEnd" (hook-input {reason: "other"}) | get operation-kind) "end")
+        (check "SessionEnd drops" (codex to-session-change "SessionEnd" (hook-input {reason: "other"}) | get change-kind) "end")
 
         (check "SubagentStop is ignored, so a pane never flashes awaiting mid-turn"
-               (codex to-operation "SubagentStop" (hook-input) | get operation-kind) "ignore")
+               (codex to-session-change "SubagentStop" (hook-input) | get change-kind) "ignore")
         (check "PreToolUse is ignored — PostToolUse already says working"
-               (codex to-operation "PreToolUse" (hook-input {tool_name: "Bash"}) | get operation-kind) "ignore")
+               (codex to-session-change "PreToolUse" (hook-input {tool_name: "Bash"}) | get change-kind) "ignore")
         (check "a compaction says nothing about who is waiting"
-               (codex to-operation "PreCompact" (hook-input) | get operation-kind) "ignore")
+               (codex to-session-change "PreCompact" (hook-input) | get change-kind) "ignore")
 
         (check "current-session is the snake_case session_id the hooks carry"
-               (codex to-operation "Stop" (hook-input) | get id) "sess-cx")
+               (codex to-session-change "Stop" (hook-input) | get id) "sess-cx")
         (check "a payload with no session_id is ignored"
-               (codex to-operation "Stop" {} | get operation-kind) "ignore")
+               (codex to-session-change "Stop" {} | get change-kind) "ignore")
         (check "every patch names its agent"
-               (codex to-operation "Stop" (hook-input) | get changes.agent) "codex")
+               (codex to-session-change "Stop" (hook-input) | get changes.agent) "codex")
     ]
 
     # ── the transport swap, which nothing else would catch ────────────────────
@@ -103,15 +103,15 @@ export def main [] {
                         "last-assistant-message": "Did the thing." }
     let t = [
         (check "a notify-shaped payload no longer maps"
-               (codex to-operation "agent-turn-complete" $notify_body | get operation-kind) "ignore")
+               (codex to-session-change "agent-turn-complete" $notify_body | get change-kind) "ignore")
         (check "…and its event name is not one we handle"
-               (codex to-operation "Stop" $notify_body | get operation-kind) "ignore")
+               (codex to-session-change "Stop" $notify_body | get change-kind) "ignore")
     ]
 
     # ── create-only defaults, through the real sequence ───────────────────────
-    operation apply (codex to-operation "SessionStart" (hook-input))
-    operation apply (codex to-operation "UserPromptSubmit" (hook-input))
-    let resumed = operation apply (codex to-operation "SessionStart" (hook-input {source: "compact"}))
+    session-change apply (codex to-session-change "SessionStart" (hook-input))
+    session-change apply (codex to-session-change "UserPromptSubmit" (hook-input))
+    let resumed = session-change apply (codex to-session-change "SessionStart" (hook-input {source: "compact"}))
     let d = [
         (check "SessionStart then a prompt leaves it working"
                (agent-notify session-store get "sess-cx" | get state) "working")

@@ -275,7 +275,7 @@ needs decoding.
 one agent" can be violated — a crashed session's stale record and a fresh one
 can both claim pane 3. The core does not resolve this, because the core must not
 know what a pane is; the zellij projection picks the live record and the
-session-store-garbage-collector drops the dead one.
+store-garbage-collector drops the dead one.
 
 ### 4.2 Writing — `patch` and the `changed` flag
 
@@ -337,11 +337,11 @@ agent-notify/
   cli.nu             COLD   human/admin command set
   core/
     session-schema.nu       record shape, states, field policy, version
-    paths.nu                XDG paths
+    store-layout.nu                XDG paths
     session-store.nu        get/patch/set/end/list — pure state, no I/O beyond it
     config.nu               read/normalize/validate the YAML (strict)
     dispatch.nu             fan out to enabled integrations
-    session-store-garbage-collector.nu
+    store-garbage-collector.nu
                      COLD   liveness + reconciliation (the 30s timer)
   view/                     presentation-neutral derivation shared by all displays
   agents/
@@ -427,15 +427,15 @@ So: **one file per agent**, exposing three things.
 
 ```nu
 export const INFO = {name, title, transport, states}  # for `agent-notify agents`
-export def to-operation [event: string, payload: record] -> operation
+export def to-session-change [event: string, payload: record] -> operation
                                                       # PURE — the thinking
 export def main [...]                                 # the entry; the peculiar parts
 ```
 
-`to-operation` is a pure function, which is why 30 of Claude's 37 assertions
-need no session-store, no hook and no agent. `main` owns transport, reply and
-exit code — the parts that are strange per agent, expressed where strange is
-cheap.
+`to-session-change` is a pure function, which is why 30 of Claude's 37
+assertions need no session-store, no hook and no agent. `main` owns transport,
+reply and exit code — the parts that are strange per agent, expressed where
+strange is cheap.
 
 **Nothing registers an agent.** The agent's own configuration names the file
 directly, so an agent module works the moment it exists. `agents/mod.nu` lists
@@ -510,14 +510,14 @@ climb until we meet the name **the agent declares** — `process: "claude"` in
 `$env.AGENT_NOTIFY_PID` short-circuits the walk, the same escape hatch
 `AGENT_NOTIFY_ID` gives for current-session (P5).
 
-Stored as `proc: {pid, started}` at `SessionStart` — where it can be new — and
-looked up again on `UserPromptSubmit`, once per turn. **That retry is what stops
-a missing pid being permanent**: if the walk fails once, or the session predates
-this code, that agent could otherwise never be proved dead for the rest of its
-life and every display would show it forever. No session-store read is needed to
-decide whether it is missing, because attaching it is idempotent — a pid does
-not change within a session, so a second attach produces an identical record,
-`changed` is false, and nothing is written or painted. Measured:
+Stored as `process: {pid, started}` at `SessionStart` — where it can be new —
+and looked up again on `UserPromptSubmit`, once per turn. **That retry is what
+stops a missing pid being permanent**: if the walk fails once, or the session
+predates this code, that agent could otherwise never be proved dead for the rest
+of its life and every display would show it forever. No session-store read is
+needed to decide whether it is missing, because attaching it is idempotent — a
+pid does not change within a session, so a second attach produces an identical
+record, `changed` is false, and nothing is written or painted. Measured:
 `UserPromptSubmit` 28.5ms → 40.2ms, once per turn; `PostToolUse`, which fires
 hundreds of times, is untouched at 29ms. The start time is not decoration: pids
 are recycled, so a number alone would eventually match a stranger's process and
@@ -528,7 +528,7 @@ The check is one `ps` for every recorded pid at once. Present with a matching
 start time → alive. Absent → **proof** → drop.
 
 **The safety rail: we cannot tell → we drop nothing.** That covers a record with
-no `proc` (its SessionStart predates this, or its agent could not be located)
+no `process` (its SessionStart predates this, or its agent could not be located)
 and a `ps` that failed to answer. One unreadable answer must never wipe a live
 session-store.
 
@@ -551,8 +551,8 @@ never noticed the bug — a counter is recomputed whole every time — which is
 exactly why it had to be found on zellij.
 
 What it deliberately cannot do: a **hung** agent stays, which is correct — it
-really is still there. And an agent whose `SessionStart` we missed has no `proc`
-and can never be pruned.
+really is still there. And an agent whose `SessionStart` we missed has no
+`process` and can never be pruned.
 
 ### 4.6c The prune-daemon — who looks when nobody reports
 
@@ -693,8 +693,8 @@ zellij's hand-rolled version is what this replaced.
 
 **Two snapshots, not a delta.** Callers pass the whole session-store before and
 after, so there is one spelling for "what was there a moment ago" whether the
-change came from a hook (one record moved, `core/operation.nu` reconstructs the
-rest) or from the prune-daemon (some records were pruned, `displays refresh`
+change came from a hook (one record moved, `core/session-change.nu` reconstructs
+the rest) or from the prune-daemon (some records were pruned, `displays refresh`
 prepends them). `--gone` and `--me` are gone with it.
 
 **`discover-own-location` is why `render-items` can be pure.** zellij needs to
@@ -786,20 +786,20 @@ committed. Each display is wrapped alone, so one failing cannot stop the next.
 | D20 | Setup help is printed, never applied | **LOCKED** | five foreign configs in four formats, since D69 brought the prune-daemon's LaunchAgent and systemd units under the same rule. The one exception stays `displays install sketchybar`, and only because a bar item is runtime state rather than a file anyone could write |
 | D21 | An agent module uses ONE transport, even when its agent offers several | **LOCKED** | §4.6 — Codex's `notify` and hooks key on different ids; running both double-counts one agent |
 | D22 | Fix an agent's transport before inferring states it does not report | **LOCKED** | §4.6 — the session-store must not hold a confident fact nothing supports |
-| D23 | The projection gate: compare `render-items(before)` with `render-items(after)` | **LOCKED** | §4.7 — replaces v1's bash gate, trigger dedup and session-store-garbage-collector with one comparison, and no state |
+| D23 | The projection gate: compare `render-items(before)` with `render-items(after)` | **LOCKED** | §4.7 — replaces v1's bash gate, trigger dedup and store-garbage-collector with one comparison, and no state |
 | D24 | Strict config validation in the CLI, never in the hook | **LOCKED** | §4.7 — a YAML typo must not be able to stop the session-store recording facts |
 | D25 | The readers are `displays/`, the writers are `agents/` (then `clients/`) | **REVISED** (step 6, and again by D65) | half right. The writers are still `agents/`; the readers went back to `integrations/`, because an integration has two halves and only one of them is a display — see D47 |
 | D26 | Displays reach dispatch as a hand-written table of closures | **LOCKED** | `use` is parse-time; it is also what makes them testable with nothing installed |
 | D27 | A display reports what it learned; dispatch writes it | **LOCKED** | §4.7 — one writer, and it keeps displays out of the session-store's import cone |
 | D28 | A pane's name comes from the session-store, never from parsing its old title | **LOCKED** | user decision; deletes ~60 lines of v1 and one zellij call per event. A manual rename is overwritten |
 | D29 | The import cone must be a TREE | **LOCKED** | §10 — a diamond is parsed twice, on every event, forever |
-| D30 | Liveness is the agent's PROCESS, recorded once at SessionStart | **LOCKED** | §4.6b — the only signal that is proof rather than a proxy; replaces v1's zellij scan and session-store-garbage-collector outright |
+| D30 | Liveness is the agent's PROCESS, recorded once at SessionStart | **LOCKED** | §4.6b — the only signal that is proof rather than a proxy; replaces v1's zellij scan and store-garbage-collector outright |
 | D31 | Cannot tell ⇒ delete nothing | **LOCKED** | §4.6b — one unreadable `ps` must never wipe a live session-store |
 | D32 | The agent declares how to find its own process | **LOCKED** | §4.6b — same rule as every other agent-specific fact (D18) |
 | D33 | The hook paints the bar itself; no trigger, no daemon round trip | **LOCKED** | step 5 — dispatch already holds the session-store; v1's path cost a second nu (~47ms) and a glue script |
 | D34 | A side effect is built as DATA first (`message`), then sent | **LOCKED** | step 5 — it is what lets the bar be tested exactly, with no bar installed and no subprocess |
 | D35 | A fixed item pool, created once, never added to or removed from | **INHERITED** | v1's most expensive lesson; re-measured at 17.51ms per add+remove against 6.5ms per message |
-| D36 | Every write goes through `core/operation.nu`, the CLI included | **LOCKED** | step 7 — the command set IS the public API (P5); a write that skips the seam is a display that never hears about it |
+| D36 | Every write goes through `core/session-change.nu`, the CLI included | **LOCKED** | step 7 — the command set IS the public API (P5); a write that skips the seam is a display that never hears about it |
 | D37 | `push-items` receives the previous projection | **LOCKED** | step 7 — the only way a display can act on what has disappeared, and it makes "skip what did not move" free |
 | D38 | Dispatch answers "whose event" and "whose environment" separately | **LOCKED** | step 7 — identical for a hook, different for a CLI write about another agent |
 | D39 | The prune-daemon is its own job under a launcher, never a display's item | **LOCKED** | §4.6c — a core guarantee must not depend on an optional display being installed. Which launcher became a table in D66; the rule that it is never the bar's `update_freq` is unchanged |
@@ -956,8 +956,9 @@ the whole rebuild the right to be wrong in public, one step at a time, with the
 working thing still on the bar.
 
 0. **Baseline** — ✅ done (§3).
-1. **Core session-store** — ✅ done. `core/paths.nu` + `core/session-schema.nu` +
-   `core/session-store.nu`, with the command set in `cli/session-store.nu`.
+1. **Core session-store** — ✅ done. `core/store-layout.nu` +
+   `core/session-schema.nu` + `core/session-store.nu`, with the command set in
+   `cli/session-store.nu`.
    32/32 checks pass; the hot cone parses in +1.76ms; a foreign process reports
    with `echo '{…}' | nu -c '… session-store patch <id> --stdin'` and reads back
    with `| to json`. Two things the suite caught that review had not: an id
@@ -967,8 +968,8 @@ working thing still on the bar.
    (§10).
 2. **Claude agent + the entry point** — ✅ built and verified (37/37), not yet
    wired into `settings.json`. `agents/claude/adapt.nu` is a pure
-   payload→operation mapping; `agents/claude/hook.nu` is the entry;
-   `core/operation.nu` holds the sequence and the dispatch seam;
+   payload→session-change mapping; `agents/claude/hook.nu` is the entry;
+   `core/session-change.nu` holds the sequence and the dispatch seam;
    `core/current-session.nu` answers "which agent am I"; `cli/self-report.nu` adds
    `report` and `name`. 21.3ms per event. Three findings: subagent tool calls
    carry the PARENT's session id (so they fold in for free, and `SubagentStop`
@@ -1003,8 +1004,9 @@ working thing still on the bar.
 3. **Config + dispatch** — ✅ done. `core/config.nu` (the YAML file, strict
    `problems`, never-throwing `load`), `core/dispatch.nu` (the gate and the
    fan-out), `cli/config.nu` and `cli/displays.nu`, and the seam in
-   `core/operation.nu` is live. 139/139 across four suites. **Step 3 adds 0.76ms
-   of parse to every event** — the price of §4.4's "gate calls, not imports",
+   `core/session-change.nu` is live. 139/139 across four suites. **Step 3 adds
+   0.76ms of parse to every event** — the price of §4.4's "gate calls, not
+   imports",
    which parse-time `use` leaves no way around; two realistic display modules
    (18KB, this repo's comment-heavy style) were measured separately at 2.07ms,
    so the budget holds through step 5. The hook is 25ms. `integrations/` ships
@@ -1062,17 +1064,18 @@ in
 
    Cost: `list-panes` 11ms once per session; a state change is rename-pane +
    rename-tab. 265/265 across eight suites.
-4c. **Liveness** — ✅ done. `core/proc.nu` (find the agent's process, ask `ps`
-   which are still running) and `core/session-store-garbage-collector.nu` (the two rules), reached by
-   `agent-notify session-store sweep` and by `displays refresh`, which now prunes before
-   it repaints. 198/198 across six suites.
+4c. **Liveness** — ✅ done. `core/agent-process.nu` (find the agent's process,
+    ask `ps` which are still running) and `core/store-garbage-collector.nu` (the
+    two rules), reached by `agent-notify session-store sweep` and by `displays
+    refresh`, which now prunes before it repaints. 198/198 across six suites.
    Two earlier proposals were **dropped** on the way, both correctly: a zellij
    pane check (a killed agent can leave its pane open, so it proves the wrong
    thing) and a heartbeat (it existed only because I had no proof and needed a
    hint — with proof available, guessing has no job). One mechanism replaced
    three layers.
    Costs: `SessionStart` 27ms → 38.6ms for the one-time walk, every other event
-   unchanged, `proc.nu` free to parse, `sweep-dead-sessions` 13ms of `ps` on a cold path.
+   unchanged, `agent-process.nu` free to parse, `sweep-dead-sessions` 13ms of
+   `ps` on a cold path.
 5. **SketchyBar integration** — ✅ done, the three counters.
    `integrations/sketchybar/`, 233/233 across seven suites, +0.82ms of parse
    (the whole display machinery is now +4.69ms). Measured first, because the
@@ -1317,12 +1320,14 @@ in
    **A restore brings back the SESSION, not the run it was in** — `session-schema
    durable`, which is the core fields and not one namespace. That is the
    session-schema's own line rather than a list of exceptions, and it closes the one way
-   this could have done harm: a stale `proc` would let the session-store-garbage-collector prove the
-   resumed session dead and file it away again within 30s, and a stale `zellij`
+   this could have done harm: a stale `process` would let the
+   store-garbage-collector prove the resumed session dead and file it away again
+   within 30s, and a stale `zellij`
    would rename a pane that had moved on. The defaults still apply on top, so a
    resumed session is idle until you type.
-   The session-store-garbage-collector archives too — an agent that was killed is no less resumable than
-   one that quit. Reaping is by MTIME and runs ON ARCHIVE, the only moment the
+   The store-garbage-collector archives too — an agent that was killed is no
+   less resumable than one that quit. Reaping is by MTIME and runs ON ARCHIVE,
+   the only moment the
    directory can grow: scanning 600 files costs 2.5ms where parsing them costs
    36.9ms, and the 30s prune-daemon gains no new job. **Seven days** — long enough to
    pick something back up after a weekend, short enough that the directory never

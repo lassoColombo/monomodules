@@ -41,9 +41,9 @@
 # that never arrives leaves a stale record rather than a wrong one, and a
 # subagent with its own id shows up as an extra agent rather than as corruption.
 
-use ../core/operation.nu
+use ../core/session-change.nu
 use ../core/hook-input.nu
-use ../core/proc.nu
+use ../core/agent-process.nu
 
 const SELF = path self
 
@@ -52,12 +52,12 @@ export const INFO = {
     title: "Codex CLI"
     transport: "stdin-json"
     states: ["working" "awaiting" "needs-attention" "idle"]
-    process: "codex"   # how to find the agent among our ancestors (core/proc.nu)
+    process: "codex"   # how to find the agent among our ancestors (core/agent-process.nu)
 }
 
 # Named `ignored`, not `ignore`: a def shadows the builtin of that name for the
 # whole file, and `main` below pipes to the builtin `ignore` (plan.md §10).
-def ignored [why: string]: nothing -> record { {operation-kind: "ignore", why: $why} }
+def ignored [why: string]: nothing -> record { {change-kind: "ignore", why: $why} }
 
 # Blank text becomes null, which the session-store reads as "delete this field"
 # — the difference between "the turn said nothing" and "keep whatever it said
@@ -78,12 +78,12 @@ def permission-message [hook_input: record]: nothing -> string {
 }
 
 def patch [id: string, changes: record, defaults?: record]: nothing -> record {
-    { operation-kind: "patch", id: $id, changes: ({agent: "codex"} | merge $changes)
+    { change-kind: "patch", id: $id, changes: ({agent: "codex"} | merge $changes)
       defaults: ($defaults | default {}) }
 }
 
 # `event` is the value of `hook_event_name`, spelled exactly as Codex spells it.
-export def to-operation [event: string, hook_input: record]: nothing -> record {
+export def to-session-change [event: string, hook_input: record]: nothing -> record {
     let id = $hook_input.session_id? | default ""
     if ($id | is-empty) { return (ignored "payload carries no session_id") }
 
@@ -103,7 +103,7 @@ export def to-operation [event: string, hook_input: record]: nothing -> record {
         "Stop" => (patch $id {state: "awaiting", message: (said $hook_input.last_assistant_message?)})
         "PermissionRequest" => (patch $id {state: "needs-attention", message: (permission-message $hook_input)})
 
-        "SessionEnd" => {operation-kind: "end", id: $id}
+        "SessionEnd" => {change-kind: "end", id: $id}
 
         # Everything else is a deliberate no-op, `SubagentStop` above all:
         # treating it as the end of a turn would flash "awaiting" at you while
@@ -124,18 +124,18 @@ export def main [] {
     try {
         let body = hook-input from-stdin
         let event = $body.hook_event_name? | default ""
-        let operation = to-operation $event $body
-        operation apply (if $event in ["SessionStart" "UserPromptSubmit"] { with-proc $operation } else { $operation }) | ignore
+        let change = to-session-change $event $body
+        session-change apply (if $event in ["SessionStart" "UserPromptSubmit"] { with-process $change } else { $change }) | ignore
     }
 }
 
 # See agents/claude.nu: attached at SessionStart, and looked up again once per
 # turn so that a missing one is never permanent.
-def with-proc [operation: record]: nothing -> record {
-    if ($operation.operation-kind? != "patch") { return $operation }
-    let p = proc find $INFO.process
-    if $p == null { return $operation }
-    $operation | upsert changes ($operation.changes | merge {proc: $p})
+def with-process [change: record]: nothing -> record {
+    if ($change.change-kind? != "patch") { return $change }
+    let p = agent-process find-mine $INFO.process
+    if $p == null { return $change }
+    $change | upsert changes ($change.changes | merge {process: $p})
 }
 
 export def help-setup []: nothing -> string {

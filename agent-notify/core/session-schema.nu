@@ -44,10 +44,10 @@ export def comparable-fields [rec: record]: nothing -> record {
 #
 # The line is one the session-schema already draws and needs no second list: the
 # CORE fields say what this session IS — who owns it, what it is called, where
-# it works, what it last said — and every namespace belongs to one RUN. `proc`
-# is one process. `zellij` is one pane. `claude` is one transcript. None of them
-# survives a restart, and none of them should survive being filed away and taken
-# back out (core/session-store.nu `reopen-session`).
+# it works, what it last said — and every namespace belongs to one RUN.
+# `process` is one process. `zellij` is one pane. `claude` is one transcript.
+# None of them survives a restart, and none of them should survive being filed
+# away and taken back out (core/session-store.nu `reopen-session`).
 export def session-fields [rec: record]: nothing -> record {
     let keep = $CORE_REQUIRED ++ $CORE_OPTIONAL
     $rec | select ...($rec | columns | where {|k| $k in $keep })

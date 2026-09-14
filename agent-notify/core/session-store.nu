@@ -11,7 +11,7 @@
 # may import — measured at +0.3ms of parse against a ~3ms budget for the whole
 # hot path.
 #
-# `patch` is the operation everything else is built on, and its return value is
+# `patch` is the write everything else is built on, and its return value is
 # the load-bearing part of the design: it reports whether the world ACTUALLY
 # MOVED, comparing only the semantic fields. That one boolean replaces three
 # separate mechanisms in v1 — the bash fast-path gate, the `working` verb's
@@ -26,7 +26,7 @@
 # subcommand names are exempt, which is why the COMMAND display in
 # cli/session-store.nu can still read `session-store get` — see plan.md §7.
 
-use paths.nu *
+use store-layout.nu *
 use session-schema.nu
 
 # ── reading ───────────────────────────────────────────────────────────────────
@@ -57,7 +57,7 @@ def read-dir [dir: string]: nothing -> list<any> {
 # make every read pay for a `ps`.
 #
 # This is the read the whole hot path hangs off, which is why an ended session
-# is in another directory rather than behind a flag here (core/paths.nu).
+# is in another directory rather than behind a flag here (core/store-layout.nu).
 export def list []: nothing -> list<any> { read-dir (sessions-dir) }
 
 # Sessions that have ended and not yet been reaped. Nothing on the hot path
@@ -192,7 +192,7 @@ export def end-session [id: string]: nothing -> bool {
 # cwd, what it last said) and not one namespace. That is `session-schema
 # session-fields`, and it is the session-schema's own line rather than a list of
 # exceptions — but it also removes the one way this could do harm. A stale
-# `proc` would let the store-garbage-collector prove the resumed session dead
+# `process` would let the store-garbage-collector prove the resumed session dead
 # and file it away again within 30s; a stale `zellij` would rename a pane that
 # has since moved on. Both are facts about a process that has exited, and
 # neither outlives it.

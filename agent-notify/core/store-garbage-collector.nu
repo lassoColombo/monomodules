@@ -3,8 +3,8 @@
 # `SessionEnd` files a session away when it exits cleanly, so the only leaks
 # come from agents that never got to say goodbye: a killed process, a crash, a
 # closed pane, a closed terminal. This is where those are cleaned up, and
-# `core/proc.nu` is what makes it possible to do so on PROOF rather than on a
-# hunch.
+# `core/agent-process.nu` is what makes it possible to do so on PROOF rather
+# than on a hunch.
 #
 # THE SAME GESTURE AS A CLEAN EXIT. These are archived, not deleted
 # (core/session-store.nu `end-session`): an agent that was killed is no less
@@ -15,10 +15,10 @@
 #   the recorded process is gone          →  file it away
 #   we cannot tell, for any reason        →  touch nothing
 #
-# "Cannot tell" covers a record with no `proc` at all (its SessionStart happened
-# before this existed, or its agent could not be located) and a `ps` that failed
-# to answer. Not knowing must never become deleting: one unreadable answer would
-# otherwise wipe every live agent in the session-store.
+# "Cannot tell" covers a record with no `process` at all (its SessionStart
+# happened before this existed, or its agent could not be located) and a `ps`
+# that failed to answer. Not knowing must never become deleting: one unreadable
+# answer would otherwise wipe every live agent in the session-store.
 #
 # ONE EXTRA CASE. `/clear` does not end the process — the same agent starts a
 # fresh session inside it. So two records can name one pid that is genuinely
@@ -32,25 +32,25 @@
 # before it lists.
 
 use session-store.nu
-use proc.nu
+use agent-process.nu
 
 # Drop what is provably gone; return what was dropped, and why.
 export def sweep-dead-sessions []: nothing -> table {
-    let tracked = session-store list | where {|r| ($r.proc?.pid? | default 0) > 0 }
+    let tracked = session-store list | where {|r| ($r.process?.pid? | default 0) > 0 }
     if ($tracked | is-empty) { return [] }
 
-    let living = proc living ($tracked | get proc)
+    let living = agent-process still-running ($tracked | get process)
     if $living == null { return [] }
 
-    let gone = $tracked | where {|r| $r.proc.pid not-in $living }
-    let here = $tracked | where {|r| $r.proc.pid in $living }
+    let gone = $tracked | where {|r| $r.process.pid not-in $living }
+    let here = $tracked | where {|r| $r.process.pid in $living }
 
     # Sharing a live pid: the newest is the session actually running in it.
     let superseded = $here | where {|r|
         # Bound rather than written as one long `and` chain: a boolean
         # expression does not continue across lines with the operator at either
         # end (§10).
-        let rivals = $here | where {|o| ($o.id != $r.id) and ($o.proc.pid == $r.proc.pid) }
+        let rivals = $here | where {|o| ($o.id != $r.id) and ($o.process.pid == $r.process.pid) }
         $rivals | any {|o| $o.updated_at > $r.updated_at }
     }
 
@@ -59,7 +59,7 @@ export def sweep-dead-sessions []: nothing -> table {
     # The WHOLE record, not a summary: a display has to be told what vanished in
     # order to undo it — a pane cannot be handed back by its id alone.
     $doomed | each {|d|
-        $d | merge {why: (if ($d.proc.pid in $living) {
+        $d | merge {why: (if ($d.process.pid in $living) {
             "superseded — /clear left it behind"
         } else { "process gone" })}
     }

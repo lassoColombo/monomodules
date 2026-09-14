@@ -53,6 +53,26 @@ Two rules came out of the review and are worth keeping for anything new:
 | 34 | `client`, `clients/`, `cli/clients.nu`, `cli/agent.nu` | `agent`, `agents/`, `cli/agents.nu`, `cli/self-report.nu` | a second pass, on 2026-09-14, over what row 32 kept. `client` named a role in a protocol that does not exist here — there is no server, and zellij is as much a client as Claude Code is. The vocabulary is three nouns that each name their subject: a **session** is a row in the store, an **agent** is the program a session runs, an **integration** is a tool that shows them. Read/write falls out of that rather than naming it. Same ONE-SHOT treatment as row 33 for the `client` field on disk |
 | 35 | `agents/` (the store directory), `agents-dir` | `sessions/`, `sessions-dir` | the last thing row 34 left reading wrong. The directory holds ROWS, and a row is a session — one file per session, not one per agent, which is exactly the distinction row 34 drew. `ended/` was already named for what it holds. Same one-shot on disk |
 
+## The three that were left (2026-09-14)
+
+A second pass found three names the first one had not fixed, and one bug it had
+introduced.
+
+| now | was | what it is |
+|-----|-----|-----------|
+| `core/session-change.nu`, `change-kind`, `to-session-change` | `operation` | what an agent's adapter turns its hook payload into: one described change to one session, applied and then repainted. `ignore` is now honest — the kind of change is *none* |
+| `core/store-layout.nu` | `paths` | where the store lives on disk, and the id → filename encoding, which is the correctness-bearing half |
+| `core/agent-process.nu`, `find-mine`, `still-running` | `proc`, `find`, `living` | "is that agent still running?" — the pid AND its start time, because pids are recycled |
+
+The stored namespace moved with the third one: `proc: {pid, started}` is now
+`process:`, migrated over the live store on 2026-09-14 by a one-shot run from
+the scratchpad and not kept. A record carrying BOTH — written by a hook that
+fired after the rename landed — kept the newer `process` value.
+
+And the bug: `plan.md` said `session-store-garbage-collector` in seven places.
+An earlier `store` → `session-store` sweep had prefixed a module that was
+already named. The module is `store-garbage-collector`; the prose now agrees.
+
 ## Not settled here
 
 `zz`, `gg`, `telescope` — the sibling monomodules are cryptic in the same way.

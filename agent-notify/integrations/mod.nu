@@ -95,7 +95,7 @@
 #    dispatch records. That keeps "the store is the core, integrations read it"
 #    true without exception, and keeps a display out of the store's import cone —
 #    see rule 2. Commands are not bound by this: a jump changes nothing, but a
-#    future command that does would write through `core/operation.nu`, like the
+#    future command that does would write through `core/session-change.nu`, like the
 #    CLI does.
 #
 # 2. A DISPLAY IS A LEAF OF THE IMPORT TREE. nushell parses a module ONCE PER

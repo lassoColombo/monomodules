@@ -27,7 +27,7 @@
 
 use ../core/store-garbage-collector.nu
 use ../core/session-store.nu *
-use ../core/operation.nu
+use ../core/session-change.nu
 
 def body [given: any, stdin: bool]: nothing -> record {
     if $stdin {
@@ -75,12 +75,12 @@ export def "session-store patch" [
     changes?: record    # what to merge; omit and pass --stdin to read JSON instead
     --stdin             # read the changes as a JSON object on standard input
 ]: nothing -> record {
-    # Through `core/operation.nu`, not straight at the session-store: a write
-    # typed here — or sent by a foreign agent, which under P5 is the SAME thing
-    # — must reach the displays exactly as a hook's write does, or the
+    # Through `core/session-change.nu`, not straight at the session-store: a
+    # write typed here — or sent by a foreign agent, which under P5 is the SAME
+    # thing — must reach the displays exactly as a hook's write does, or the
     # session-store and the screen start disagreeing depending on who wrote
     # last.
-    operation apply {operation-kind: "patch", id: $id, changes: (body $changes $stdin)}
+    session-change apply {change-kind: "patch", id: $id, changes: (body $changes $stdin)}
 }
 
 # Replace an agent's record wholesale — the escape hatch for an agent rebuilding
@@ -91,7 +91,7 @@ export def "session-store set" [
     record?: record
     --stdin
 ]: nothing -> record {
-    operation apply {operation-kind: "set", id: $id, record: (body $record $stdin)}
+    session-change apply {change-kind: "set", id: $id, record: (body $record $stdin)}
 }
 
 # The agent has stopped. Takes it off every display and FILES ITS RECORD AWAY —
@@ -99,12 +99,12 @@ export def "session-store set" [
 # (core/session-store.nu). Returns whether there was anything to file.
 @search-terms agent notify session-store delete forget end drop
 export def "session-store end" [id: string]: nothing -> bool {
-    operation apply {operation-kind: "end", id: $id} | get changed
+    session-change apply {change-kind: "end", id: $id} | get changed
 }
 
 # File away every agent that is provably gone: its recorded process is no longer
-# running (core/proc.nu), or `/clear` left it behind in a process that has since
-# moved on. Prints what it took off the displays, and why.
+# running (core/agent-process.nu), or `/clear` left it behind in a process that
+# has since moved on. Prints what it took off the displays, and why.
 #
 # Records with no recorded process are never touched — not knowing that an agent
 # is dead is not the same as knowing that it is. See

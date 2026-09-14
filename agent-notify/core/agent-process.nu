@@ -48,7 +48,7 @@ def info-of [pid: int]: nothing -> any {
 
 # The agent's process, as {pid, started} — or null when we cannot tell, which
 # the callers must read as "no proof" and never as "dead".
-export def find [process: string]: nothing -> any {
+export def find-mine [process: string]: nothing -> any {
     let told = $env.AGENT_NOTIFY_PID? | default ""
     if ($told | is-not-empty) {
         let pid = try { $told | into int } catch { 0 }
@@ -77,8 +77,8 @@ export def find [process: string]: nothing -> any {
 # this". `ps` distinguishes them itself — it exits 1 with nothing on stderr when
 # every pid is simply absent, and complains on stderr when the question was
 # malformed.
-export def living [procs: list<record>]: nothing -> any {
-    let want = $procs | where {|p| ($p.pid? | default 0) > 0 }
+export def still-running [processes: list<record>]: nothing -> any {
+    let want = $processes | where {|p| ($p.pid? | default 0) > 0 }
     if ($want | is-empty) { return [] }
 
     let arg = $want | get pid | uniq | each {|p| $p | into string } | str join ","

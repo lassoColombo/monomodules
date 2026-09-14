@@ -3,8 +3,8 @@
 #
 # Every agent module exposes the same three things:
 #   INFO     what it is, for `agent-notify agents`
-#   to-operation
-#            PURE: (event, hook_input) → a session-store operation. Where the
+#   to-session-change
+#            PURE: (event, hook_input) → a session change. Where the
 #            thinking is, and what the tests exercise — no session-store, no
 #            hook, no agent required.
 #   main     the entry the agent actually runs. Owns the parts that are peculiar
@@ -12,8 +12,8 @@
 #            exit code to leave behind.
 #
 # Nothing registers this file. Claude's own settings.json names it directly, so
-# an agent module works the moment it exists (agents/mod.nu lists it for discovery
-# only).
+# an agent module works the moment it exists (agents/mod.nu lists it for
+# discovery only).
 #
 # WHAT MAPS TO WHAT, and the three judgements that are not obvious:
 #
@@ -39,9 +39,9 @@
 # NOT subscribed, deliberately: `PermissionRequest` (Notification already covers
 # it, and both would flap), `SubagentStop` (see above), and everything else.
 
-use ../core/operation.nu
+use ../core/session-change.nu
 use ../core/hook-input.nu
-use ../core/proc.nu
+use ../core/agent-process.nu
 
 const SELF = path self
 
@@ -51,7 +51,8 @@ export const INFO = {
     transport: "stdin-json"
     states: ["working" "awaiting" "needs-attention" "idle"]
     # How to recognise the agent among our own ancestors, so a killed session
-    # can be proved dead later (core/proc.nu). Claude does not tell us its pid.
+    # can be proved dead later (core/agent-process.nu). Claude does not tell us
+    # its pid.
     process: "claude"
 }
 
@@ -68,7 +69,7 @@ const ATTN_NOTIFICATIONS = [
 # Named `ignored`, not `ignore`: a def shadows the builtin of that name for the
 # whole file, and the very next line pipes to the builtin `ignore` (plan.md
 # §10).
-def ignored [why: string]: nothing -> record { {operation-kind: "ignore", why: $why} }
+def ignored [why: string]: nothing -> record { {change-kind: "ignore", why: $why} }
 
 # Blank text becomes null, which the session-store reads as "delete this field"
 # — the difference between "the turn said nothing" and "keep whatever it said
@@ -85,12 +86,12 @@ def failure-message [hook_input: record]: nothing -> string {
 }
 
 def patch [id: string, changes: record, defaults?: record]: nothing -> record {
-    { operation-kind: "patch", id: $id, changes: ({agent: "claude"} | merge $changes)
+    { change-kind: "patch", id: $id, changes: ({agent: "claude"} | merge $changes)
       defaults: ($defaults | default {}) }
 }
 
 # `event` is the hook name exactly as Claude Code spells it.
-export def to-operation [event: string, hook_input: record]: nothing -> record {
+export def to-session-change [event: string, hook_input: record]: nothing -> record {
     let id = $hook_input.session_id? | default ""
     if ($id | is-empty) { return (ignored "payload carries no session_id") }
 
@@ -125,7 +126,7 @@ export def to-operation [event: string, hook_input: record]: nothing -> record {
         # basename, so it is worth keeping straight.
         "CwdChanged" => (patch $id {cwd: ($hook_input.cwd? | default "")})
 
-        "SessionEnd" => {operation-kind: "end", id: $id}
+        "SessionEnd" => {change-kind: "end", id: $id}
 
         _ => (ignored $"unhandled event '($event)'")
     }
@@ -143,8 +144,8 @@ export def to-operation [event: string, hook_input: record]: nothing -> record {
 # that blocks your agent is a catastrophe.
 export def main [event: string] {
     try {
-        let operation = to-operation $event (hook-input from-stdin)
-        operation apply (if $event in ["SessionStart" "UserPromptSubmit"] { with-proc $operation } else { $operation }) | ignore
+        let change = to-session-change $event (hook-input from-stdin)
+        session-change apply (if $event in ["SessionStart" "UserPromptSubmit"] { with-process $change } else { $change }) | ignore
     }
 }
 
@@ -162,11 +163,11 @@ export def main [event: string] {
 # written or painted. The whole cost is the ~10ms walk, once per turn — against
 # the hundreds of tool calls that never pay it. Kept out of `map` so `map` stays
 # a pure function of its payload.
-def with-proc [operation: record]: nothing -> record {
-    if ($operation.operation-kind? != "patch") { return $operation }
-    let p = proc find $INFO.process
-    if $p == null { return $operation }
-    $operation | upsert changes ($operation.changes | merge {proc: $p})
+def with-process [change: record]: nothing -> record {
+    if ($change.change-kind? != "patch") { return $change }
+    let p = agent-process find-mine $INFO.process
+    if $p == null { return $change }
+    $change | upsert changes ($change.changes | merge {process: $p})
 }
 
 export def help-setup []: nothing -> string {

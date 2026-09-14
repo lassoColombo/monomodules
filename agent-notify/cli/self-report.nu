@@ -13,7 +13,7 @@
 #   agent-notify name "fix-the-parser"
 
 use ../core/current-session.nu
-use ../core/operation.nu
+use ../core/session-change.nu
 use ../core/session-store.nu
 
 def target [given: any]: nothing -> record {
@@ -44,7 +44,7 @@ export def report [
     if ($name != null) { $changes = ($changes | merge {name: $name}) }
     if ($message != null) { $changes = ($changes | merge {message: $message}) }
     if ($cwd != null) { $changes = ($changes | merge {cwd: $cwd}) }
-    operation apply {operation-kind: "patch", id: $me.id, changes: $changes, defaults: {state: "idle"}}
+    session-change apply {change-kind: "patch", id: $me.id, changes: $changes, defaults: {state: "idle"}}
 }
 
 # Name this session — the deliberate act that fixes what every display calls it.
@@ -78,7 +78,7 @@ export def name [
         let have = ($rec | default {} | get -o name | default "") | str trim
         if ($have | is-not-empty) { return {changed: false, before: $rec, after: $rec} }
     }
-    operation apply {operation-kind: "patch", id: $me.id, changes: {agent: $me.agent, name: $value}
+    session-change apply {change-kind: "patch", id: $me.id, changes: {agent: $me.agent, name: $value}
                  defaults: {state: "idle"}}
 }
 
@@ -87,5 +87,5 @@ export def name [
 # brings its name back (core/session-store.nu).
 @search-terms agent notify end session clear forget archive
 export def "report end" [--id: string]: nothing -> record {
-    operation apply {operation-kind: "end", id: (target $id | get id)}
+    session-change apply {change-kind: "end", id: (target $id | get id)}
 }

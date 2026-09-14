@@ -11,16 +11,16 @@
 # nothing else in the module changes, and no agent ever learns that a display
 # exists.
 #
-# An operation is one of:
+# A session change is one of:
 #
-#   {operation-kind: "patch", id, changes, defaults?}
+#   {change-kind: "patch", id, changes, defaults?}
 #       merge changes; `defaults` apply only when the record is being created
-#   {operation-kind: "set", id, record}
+#   {change-kind: "set", id, record}
 #       replace the record wholesale
-#   {operation-kind: "end", id}
+#   {change-kind: "end", id}
 #       the agent has stopped running. Its record is FILED AWAY, not destroyed
 #       — see core/session-store.nu `end-session`
-#   {operation-kind: "ignore", why}
+#   {change-kind: "ignore", why}
 #       nothing to do, and why — so a hook that fires for an event we do not
 #       handle is a deliberate no-op rather than a silent one
 
@@ -33,10 +33,10 @@ use dispatch.nu
 # idle every time the context was compacted. Expressing it as a create-only
 # default keeps the adapter a pure function of its payload — it never has to
 # read the session-store to find out.
-def with-defaults [operation: record]: nothing -> record {
-    let defaults = $operation.defaults? | default {}
-    if ($defaults | is-empty) { return $operation.changes }
-    if ((session-store read $operation.id) != null) { return $operation.changes }
+def with-defaults [change: record]: nothing -> record {
+    let defaults = $change.defaults? | default {}
+    if ($defaults | is-empty) { return $change.changes }
+    if ((session-store read $change.id) != null) { return $change.changes }
 
     # A write that CREATES is also the moment a resumed session comes back, so
     # it is the one place worth looking in `ended/`. Not a guess: Claude Code
@@ -47,24 +47,24 @@ def with-defaults [operation: record]: nothing -> record {
     # is a record with a name and a history and nothing about the process that
     # exited. The defaults then still apply — which is right, because a session
     # you have just resumed is idle until you type.
-    session-store reopen-session $operation.id | ignore
-    $defaults | merge $operation.changes
+    session-store reopen-session $change.id | ignore
+    $defaults | merge $change.changes
 }
 
-# Apply one operation. Returns the session-store's result, `changed` included,
-# so a caller can tell whether anything actually happened.
-export def apply [operation: record]: nothing -> record {
-    let kind = $operation.operation-kind? | default "ignore"
+# Apply one session change. Returns the session-store's result, `changed`
+# included, so a caller can tell whether anything actually happened.
+export def apply [change: record]: nothing -> record {
+    let kind = $change.change-kind? | default "ignore"
 
     let result = match $kind {
-        "patch" => (session-store patch $operation.id (with-defaults $operation))
-        "set" => (session-store set $operation.id $operation.record)
+        "patch" => (session-store patch $change.id (with-defaults $change))
+        "set" => (session-store set $change.id $change.record)
         "end" => {
             # Read BEFORE filing it away. A display is asked whether its output
             # changes, and it cannot answer that about an agent it never saw.
             # One extra read on the rarest event in the system.
-            let before = session-store read $operation.id
-            {changed: (session-store end-session $operation.id), before: $before, after: null}
+            let before = session-store read $change.id
+            {changed: (session-store end-session $change.id), before: $before, after: null}
         }
         _ => { {changed: false, before: null, after: null} }
     }

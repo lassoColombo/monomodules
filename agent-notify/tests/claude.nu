@@ -2,13 +2,13 @@
 # end.
 #
 # The mapping is a pure function, so most of this needs no session-store, no
-# agent and no hook: hand it a payload, read back the operation. The last
+# agent and no hook: hand it a payload, read back the change. The last
 # section then runs the real entry script with real JSON on its stdin, which is
 # the only way to know that the thing Claude Code will actually execute works.
 
 use ../../agent-notify
 use ../agents/claude.nu
-use ../core/operation.nu
+use ../core/session-change.nu
 use assert.nu *
 
 const TMP = ($nu.temp-dir | path join "agent-notify-tests-claude")
@@ -41,64 +41,64 @@ export def main [] {
     # ── the mapping, as a pure function ───────────────────────────────────────
     let m = [
         (check "SessionStart carries current-session, not state"
-               (claude to-operation "SessionStart" (hook-input) | get changes | columns | sort)
+               (claude to-session-change "SessionStart" (hook-input) | get changes | columns | sort)
                ["agent" "claude" "cwd"])
         (check "…and offers idle only as a create-time default"
-               (claude to-operation "SessionStart" (hook-input) | get defaults) {state: "idle"})
+               (claude to-session-change "SessionStart" (hook-input) | get defaults) {state: "idle"})
         (check "SessionStart keeps the transcript path in its own namespace"
-               (claude to-operation "SessionStart" (hook-input) | get changes.claude.transcript_path) "/tmp/t.jsonl")
+               (claude to-session-change "SessionStart" (hook-input) | get changes.claude.transcript_path) "/tmp/t.jsonl")
 
         (check "UserPromptSubmit → working"
-               (claude to-operation "UserPromptSubmit" (hook-input) | get changes.state) "working")
+               (claude to-session-change "UserPromptSubmit" (hook-input) | get changes.state) "working")
         (check "PostToolUse → working"
-               (claude to-operation "PostToolUse" (hook-input {tool_name: "Bash"}) | get changes.state) "working")
+               (claude to-session-change "PostToolUse" (hook-input {tool_name: "Bash"}) | get changes.state) "working")
         (check "a SUBAGENT's tool call reports the PARENT session"
-               (claude to-operation "PostToolUse" (hook-input {agent_id: "sub-1", agent_type: "Explore"}) | get id)
+               (claude to-session-change "PostToolUse" (hook-input {agent_id: "sub-1", agent_type: "Explore"}) | get id)
                "sess-abc")
         (check "SubagentStop is ignored, so a pane never flashes awaiting mid-turn"
-               (claude to-operation "SubagentStop" (hook-input {last_assistant_message: "done"}) | get operation-kind) "ignore")
+               (claude to-session-change "SubagentStop" (hook-input {last_assistant_message: "done"}) | get change-kind) "ignore")
 
         (check "Stop → awaiting, with the message"
-               (claude to-operation "Stop" (hook-input {last_assistant_message: "All green."}) | get changes.message)
+               (claude to-session-change "Stop" (hook-input {last_assistant_message: "All green."}) | get changes.message)
                "All green.")
         (check "Stop with no message CLEARS rather than keeping a stale one"
-               (claude to-operation "Stop" (hook-input) | get changes.message) null)
+               (claude to-session-change "Stop" (hook-input) | get changes.message) null)
 
         (check "StopFailure → needs-attention"
-               (claude to-operation "StopFailure" (hook-input {error_type: "rate_limit"}) | get changes.state)
+               (claude to-session-change "StopFailure" (hook-input {error_type: "rate_limit"}) | get changes.state)
                "needs-attention")
         (check "…and says why"
-               (claude to-operation "StopFailure" (hook-input {error_type: "overloaded", error_message: "try later"})
+               (claude to-session-change "StopFailure" (hook-input {error_type: "overloaded", error_message: "try later"})
                 | get changes.message)
                "turn failed (overloaded): try later")
 
         (check "a permission prompt needs attention"
-               (claude to-operation "Notification" (hook-input {notification_type: "permission_prompt", message: "may I?"})
+               (claude to-session-change "Notification" (hook-input {notification_type: "permission_prompt", message: "may I?"})
                 | get changes.state) "needs-attention")
         (check "an idle nudge does NOT"
-               (claude to-operation "Notification" (hook-input {notification_type: "idle_prompt", message: "still there?"})
-                | get operation-kind) "ignore")
+               (claude to-session-change "Notification" (hook-input {notification_type: "idle_prompt", message: "still there?"})
+                | get change-kind) "ignore")
         (check "nor does a completion notice"
-               (claude to-operation "Notification" (hook-input {notification_type: "agent_completed"}) | get operation-kind) "ignore")
+               (claude to-session-change "Notification" (hook-input {notification_type: "agent_completed"}) | get change-kind) "ignore")
         (check "an unrecognised notification is allowed through"
-               (claude to-operation "Notification" (hook-input {message: "something new"}) | get changes.state)
+               (claude to-session-change "Notification" (hook-input {message: "something new"}) | get changes.state)
                "needs-attention")
 
         (check "CwdChanged keeps the cwd straight"
-               (claude to-operation "CwdChanged" (hook-input {cwd: "/elsewhere"}) | get changes.cwd) "/elsewhere")
-        (check "SessionEnd drops" (claude to-operation "SessionEnd" (hook-input) | get operation-kind) "end")
+               (claude to-session-change "CwdChanged" (hook-input {cwd: "/elsewhere"}) | get changes.cwd) "/elsewhere")
+        (check "SessionEnd drops" (claude to-session-change "SessionEnd" (hook-input) | get change-kind) "end")
         (check "an unhandled event is a deliberate no-op"
-               (claude to-operation "PreCompact" (hook-input) | get operation-kind) "ignore")
+               (claude to-session-change "PreCompact" (hook-input) | get change-kind) "ignore")
         (check "a payload with no session_id is ignored"
-               (claude to-operation "Stop" {} | get operation-kind) "ignore")
+               (claude to-session-change "Stop" {} | get change-kind) "ignore")
         (check "every patch names its agent"
-               (claude to-operation "Stop" (hook-input) | get changes.agent) "claude")
+               (claude to-session-change "Stop" (hook-input) | get changes.agent) "claude")
     ]
 
     # ── create-only defaults, through the real sequence ───────────────────────
-    operation apply (claude to-operation "SessionStart" (hook-input))
-    operation apply (claude to-operation "UserPromptSubmit" (hook-input))
-    let resumed = operation apply (claude to-operation "SessionStart" (hook-input {source: "compact"}))
+    session-change apply (claude to-session-change "SessionStart" (hook-input))
+    session-change apply (claude to-session-change "UserPromptSubmit" (hook-input))
+    let resumed = session-change apply (claude to-session-change "SessionStart" (hook-input {source: "compact"}))
     let d = [
         (check "SessionStart then a prompt leaves it working"
                (agent-notify session-store get "sess-abc" | get state) "working")
@@ -155,27 +155,27 @@ export def main [] {
     # Deterministic because AGENT_NOTIFY_PID short-circuits the walk: the suite
     # does not have to be running inside Claude for this to mean something.
     $env.AGENT_NOTIFY_PID = ($nu.pid | into string)
-    run-hook "SessionStart" (hook-input {session_id: "proc-1"}) | ignore
-    run-hook "PostToolUse" (hook-input {session_id: "proc-2", tool_name: "Bash"}) | ignore
+    run-hook "SessionStart" (hook-input {session_id: "process-1"}) | ignore
+    run-hook "PostToolUse" (hook-input {session_id: "process-2", tool_name: "Bash"}) | ignore
     # An agent whose SessionStart we never saw — the case that made a missing
     # pid permanent, and every display show it forever.
-    run-hook "Stop" (hook-input {session_id: "proc-3"}) | ignore
-    let missed = agent-notify session-store get "proc-3" | get -o proc
-    run-hook "UserPromptSubmit" (hook-input {session_id: "proc-3"}) | ignore
+    run-hook "Stop" (hook-input {session_id: "process-3"}) | ignore
+    let missed = agent-notify session-store get "process-3" | get -o process
+    run-hook "UserPromptSubmit" (hook-input {session_id: "process-3"}) | ignore
     let p = [
         (check "the mapping stays pure — it looks up no process"
-               ("proc" in (claude to-operation "SessionStart" (hook-input) | get changes | columns)) false)
+               ("proc" in (claude to-session-change "SessionStart" (hook-input) | get changes | columns)) false)
         (check "SessionStart records the agent's process, so a kill can be proved later"
-               (agent-notify session-store get "proc-1" | get proc.pid) $nu.pid)
+               (agent-notify session-store get "process-1" | get process.pid) $nu.pid)
         (check "…and a tool call does not pay the ~10ms walk"
-               (agent-notify session-store get "proc-2" | get -o proc) null)
+               (agent-notify session-store get "process-2" | get -o process) null)
         (check "an agent whose SessionStart we missed starts out unprovable" $missed null)
         (check "…and the next turn recovers it, so a missing pid is never permanent"
-               (agent-notify session-store get "proc-3" | get proc.pid) $nu.pid)
+               (agent-notify session-store get "process-3" | get process.pid) $nu.pid)
         (check "attaching it twice changes nothing — a pid does not move"
-               (run-hook "UserPromptSubmit" (hook-input {session_id: "proc-3"}) | get exit_code) 0)
+               (run-hook "UserPromptSubmit" (hook-input {session_id: "process-3"}) | get exit_code) 0)
         (check "…and the record is the same one"
-               (agent-notify session-store get "proc-3" | get proc.pid) $nu.pid)
+               (agent-notify session-store get "process-3" | get process.pid) $nu.pid)
     ]
     hide-env AGENT_NOTIFY_PID
 

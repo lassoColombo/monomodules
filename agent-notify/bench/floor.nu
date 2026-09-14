@@ -24,7 +24,7 @@ const REPO = path self ../..
 const LADDER = [
     [label                           code];
     ["(nothing)"                     ""]
-    ["leaf core/paths.nu"            "use agent-notify/core/paths.nu"]
+    ["leaf core/store-layout.nu"            "use agent-notify/core/store-layout.nu"]
     ["leaf core/session-store.nu"            "use agent-notify/core/session-store.nu"]
     ["the HOT cone (what a hook pays)" "use agent-notify/agents/claude.nu"]
     ["the whole module (what a human pays)" "use agent-notify"]

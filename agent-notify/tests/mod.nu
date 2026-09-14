@@ -9,7 +9,7 @@
 #   nu agent-notify/tests/codex.nu
 #   nu agent-notify/tests/dispatch.nu
 #   nu agent-notify/tests/zellij.nu
-#   nu agent-notify/tests/proc.nu
+#   nu agent-notify/tests/agent-process.nu
 #   nu agent-notify/tests/markdown.nu
 #   nu agent-notify/tests/sketchybar.nu
 #   nu agent-notify/tests/prune-daemon.nu
@@ -23,7 +23,7 @@ export use claude.nu
 export use codex.nu
 export use dispatch.nu
 export use zellij.nu
-export use proc.nu
+export use agent-process.nu
 export use markdown.nu
 export use sketchybar.nu
 export use prune-daemon.nu
@@ -38,6 +38,6 @@ export use picker.nu
 # `main` means the runner is spelled `tests`, and no suite can be poisoned by it
 # (§10).
 export def main []: nothing -> bool {
-    let results = [(session-store) (claude) (codex) (dispatch) (zellij) (proc) (markdown) (sketchybar) (prune-daemon) (jump) (picker)]
+    let results = [(session-store) (claude) (codex) (dispatch) (zellij) (agent-process) (markdown) (sketchybar) (prune-daemon) (jump) (picker)]
     ($results | where {|ok| not $ok } | is-empty)
 }
