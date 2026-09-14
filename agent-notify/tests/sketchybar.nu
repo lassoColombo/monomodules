@@ -69,8 +69,8 @@ export def main [] {
     let a = [
         (check "there is a default for everything" ($settings | columns | sort)
                ["background" "binary" "colors" "flash_drawer" "flash_seconds" "font"
-                "line_height" "position" "prefix" "preview_lines" "preview_width"
-                "row_width" "rows"])
+                "line_height" "position" "prefix" "preview_depth" "preview_lines"
+                "preview_width" "row_width" "rows"])
         (check "the program is resolved to an ABSOLUTE path, not left to PATH"
                ($settings.binary | str starts-with "/") true)
         (check-err "…and a path that is not there is a loud error, not a silent no-op"
@@ -144,6 +144,7 @@ export def main [] {
 
     # ── what a row says ───────────────────────────────────────────────────────
     let long_name = ("z" | fill --width 80 --character "z")
+    let long = (1..60 | each {|i| $"para ($i)" } | str join "\n\n")
     let filter = sketchybar settings {preview_width: 40}
     let c = [
         (check "an agent's own name is its row"
@@ -175,9 +176,14 @@ export def main [] {
         (check "the message follows the where-line, its heading marked and bound to what it introduces"
                (row-of {id: "x", cwd: "/a", message: "## Done\n\nAll **green**."} $settings | get lines)
                [{k: "where", t: "agent · /a"} {k: "head", t: "▊ Done"} {k: "text", t: "All green."}])
-        (check "a preview never outgrows its drawer"
-               (row-of {id: "x", message: (1..60 | each {|i| $"para ($i)" } | str join "\n\n")} $settings
-                | get lines | length) $settings.preview_lines)
+        # It is cut to what the footer HOLDS now, not to what it shows — the
+        # rest is written to the bar switched off, and a wheel turns it on.
+        (check "a preview never outgrows what the footer holds"
+               ((row-of {id: "x", message: $long} $settings | get lines | length)
+                <= ($settings.preview_depth + 1)) true)
+        (check "…and it goes deeper than the screenful shown, which is what there is to scroll to"
+               ((row-of {id: "x", message: $long} $settings | get lines | length)
+                > $settings.preview_lines) true)
     ]
 
     # ── the gate: what must and must not reach the bar ────────────────────────
@@ -388,13 +394,16 @@ export def main [] {
     let raise = sketchybar message {flash: ($fresh | get flash)} {} $settings
     let quiet = sketchybar message {flash: ($fresh | get flash)} {} (sketchybar settings {flash_drawer: false})
     let timer_script = $raise | where {|q| $q | str starts-with "script=[" } | first
+    let fade = $raise | skip ($raise | enumerate | where {|e| $e.item == "--animate" } | get 0.index)
     let o = [
         (check "the chip lights in its own state's hue"
                ($"background.color=0x33($settings.colors.awaiting | str substring 4..)" in $raise) true)
         (check "…with an edge, which is what actually catches the eye"
                ("background.border_width=1" in $raise) true)
         (check "…and it fades in rather than appearing"
-               ($raise | last 6 | first 3) ["--animate" "sin" "18"])
+               ($fade | first 3) ["--animate" "sin" "18"])
+        (check "…with nothing after the fade but the chip, because --animate colours all of it"
+               ($fade | length) 8)
         (check "the drawer opens itself" ("popup.drawing=on" in $raise) true)
         (check "…and shuts the other two, exactly as a hover would"
                ($raise | where {|q| $q == "popup.drawing=off" } | length) 2)
@@ -452,6 +461,84 @@ export def main [] {
                ($row_hover | str contains "--trigger an_flash_seen") true)
     ]
 
+    # ── the footer, and scrolling it ─────────────────────────────────────────
+    # The footer HOLDS `preview_depth` rows and SHOWS `preview_lines - 1` of
+    # them. Everything below the fold is written to the bar by the same paint
+    # and left switched off, which is what makes a scroll `drawing=on` and
+    # nothing else — no text moves, so nothing a wheel does can need quoting.
+    let deep = row-of {id: "x", message: $long} $settings
+    let filled = sketchybar message {"row|awaiting|0": ($deep | merge {id: "x"})} {} $settings
+    let footer = hover-scripts $filled | first
+    let short = sketchybar message {"row|awaiting|0": {id: "x", label: "one", lines: [{k: "where", t: "w"} {k: "text", t: "hi"}]}} {} $settings
+    let t = [
+        (check "the footer is written as deep as it HOLDS"
+               ($footer | str contains $"an_awaiting.pv.($settings.preview_depth) ") true)
+        (check "…but only a screenful of it is switched on"
+               ($footer | split row " --set " | where {|q| $q | str starts-with "an_awaiting.pv." }
+                | where {|q| $q | str contains "drawing=on" } | length)
+               $settings.preview_lines)
+        # The bug this was written for: the rows below the fold were switched
+        # off and never given their words, so a wheel revealed blank lines.
+        (check "…and every line the agent wrote is WRITTEN, drawn or not"
+               ($footer | str contains "an_awaiting.pv.20 'label=") true)
+        (check "…while a slot with no line behind it is only switched off, never labelled — the
+           window is clamped to what is held, so nothing can scroll onto it"
+               ($footer | str contains $"an_awaiting.pv.($settings.preview_depth) drawing=off") true)
+        (check "…starting at the top, under the WHERE line, however often it is repainted"
+               ($footer | str contains $"--set an_scroll icon=pv:an_awaiting:") true)
+        (check "the position says which drawer, how much it holds, and where the window is"
+               ($footer | str contains "icon=pv:an_awaiting:39:0") true)
+        (check "a footer with more under it says how much"
+               ($footer | str contains "--set an_awaiting.more label=28 drawing=on") true)
+        (check "…and one that fits says nothing at all"
+               ($short | any {|q| $q | str contains "an_awaiting.more drawing=off" })
+               ($short | any {|q| $q | str contains "more" }))
+    ]
+
+    # WHO CATCHES A WHEEL. A mouse event reaches only the item under the
+    # pointer, and that is a different row every time — so everything in a
+    # drawer forwards one trigger and the thinking lives once.
+    let inst_s = sketchybar install-message $settings
+    let handler = $inst_s | where {|q| $q | str starts-with "script=[ \"$SENDER\" = an_scrolled" } | first
+    let u = [
+        (check "a row forwards a wheel, because you scroll the preview of the row you are on"
+               ($footer | str starts-with "script=[ \"$SENDER\" = mouse.scrolled ] && exec") true)
+        (check "…and still opens its preview on a hover, after"
+               ($footer | str contains "= mouse.entered ] || exit 0") true)
+        (check "a footer line forwards one too" ("mouse.scrolled" in $inst_s) true)
+        (check "…and the delta rides along with it"
+               ($footer | str contains "--trigger an_scrolled SCROLL_DELTA=$SCROLL_DELTA") true)
+        (check "one item hears them all, and it is not a row"
+               (($inst_s | any {|q| $q == "an_scroll" }) and ($handler | is-not-empty)) true)
+    ]
+
+    # THE SCROLL SCRIPT IS STATIC — written once at install and never by a
+    # paint, because the paint already put the text on the bar and this only
+    # decides which rows are drawn. Its arithmetic was run against a fake bar
+    # (§11); what the suite owns is that it asks the right questions.
+    let v = [
+        (check "it reads the position back out of its own item"
+               ($handler | str contains "--query an_scroll") true)
+        (check "…finding it by an anchor, not by where the JSON happens to put it"
+               ($handler | str contains "${q#*'\"pv:'}") true)
+        (check "a drawer holding no more than it shows is not scrollable, and says so first"
+               ($handler | str contains '[ "$n" -gt "$w" ] || exit 0') true)
+        (check "…and neither is the zero delta a gesture opens with"
+               ($handler | str contains '[ "$d" -eq 0 ] && exit 0') true)
+        (check "the window is clamped at both ends"
+               (($handler | str contains '[ "$k" -lt 0 ] && k=0')
+                and ($handler | str contains '[ "$k" -gt "$x" ] && k=$x')) true)
+        (check "…and a wheel that moves nothing sends nothing"
+               ($handler | str contains '[ "$k" -eq "$p" ] && exit 0') true)
+        (check "a shove moves further than a nudge — the delta carries momentum"
+               ($handler | str contains "m=${d#-}") true)
+        (check "nothing it sends can carry a word the agent wrote"
+               ($handler | str contains "label=") ($handler | str contains "label=$b"))
+        (check "it is written once and no paint rewrites it"
+               (sketchybar message (sketchybar render-items (agents "awaiting") $settings) {} $settings
+                | any {|q| $q | str contains "an_scrolled ] || exit 0" }) false)
+    ]
+
     # WHAT A ROW LOOKS LIKE WHEN IT IS THE ONE. The pill is a diffed fact rather
     # than something the flash reaches in and sets, because a flashing agent's
     # row MOVES when an older one leaves the state — and only the diff knows
@@ -475,17 +562,18 @@ export def main [] {
 
     # ── the item pool, created once ───────────────────────────────────────────
     let inst = sketchybar install-message $settings
-    let small = sketchybar install-message (sketchybar settings {rows: 2, preview_lines: 3})
+    let small = sketchybar install-message (sketchybar settings {rows: 2, preview_lines: 3, preview_depth: 5})
     let painted = sketchybar message (sketchybar render-items (agents "working") $settings) {} $settings
     let i = [
-        # Three counters, three headers, their rows and previews, an exit, a
-        # flash, a bracket — and the event the flash listens on, which `--add`
-        # also builds.
+        # Three counters, and behind each a header, its rows, a footer as deep
+        # as it HOLDS and the line that says how much is under it. Then the
+        # exit, the flash, the scroll, the bracket — and the two events, which
+        # `--add` also builds.
         (check "the whole bar in one message"
                ($inst | where {|q| $q == "--add" } | length)
-               (3 + (3 * (1 + $settings.rows + $settings.preview_lines)) + 4))
+               (3 + (3 * (1 + $settings.rows + ($settings.preview_depth + 1) + 1)) + 6))
         (check "…and the pool follows the settings"
-               ($small | where {|q| $q == "--add" } | length) (3 + (3 * (1 + 2 + 3)) + 4))
+               ($small | where {|q| $q == "--add" } | length) (3 + (3 * (1 + 2 + 6 + 1)) + 6))
         (check "the counters are bracketed into one pill" ("bracket" in $inst) true)
         (check "a re-run wipes each drawer first, so changing `rows` leaves no orphans"
                ($inst | any {|q| $q == '/an_working\..*/' }) true)
@@ -531,5 +619,7 @@ export def main [] {
     ]
 
     let all = ($a ++ $b ++ $c ++ $d ++ $e ++ $f ++ $g ++ $h ++ $j ++ $i ++ $k)
-    summarise $all --title "sketchybar display"
+    let flashed = ($n ++ $o ++ $p ++ $q ++ $r)
+    let scrolled = ($t ++ $u ++ $v)
+    summarise ($all ++ $flashed ++ $scrolled) --title "sketchybar display"
 }

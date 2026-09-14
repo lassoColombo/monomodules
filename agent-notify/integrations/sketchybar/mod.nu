@@ -50,10 +50,15 @@
 # map — raised when it appears, undone when it goes, by the same diff as every
 # row. The taking-away is the interesting half and it lives in `items.nu`.
 #
+# AND THE FOOTER SCROLLS. It holds `preview_depth` rows and shows a window over
+# them, so the wheel turns slots on and off over words a paint already wrote —
+# no text moves, which keeps the one hazard this display has (agent prose going
+# through a shell) off the scroll path entirely.
+#
 #   mod.nu    the display contract — settings, project, apply
-#   items.nu  item names, the fixed pool, the shell a hover runs and the one the
-#             flash's timer runs — which is also where those shells' escaping
-#             lives, at the point of quoting
+#   items.nu  item names, the fixed pool, the shell a hover runs, the one the
+#             flash's timer runs and the one a wheel runs — which is also where
+#             those shells' escaping lives, at the point of quoting
 #
 # The markdown a message is written in is flattened by `core/markdown.nu`, which
 # lived here until the picker's preview became its second reader.
@@ -74,7 +79,12 @@ const DEFAULTS = {
     font: "MesloLGLDZ Nerd Font"
     background: "0xff26233a"
     rows: 10                # agent rows per drawer; the rest are counted, not drawn
-    preview_lines: 12       # preview rows, of which the first is the WHERE line
+    preview_lines: 12       # preview rows SHOWN, of which the first is the WHERE line
+    # …and how many the footer HOLDS, which is how far a scroll can go. The rows
+    # past the first screenful are written to the bar by the same paint and left
+    # switched off, so scrolling is `drawing=on` and nothing else — see
+    # `items.nu`. A message longer than this is still cut with an ellipsis.
+    preview_depth: 40
     preview_width: 110      # characters a preview row may hold; prose is wrapped to it
     row_width: 40           # characters an agent's name may hold
     # `popup.height` is what a drawer actually spaces its rows by, and it
@@ -107,7 +117,7 @@ const DEFAULTS = {
 
 const EXTRA_COLORS = ["dim" "text" "row" "popup" "border" "head" "code"]
 # Sizes a POOL is built from: a zero here is a drawer with no slots in it.
-const NUMBERS = ["rows" "preview_lines" "preview_width" "row_width" "line_height"]
+const NUMBERS = ["rows" "preview_lines" "preview_depth" "preview_width" "row_width" "line_height"]
 # A span of time, where zero is a legal answer and means "do not".
 const SPANS = ["flash_seconds"]
 const FLAGS = ["flash_drawer"]
@@ -178,10 +188,18 @@ export def settings [given: record]: nothing -> record {
             error make --unspanned {msg: $"sketchybar: `($k)` must be true or false, got ($value | to nuon)"}
         }
     }
-    $DEFAULTS
-    | merge ($given | reject --optional colors)
-    | upsert colors ($DEFAULTS.colors | merge ($given.colors? | default {}))
-    | upsert binary (resolve-binary ($given.binary? | default ""))
+    let merged = $DEFAULTS
+        | merge ($given | reject --optional colors)
+        | upsert colors ($DEFAULTS.colors | merge ($given.colors? | default {}))
+        | upsert binary (resolve-binary ($given.binary? | default ""))
+    # The one check that needs two settings at once: the footer cannot hold less
+    # than it shows, and a pool built that way would have a window hanging off
+    # the end of it.
+    if $merged.preview_depth < ($merged.preview_lines - 1) {
+        error make --unspanned {msg: ("sketchybar: `preview_depth` is how many preview rows the drawer HOLDS "
+            + $"and cannot be less than the ($merged.preview_lines - 1) it shows \(`preview_lines` - 1\)")}
+    }
+    $merged
 }
 
 # ── describing ────────────────────────────────────────────────────────────────
@@ -237,7 +255,9 @@ def label-of [record: record, settings: record]: nothing -> string {
 # writes the quote; a projection says what should be SHOWN, and how one display
 # gets it onto a wire is not part of that.
 def lines-of [record: record, settings: record]: nothing -> list<record> {
-    let rows = $settings.preview_lines - 1
+    # As deep as the footer HOLDS, not as deep as it shows — the rest is written
+    # to the bar switched off, and a scroll is what turns it on.
+    let rows = $settings.preview_depth
     let source = markdown plain-md ($record.message? | default "") $settings.preview_width ($rows + 1)
     let body = markdown lay-out $source $settings.preview_width $rows
     let shown = if ($body | is-empty) { [{k: "text", t: "—"}] } else { $body }
@@ -405,6 +425,10 @@ export def help-setup []: nothing -> string {
        "drawer for a few seconds, with its row lit. `flash_seconds: 0` turns"
        "that off; `flash_drawer: false` keeps the light and leaves the drawer"
        "shut."
+       ""
+       "A preview longer than the drawer scrolls: put the pointer anywhere in"
+       "the drawer and use the wheel. `preview_depth` is how much of a message"
+       "is kept within reach that way."
        ""
        "The periodic check that removes dead agents is NOT here: it is its own"
        "thing, so that turning the bar off cannot turn it off too."

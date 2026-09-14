@@ -1002,6 +1002,8 @@ and `screen` already taught what a question with one caller is worth (D58).
 | D80 | The flash is DERIVED from `state_since`, not remembered | **LOCKED** | step 13 — "has this just happened?" is a question the record already answers about itself, so an arrival needs no flag, no previous-paint comparison and no field. The window is `state_since + flash_seconds`, which makes the deadline a fact ABOUT THE RECORD rather than about the paint: an unrelated repaint two seconds later re-sends the same flash with the same end, and cannot push it away. It is also the one thing in the display that is not a pure function of its records, and it has to be — *recently* is a question about the clock. Harmless, because dispatch renders both halves of a diff in the same breath, so the two can never disagree about what time it is |
 | D81 | The bar TIMES ITS OWN FLASH OUT — one item, a baked deadline, and re-arming is the cancel | **LOCKED** | step 13 — nothing in this module outlives a hook (§10: `job spawn` dies with its process), so the only thing that can look again in six seconds is the bar. One hidden item holds `update_freq=1` and a script carrying the deadline; it compares `date +%s` against it, puts back exactly what was lit, and disarms itself. **There is ONE such item, and raising a flash rewrites its script** — so an older announcement's deadline cannot cut a newer one short and there is no generation counter anywhere to say so. Cancellation is structural rather than checked. This is not D39 coming back: liveness is a CORE guarantee and must not depend on an optional display, while a highlight that will not go out is a display's own problem and nobody else's |
 | D82 | The pointer ends a flash early, and never loses the drawer | **LOCKED** | step 13 — the only unforgivable failure mode is a drawer shutting under a pointer that came to read it, and a flash that opens one and closes it six seconds later will do exactly that. So every hover of ours `--trigger`s one event: the announcement has been read, the light goes out, the timer stands down, and the drawer is LEFT EXACTLY WHERE IT IS — from that moment it is the pointer's, and it closes the way every other drawer closes. One token on a message that was being sent anyway, and between flashes the item it wakes has an empty script, so it runs no shell at all |
+| D83 | The footer HOLDS more than it SHOWS, and a scroll moves `drawing`, never text | **LOCKED** | step 14 — `preview_depth` rows are written to the bar by the paint and `preview_lines - 1` are drawn, so scrolling turns slots on and off over words that are already there. Three things fall out of it and each one mattered: **no text moves**, so a wheel can never carry something an agent wrote and there is nothing to quote (the one hazard this display has, D45); **the work is O(what changed)** — two `--set`s for a nudge, ten for a shove, never the whole footer; and **the scroll needs nothing from a paint**, so its script is written once at install and no repaint touches it. The price is a deeper item pool — 168 `--add`s against 76 — which measured 127ms at bar load and NOTHING per hover (§11): a message costs what a process costs |
+| D84 | The position lives in an item property, and a wheel is forwarded to ONE item | **LOCKED** | step 14 — a SketchyBar script is handed `SENDER`, `NAME`, `BUTTON` and `SCROLL_DELTA` and nothing else (§11), so the only place a scroll can leave something for the next scroll is a property, and the only way to read it back is `--query`. That is 4.3ms, affordable ONLY because the wheel is throttled to about seven events a second — probed before anything was built, and the number that chose the design. The forward exists because a mouse event reaches only the item under the pointer: every row and every footer line carries one `--trigger`, three tokens, and the thinking lives once on the item that holds the position. Not D76 coming back — a click may spend 22.6ms on a nushell because it happens once; a wheel may not, because it happens seven times a second |
 | D15 | Replace pandoc with a nu-native flattener | **LOCKED** (step 5b) | done: `integrations/sketchybar/text.nu` does it in nushell. 25.1ms off the event path and a dependency gone. v1 could afford pandoc because it converted where the preview was STORED, on a path already spawning processes; v2's whole paint is 6.5ms. Superseded in part by D60 — the flattener is a parser now, and still no subprocess |
 | D16 | Where the bench harness lives | **OPEN** | the only open row left. ~350 lines of documented nu; §8, and §9b.3 |
 | D17 | Promoted to `monomodules/agent-notify`, a module beside `ai` and the rest | **LOCKED** (2026-09-12) | step 7 — it was never `ai`-shaped: reflecting agent state on a status bar is not provider-agnostic content generation, and being a submodule is what made every hook parse the whole `ai` tree. The directory, the command, the session-store at `~/.local/share/agent-notify/` and the bar prefix `an_` all carry the one name |
@@ -1855,6 +1857,43 @@ in
     a faint tint on one row inside a closed drawer until the next paint after
     the window. The alternative was a script that rewrites itself with nested
     quoting, which is a worse thing to own.
+14. **The footer scrolls** — ✅ done. D83–D84. A drawer's preview was eleven
+    rows and an ellipsis, and the ellipsis is where a long answer went. Now the
+    footer holds `preview_depth` of them and shows a window over it, and the
+    wheel moves the window.
+    **THE NUMBER THAT CHOSE THE DESIGN WAS MEASURED BEFORE ANYTHING WAS BUILT.**
+    A mouse cannot be moved from here, so the probe went out with the user's
+    hand on it: a trackpad swipe that would fire at 60Hz arrives **throttled to
+    about seven events a second** (§11). Everything follows from that. At seven
+    a second a handler may spend ~12ms, which buys a `--query` — and a `--query`
+    is the only way to read anything back, because a script's whole environment
+    is `SENDER`, `NAME`, `BUTTON` and `SCROLL_DELTA`. At 60 a second none of it
+    would have been possible and the answer would have been pages.
+    **SCROLLING MOVES NO TEXT** (D83), and that is the part worth keeping. The
+    paint writes every line the agent wrote and draws the first screenful; the
+    wheel turns slots on and off over words that are already there. So the one
+    hazard this display has — agent text going through a shell (D45) — is not on
+    the scroll path at all, and the scroll script is STATIC: written once at
+    install, and no repaint ever touches it.
+    **AND IT ONLY SENDS WHAT CHANGED.** Two `--set`s for a nudge, ten for a
+    shove, and nothing at all when the window is already at the end, when the
+    footer holds no more than it shows, or when the delta is the zero that opens
+    a gesture. Each of those is one line of shell and each was a real case:
+    without the last, a preview jumped before the finger moved.
+    **THE BUG WAS MINE AND THE LIVE BAR FOUND IT.** The first version wrote a
+    label only for the rows it was going to DRAW, so scrolling revealed blank
+    lines — the rows were there and empty. Filled and shown are not the same
+    question. The suite could not have caught it as written, because it asserted
+    what a screenful looks like; it asserts both now.
+    **What it costs.** 168 `--add`s at install against 76, measured at 127ms
+    once at bar load. A hover: nothing — 41 footer slots and 11 measure the same
+    to within the noise of a busy machine (§11), which is the plan's oldest
+    SketchyBar finding restated. A wheel: one `sh`, one `--query`, one `--set`,
+    about 12ms, seven times a second at worst.
+    **One thing left to the user's hand.** A negative delta scrolls DOWN the
+    message, which is the macOS natural-scrolling convention and a guess until
+    somebody's fingers disagree. Inverting it is one `case` pattern in
+    `scroll-shell`.
 
 ---
 
@@ -2359,6 +2398,35 @@ Probed in step 13, for the flash — all four on the live bar, v2.24.0:
   bracket around the three counters gets its shape: a chip that lights up has to
   be the same pill as the group it sits in, and only the user's config knows
   what that is.
+
+Probed in step 14, for the scroll — on the real bar, with the user's hand on the
+trackpad, because nothing here can move a pointer:
+
+- **`mouse.scrolled` reaches POPUP items as well as bar items**, which is what
+  makes a drawer scrollable at all. It carries `SCROLL_DELTA`: a signed integer
+  with momentum in it — 7 to 162 over a few gestures — and **0 on the first
+  event of a gesture**, which has to be ignored or a window moves before the
+  finger does.
+- **It is THROTTLED to about seven events a second** — 131–184ms apart, measured
+  in two separate rounds, on gestures that would otherwise fire at 60Hz. That
+  one fact is what made the design affordable: at seven a second a handler may
+  spend ~12ms, and a `--query` round trip fits inside that where a nushell
+  (22.6ms, D76) would not.
+- **A script's whole environment is `SENDER`, `NAME`, `BUTTON`, `SCROLL_DELTA`,
+  `BAR_NAME` and `CONFIG_DIR`** — from the binary's own strings — and nothing
+  hands an item its own properties. So a `--query` (4.3ms) is the ONLY way to
+  read back what a previous run left, and an item property is the only place to
+  leave it.
+- **`--trigger <event> VAR=value` passes environment through to its
+  subscribers**, which is how a delta gets from the row under the pointer to the
+  one item that does the thinking. Needed because a mouse event reaches ONLY the
+  item under the pointer, and in a drawer that is a different row every time.
+- `mouse.scrolled.global` exists and is NOT used: it would fire for scrolls over
+  items that are none of our business, and the forward was already proven.
+- **A message costs what a process costs, again.** A hover that writes 41 footer
+  slots and one that writes 11 measure 12.9ms and 14.3ms, interleaved, 31 pairs
+  on a busy machine — i.e. the same. Depth is free; it is the `sh` and the
+  client that cost.
 
 **launchd**
 

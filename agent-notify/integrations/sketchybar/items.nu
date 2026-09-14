@@ -86,6 +86,17 @@ export def flash-item [settings: record]: nothing -> string { $"($settings.prefi
 # be listening and cannot be woken.
 export def seen-event [settings: record]: nothing -> string { $"($settings.prefix)flash_seen" }
 
+# The footer's scroll. `scroll-item` is where the window's position lives, in
+# its own icon (see `register`); `scrolled-event` is how a wheel anywhere in a
+# drawer reaches it, since a mouse event goes only to the item under the pointer
+# and that item is a different one every time.
+export def scroll-item [settings: record]: nothing -> string { $"($settings.prefix)scroll" }
+export def scrolled-event [settings: record]: nothing -> string { $"($settings.prefix)scrolled" }
+
+# The line under the footer that says how much is still below it. A drawer whose
+# preview fits says nothing at all.
+export def more-name [settings: record, state: string]: nothing -> string { $"(item-name $settings $state).more" }
+
 # Same hue, less alpha: a counter at zero stays recognisable by colour instead
 # of going grey, so the three icons read at a glance the way the wifi and
 # battery widgets do.
@@ -152,8 +163,15 @@ export def open-shell [settings: record, state: string, count: int]: nothing -> 
     if $count == 0 { return ($GUARD + (close-shell $settings) + $" ($seen | str join ' ')") }
     let others = $COUNTED | where {|st| $st != $state }
         | each {|st| ["--set" (item-name $settings $st) "popup.drawing=off"] } | flatten
-    let blank = 0..<$settings.preview_lines | each {|index| ["--set" (pv-name $settings $state $index) "drawing=off"] } | flatten
-    let args = ["--set" (item-name $settings $state) "popup.drawing=on"] ++ $others ++ $blank ++ $seen
+    # The WHOLE footer, not just the screenful it shows — what is held below is
+    # still on the item, and a drawer that reopened onto row 20 of the last
+    # agent you read would be a mystery. Blanking it also puts the scroll back
+    # to nothing held, so a wheel over an empty footer does nothing at all.
+    let blank = 0..$settings.preview_depth
+        | each {|index| ["--set" (pv-name $settings $state $index) "drawing=off"] } | flatten
+    let rewound = ["--set" (scroll-item $settings) $"icon=(register $settings $state 0 0)"
+                   "--set" (more-name $settings $state) "drawing=off"]
+    let args = ["--set" (item-name $settings $state) "popup.drawing=on"] ++ $others ++ $blank ++ $rewound ++ $seen
     $GUARD + $"($settings.binary) ($args | str join ' ')"
 }
 
@@ -174,6 +192,94 @@ def ink [settings: record, hue: string, kind: string]: nothing -> string {
     }
 }
 
+# ── the footer, and scrolling it ──────────────────────────────────────────────
+#
+# THE FOOTER HOLDS MORE THAN IT SHOWS. `preview_depth` rows are written to the
+# bar by the paint; `preview_lines - 1` of them are switched on, starting under
+# the WHERE line, and the rest sit there switched off. So SCROLLING MOVES NO
+# TEXT — it is `drawing=on` and `drawing=off` over slots that already say the
+# right thing, which is why a wheel never touches the agent's words and nothing
+# about it has to be quoted or escaped.
+#
+# WHERE THE POSITION LIVES. One hidden item's icon, as `pv:<item>:<held>:<top>`:
+# which drawer's footer is filled, how many body rows it holds, and which one is
+# at the top of the window. A script gets `$SENDER`, `$NAME`, `$BUTTON` and
+# `$SCROLL_DELTA` from SketchyBar and nothing else, so a property is the only
+# place a scroll can leave something for the next scroll — and one `--query` to
+# read it back is 4.3ms against a wheel that is throttled to about seven events
+# a second (probed), so it is affordable where a nushell would not be.
+#
+# WHY AN EVENT IN THE MIDDLE. A mouse event goes ONLY to the item under the
+# pointer, and that item is a different row every time — so every row and every
+# footer line forwards one `--trigger`, and the thinking lives once, on the item
+# that holds the position.
+
+# The position, as the one string that is written and read back. `pv:` is an
+# anchor rather than decoration: the reader finds it by that prefix, so it does
+# not depend on where SketchyBar happens to put `icon` in its JSON.
+def register [settings: record, state: string, held: int, top: int]: nothing -> string {
+    ["pv" (item-name $settings $state) ($held | into string) ($top | into string)] | str join ":"
+}
+
+# How far one notch moves, from the momentum SketchyBar reports: deltas came
+# back between 7 and 162 on a real trackpad, so this gives one row for a nudge
+# and five for a shove. A fixed step would make a long message take a minute at
+# seven events a second.
+const MOMENTUM = 40
+
+# A wheel, passed on. Every row and every footer line carries this, because a
+# mouse event reaches ONLY the item under the pointer and that item is a
+# different one every time — the thinking lives once, on the item that holds
+# the position.
+def forward-shell [settings: record]: nothing -> string {
+    $"[ \"$SENDER\" = mouse.scrolled ] && exec ($settings.binary) --trigger (scrolled-event $settings) SCROLL_DELTA=$SCROLL_DELTA"
+}
+
+# THE WHOLE OF SCROLLING, in one static script written once at install — there
+# is nothing per-paint in it, because the paint already put the text on the bar
+# and this only decides which rows are drawn.
+#
+# It reads the position out of its own icon, works out the new top from the
+# momentum, and sends ONLY THE SLOTS THAT CHANGE: two for a nudge, ten for a
+# shove, never the whole footer. Everything it computes is a number, so the
+# message it builds cannot contain anything an agent wrote.
+#
+# A NEGATIVE DELTA GOES DOWN the message — that is the `case` below, and
+# inverting the wheel is the one pattern in it.
+def scroll-shell [settings: record]: nothing -> string {
+    let sb = $settings.binary
+    let reg = scroll-item $settings
+    [ $"[ \"$SENDER\" = (scrolled-event $settings) ] || exit 0"
+      $"q=$\(($sb) --query ($reg)\)"
+      "r=${q#*'\"pv:'}"
+      "[ \"$r\" = \"$q\" ] && exit 0"
+      "r=${r%%'\"'*}"
+      "t=${r%%:*}; r=${r#*:}; n=${r%%:*}; p=${r#*:}"
+      $"w=($settings.preview_lines - 1)"
+      "[ \"$n\" -gt \"$w\" ] || exit 0"
+      "d=${SCROLL_DELTA:-0}"
+      "[ \"$d\" -eq 0 ] && exit 0"
+      "m=${d#-}"
+      $"s=$\(\(m / ($MOMENTUM) + 1\)\)"
+      "case \"$d\" in -*) k=$((p+s)) ;; *) k=$((p-s)) ;; esac"
+      "x=$((n-w))"
+      "[ \"$k\" -lt 0 ] && k=0"
+      "[ \"$k\" -gt \"$x\" ] && k=$x"
+      "[ \"$k\" -eq \"$p\" ] && exit 0"
+      "a=\"\"; i=1"
+      ("while [ \"$i\" -le \"$n\" ]; do o=0; v=0;"
+       + " if [ \"$i\" -gt \"$p\" ] && [ \"$i\" -le $((p+w)) ]; then o=1; fi;"
+       + " if [ \"$i\" -gt \"$k\" ] && [ \"$i\" -le $((k+w)) ]; then v=1; fi;"
+       + " if [ \"$o\" -ne \"$v\" ]; then"
+       + " if [ \"$v\" -eq 1 ]; then a=\"$a --set $t.pv.$i drawing=on\";"
+       + " else a=\"$a --set $t.pv.$i drawing=off\"; fi; fi;"
+       + " i=$((i+1)); done")
+      "b=$((n-k-w)); c=on"
+      "[ \"$b\" -le 0 ] && c=off"
+      $"exec ($sb) $a --set $t.more label=$b drawing=$c --set ($reg) icon=pv:$t:$n:$k" ]
+    | str join "; "
+}
+
 # WHAT EACH PREVIEW SLOT SHOULD SAY, decided once and rendered twice. A hover
 # has it baked into a shell command; a flash sends it as plain argv, having
 # opened the drawer with nobody's pointer in it. The two differ only in
@@ -181,36 +287,63 @@ def ink [settings: record, hue: string, kind: string]: nothing -> string {
 # written, so the decision is here and neither rendering repeats it.
 def pv-slots [settings: record, state: string, rows: list<record>]: nothing -> list<record> {
     let hue = $settings.colors | get $state
-    0..<$settings.preview_lines | each {|index|
+    let window = $settings.preview_lines - 1
+    0..$settings.preview_depth | each {|index|
         let r = $rows | get -o $index
         let name = pv-name $settings $state $index
-        if $r == null { {name: $name, on: false} } else {
-            {name: $name, on: true, label: $r.t, color: (ink $settings $hue $r.k)}
+        # FILLED AND SHOWN ARE NOT THE SAME QUESTION, and conflating them is
+        # what made a scroll reveal blank rows: every line the agent wrote is
+        # WRITTEN, and only the first screenful is DRAWN. Slot 0 is the WHERE
+        # line and never scrolls; a paint always leaves the window at the top.
+        if $r == null { {name: $name, filled: false} } else {
+            {name: $name, filled: true, on: ($index <= $window), label: $r.t, color: (ink $settings $hue $r.k)}
         }
     }
+}
+
+# What a filled footer needs besides its words: where its window is, and how far
+# under it the rest goes. NUMBERS AND ITEM NAMES ONLY — no agent text — which is
+# what lets one builder serve the hover, the flash and the scroll alike, and
+# what keeps a wheel from ever having to quote anything.
+export def pv-tail [settings: record, state: string, rows: list<record>]: nothing -> list<string> {
+    let held = [(($rows | length) - 1) $settings.preview_depth] | math min
+    let rest = $held - ($settings.preview_lines - 1)
+    let more = more-name $settings $state
+    let below = if $rest <= 0 { ["--set" $more "drawing=off"] } else {
+        ["--set" $more $"label=($rest)" "drawing=on"]
+    }
+    ["--set" (scroll-item $settings) $"icon=(register $settings $state $held 0)"] ++ $below
 }
 
 # The preview as ARGV — no shell between us and the bar, so the agent's words go
 # through exactly as written.
 export def pv-args [settings: record, state: string, rows: list<record>]: nothing -> list<string> {
-    pv-slots $settings $state $rows | each {|s|
-        if $s.on {
-            ["--set" $s.name $"label=($s.label)" $"label.color=($s.color)" "drawing=on"]
+    let slots = pv-slots $settings $state $rows | each {|s|
+        if $s.filled {
+            ["--set" $s.name $"label=($s.label)" $"label.color=($s.color)"
+             $"drawing=(if $s.on { 'on' } else { 'off' })"]
         } else { ["--set" $s.name "drawing=off"] }
     } | flatten
+    $slots ++ (pv-tail $settings $state $rows)
 }
 
 # One row's preview, as the command that will show it. Called at PAINT time with
 # the rows already wrapped and kinded, so the hover itself does no thinking —
 # and it tells the flash it has been seen for the same reason `open-shell` does:
 # a pointer can reach a row without ever crossing the counter above it.
+#
+# A ROW IS ALSO WHERE A WHEEL LANDS, because you scroll the preview of the agent
+# you are pointing at, not the one you walked your pointer down to. So the
+# forward comes first and the hover's own guard after it.
 export def hover-shell [settings: record, state: string, rows: list<record>]: nothing -> string {
-    let args = pv-slots $settings $state $rows | each {|s|
-        if $s.on {
-            ["--set" $s.name $"'label=(quotable $s.label)'" $"label.color=($s.color)" "drawing=on"]
+    let slots = pv-slots $settings $state $rows | each {|s|
+        if $s.filled {
+            ["--set" $s.name $"'label=(quotable $s.label)'" $"label.color=($s.color)"
+             $"drawing=(if $s.on { 'on' } else { 'off' })"]
         } else { ["--set" $s.name "drawing=off"] }
     } | flatten
-    $GUARD + $"($settings.binary) ($args ++ ['--trigger' (seen-event $settings)] | str join ' ')"
+    let args = $slots ++ (pv-tail $settings $state $rows) ++ ["--trigger" (seen-event $settings)]
+    (forward-shell $settings) + "; " + $GUARD + $"($settings.binary) ($args | str join ' ')"
 }
 
 # ── the shell a CLICK runs ────────────────────────────────────────────────────
@@ -409,7 +542,7 @@ export def preallocate-args [settings: record]: nothing -> list<string> {
     # The pointer's way of saying it has seen a flash. Declared before anything
     # subscribes to it, and declaring it twice is not an error (probed), so a
     # re-run of the install is still idempotent.
-    mut args = ["--add" "event" (seen-event $settings)]
+    mut args = ["--add" "event" (seen-event $settings) "--add" "event" (scrolled-event $settings)]
     for state in $COUNTED {
         let item = item-name $settings $state
         let hue = $settings.colors | get $state
@@ -478,13 +611,17 @@ export def preallocate-args [settings: record]: nothing -> list<string> {
                 $"icon=($GLYPHS | get $state)"
                 $"icon.color=($hue)"
                 $"icon.font=($settings.font):Bold:14.0"
-                # `entered` only: leaving a row is how you reach the footer it
+                # `entered` only — leaving a row is how you reach the footer it
                 # filled, so hiding on `exited` made the text vanish exactly as
-                # you went to read it.
-                "--subscribe" $slot "mouse.entered"
+                # you went to read it — plus the wheel, because the preview you
+                # want to scroll is the one belonging to the row you are on.
+                "--subscribe" $slot "mouse.entered" "mouse.scrolled"
             ]
         }
-        for index in 0..<$settings.preview_lines {
+        # `preview_depth` body slots BELOW the WHERE line, not one screenful:
+        # what a paint cannot fit is written here too and left switched off, and
+        # that is the whole of what a scroll moves over.
+        for index in 0..$settings.preview_depth {
             let slot = pv-name $settings $state $index
             # Slot 0 is the WHERE line — which agent this is — so it is styled
             # apart from the message beneath it. The FONT is set once here and
@@ -502,8 +639,29 @@ export def preallocate-args [settings: record]: nothing -> list<string> {
                 # row is only text, so a pill here would just box a sentence.
                 "icon.drawing=off" "background.drawing=off"
                 $"y_offset=(if $lead { 2 } else { 0 })"
+                # A footer line is where a wheel most often lands, so it
+                # forwards one. Static: it says nothing about which drawer or
+                # what is in it — the item that holds the position knows both.
+                $"script=(forward-shell $settings)"
+                "--subscribe" $slot "mouse.scrolled"
             ]
         }
+        # How much is still below the window. Drawn only when there IS more,
+        # because a drawer whose preview fits should say nothing — and it is the
+        # only thing that tells you the footer scrolls at all.
+        let more = more-name $settings $state
+        $args = $args ++ [
+            "--add" "item" $more $"popup.($item)"
+            "--set" $more "drawing=off" "icon=▾"
+            $"icon.color=(tint $hue '99')"
+            $"icon.font=($settings.font):Bold:10.0"
+            $"label.color=($settings.colors.dim)"
+            $"label.font=($settings.font):Bold:10.0"
+            "icon.padding_left=14" "label.padding_right=14" "label.padding_left=4"
+            "background.drawing=off"
+            $"script=(forward-shell $settings)"
+            "--subscribe" $more "mouse.scrolled"
+        ]
     }
     # Leaving the bar and every popup shuts all three drawers. It lives on an
     # item of its own rather than on a item-name because the answer never
@@ -525,6 +683,16 @@ export def preallocate-args [settings: record]: nothing -> list<string> {
         "--add" "item" $flash $settings.position
         "--set" $flash "drawing=off" "update_freq=0" "script="
         "--subscribe" $flash (seen-event $settings)
+    ]
+    # Where the footer's window position lives, and the only item that moves it.
+    # Its script is STATIC — no paint ever rewrites it — because scrolling is
+    # `drawing` over slots a paint already filled, and the position it needs is
+    # in its own icon.
+    let scroll = scroll-item $settings
+    $args = $args ++ [
+        "--add" "item" $scroll $settings.position
+        "--set" $scroll "drawing=off" "icon=" $"script=(scroll-shell $settings)"
+        "--subscribe" $scroll (scrolled-event $settings)
     ]
     let names = $COUNTED | each {|state| item-name $settings $state }
     $args ++ ["--add" "bracket" (group $settings) ...$names
