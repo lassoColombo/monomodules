@@ -103,10 +103,11 @@
 # can.
 #
 # Which container answers is decided by the RECORD, not by the config file:
-# `displays:` says what the session-store is pushed to and nothing else (D47), so
-# switching the zellij display off must not stop a caller taking you to a zellij
-# pane. `tests/fake.nu` ships a fake container beside the fake display, which is
-# how the whole picker is asserted with neither zellij nor tmux installed.
+# `displays:` says what the session-store is pushed to and nothing else (D47),
+# so switching the zellij display off must not stop a caller taking you to a
+# zellij pane. `tests/fake.nu` ships a fake container beside the fake display,
+# which is how the whole picker is asserted with neither zellij nor tmux
+# installed.
 #
 # ── THREE RULES, each of which cost real time when broken ─────────────────────
 #
