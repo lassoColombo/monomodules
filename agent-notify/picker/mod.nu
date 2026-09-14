@@ -77,7 +77,7 @@ def event-loop [query: string, table?: record]: nothing -> any {
 
     loop {
         # `table` is null unless a test overrode it; `rows build` resolves the
-        # integration-registry locators from that, so the default lives in one
+        # integration-registry containers from that, so the default lives in one
         # place.
         let all = rows build (session-store list) $table
         let shown = rows filter $all ($view.query)

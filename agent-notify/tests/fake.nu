@@ -37,29 +37,31 @@ export def push-items [changed: record, removed: record, settings: record]: noth
     $"(($wrote ++ $undid) | str join ' ')\n" | save --append $settings.log
 }
 
-# ── and a LOCATOR, for the picker ─────────────────────────────────────────────
+# ── and a SESSION-CONTAINER ───────────────────────────────────────────────────
 #
-# The other half of an integration, in the same spirit: three questions answered
-# out of the record itself, so the whole picker — rows, filtering, scrolling,
-# frames, keys — can be asserted on a machine with no zellij and no tmux.
+# The other capability an integration can have (plan.md §4.8), in the same
+# spirit: three questions answered out of the record itself, so the whole picker
+# — rows, filtering, scrolling, frames, keys — can be asserted on a machine with
+# no zellij and no tmux.
 #
 #   {fake: {where: "box/one"}}
 #
-# `go` does nothing. Where a jump would take you is `jump argv`'s business and
-# it has its own suite; what this file proves is that the CONTRACT is answerable
-# without the tool, which is the only claim `picker/locators.nu` makes.
+# `focus-session` does nothing. Where a jump would take you is `jump argv`'s
+# business and it has its own suite; what this file proves is that the CONTRACT
+# is answerable without the tool, which is the only claim
+# `integrations/session-containers.nu` makes.
 
-export const LOCATOR_INFO = {name: "fake", title: "a pane in a record, for tests"}
+export const CONTAINER_INFO = {name: "fake", title: "a pane in a record, for tests"}
 
-export def owns [rec: record]: nothing -> bool {
+export def owns-session [rec: record]: nothing -> bool {
     (($rec.fake?.where? | default "") | is-not-empty)
 }
 
 export def location-label [rec: record]: nothing -> string { $rec.fake?.where? | default "" }
 
-export def locator []: nothing -> record {
-    { fake: {info: $LOCATOR_INFO
-             owns: {|rec| owns $rec }
-             location-label:  {|rec| location-label $rec }
-             go:     {|rec| null }} }
+export def session-container []: nothing -> record {
+    { fake: {info: $CONTAINER_INFO
+             owns-session: {|rec| owns-session $rec }
+             location-label: {|rec| location-label $rec }
+             focus-session: {|rec| null }} }
 }

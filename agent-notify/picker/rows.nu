@@ -13,7 +13,7 @@
 #    place: "home/root"         from the locator; "" when nothing claims it
 #    match: "awaiting monomodules home/root"
 #    rec:   {…}                 the record, for the locator and for the caller
-#    via:   {info, owns, location-label, go} | null}
+#    container: {info, owns-session, location-label, focus-session} | null}
 #
 # `match` IS EXACTLY WHAT THE ROW SHOWS, and it was not always: the first
 # version folded the agent's last message in too, so that a phrase you
@@ -26,7 +26,7 @@
 # So the filter can only match what you can see. Nothing is lost that matters:
 # the preview already shows what the selected agent is saying, in full and live.
 
-use locators.nu
+use ../integrations/session-containers.nu
 
 # Most urgent first — the only order a fleet list can be in. Idle sorts LAST
 # rather than being hidden: an agent you have finished with is still one you may
@@ -55,24 +55,24 @@ def flatten-text [text: string]: nothing -> string {
 # `table` is OPTIONAL and the default is resolved HERE, not by the caller. An
 # empty record is a perfectly good table meaning "nothing claims anything" — it
 # is how the unclaimed case is tested — and `{}` is not null, so `default` would
-# never fire on it (§10). Spelling "use the integration-registry locators" as
+# never fire on it (§10). Spelling "use the integration-registry containers" as
 # `{}` would have meant a picker that silently shows no places and no live
 # previews, which is exactly what it did until this was found by running it.
 export def build [records: list<record>, table?: record]: nothing -> list<record> {
-    let t = $table | default (locators integration-registry)
+    let t = $table | default (session-containers integration-registry)
     $records
     | each {|r|
-        let via = locators owner $r --table $t
+        let container = session-containers container-of $r --table $t
         let state = $r.state? | default "idle"
         let name = label-of $r
-        let location_label = if ($via == null) { "" } else { try { do $via.location-label $r } catch { "" } }
+        let location_label = if ($container == null) { "" } else { try { do $container.location-label $r } catch { "" } }
         { id: ($r.id? | default "")
           state: $state
           name: $name
           location-label: $location_label
           match: (flatten-text $"($state) ($name) ($location_label)" | str lowercase)
           rec: $r
-          via: $via }
+          container: $container }
       }
     | sort-by {|c| rank $c.state } {|c| $c.location-label } {|c| $c.name }
 }

@@ -3,14 +3,10 @@
 #
 # IN `cli/`, NOT IN `integrations/zellij/`, and that placement is the point.
 # v1's picker was a zellij program with a fuzzy finder bolted on; this one is a
-# picker that asks whichever integration claimed an agent where it lives, what
-# is on its screen, and how to get there (`picker/locators.nu`). Nothing in it
-# is zellij's, so nothing in it belongs in zellij's directory — a tmux
-# integration adds one file and one row in that table, and never touches this
-# command.
-#
-# `jump` stays where it is, because a jump genuinely IS a zellij command. The
-# asymmetry is information, not untidiness.
+# picker that asks whichever integration CONTAINS an agent where it lives and
+# how to get there (`integrations/session-containers.nu`). Nothing in it is
+# zellij's, so nothing in it belongs in zellij's directory — a tmux integration
+# adds one file and one row in that table, and never touches this command.
 #
 # IT RUNS IN PLACE (D52). v1 re-launched itself inside a `zellij run --floating`
 # pane and needed a `--here` flag to not do that. The floating pane belongs to
@@ -47,10 +43,10 @@ export def main [
     # Nothing claimed it, so there is nowhere to go — an agent that never
     # reported a pane. Worth a sentence rather than a silent return: you chose
     # it on purpose.
-    if ($picked.via == null) {
+    if ($picked.container == null) {
         error make --unspanned {msg: $"agent-notify: '($picked.name)' is not in a pane — nothing to jump to"}
     }
-    do $picked.via.go $picked.rec
+    do $picked.container.focus-session $picked.rec
 }
 
 # What to put in your zellij config so Alt-a opens this. Printed, never applied.

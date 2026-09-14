@@ -1,16 +1,24 @@
-# Where an agent lives, and how to get there.
+# zellij as a SESSION-CONTAINER: where an agent lives, and how to get to it.
 #
 # THE PULL HALF'S OTHER CONTRACT. `mod.nu` is the display (push) and `jump.nu`
-# is a command (pull); this is what the PICKER needs from a tool, and it is
-# three questions the picker cannot answer for itself:
+# is a command (pull); this is what zellij answers about being the thing agents
+# RUN INSIDE (plan.md §4.8, D69). Three questions, none of which a caller can
+# answer for itself:
 #
-#   claims   is this record yours?          it has a `zellij` namespace
-#   place    where does it live?            home/root
-#   go       take me there                  jump
+#   owns-session    is this session yours?      it has a `zellij` namespace
+#   location-label  where does it live?         home/root
+#   focus-session   take me there               jump
 #
 # A tmux integration is the same three functions and one more row in
-# `picker/locators.nu`. Nothing in `picker/` changes. That is the whole reason
-# this file exists rather than the picker calling zellij directly.
+# `integrations/session-containers.nu`. Nothing in `picker/` changes, and
+# nothing in the bar does either — which is the whole reason this file exists
+# rather than each caller reaching for zellij directly.
+#
+# IT WAS `locate.nu`, AND IT WAS FILED UNDER `picker/` (D70). Not one of the
+# three questions was ever the picker's; what was the picker's is only that it
+# asked them first. The second caller — a click on a bar row — is what made that
+# visible, because it would have had to reach through the picker to find out
+# where an agent lives.
 #
 # ── THERE WAS A FOURTH, AND IT WAS THE BIG ONE ────────────────────────────────
 # `screen` dumped the pane, and the picker's preview was that dump: `zellij
@@ -35,10 +43,10 @@ export const INFO = {name: "zellij", title: "zellij panes"}
 
 def zellij-of [rec: record]: nothing -> record { $rec.zellij? | default {} }
 
-# A record is ours when it says WHERE it is, completely. A half-known pane — a
-# session with no id — is not claimed, so the picker falls back rather than
+# A session is ours when it says WHERE it is, completely. A half-known pane — a
+# session with no id — is not claimed, so a caller falls back rather than
 # guessing at a pane number.
-export def owns [rec: record]: nothing -> bool {
+export def owns-session [rec: record]: nothing -> bool {
     let z = zellij-of $rec
     (($z.session? | default "") | is-not-empty) and (($z.pane_id? | default "") | is-not-empty)
 }
@@ -57,6 +65,6 @@ export def location-label [rec: record]: nothing -> string {
 # Take me there. One line, because `jump` already knows the three things zellij
 # does that can turn a jump into a silent no-op, and knowing them twice would be
 # one place too many.
-export def go [rec: record]: nothing -> nothing {
+export def focus-session [rec: record]: nothing -> nothing {
     jump ($rec.id? | default "")
 }

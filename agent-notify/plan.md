@@ -757,6 +757,145 @@ for.
 **Nothing in the dispatch path may throw.** It runs after the session-store has
 committed. Each display is wrapped alone, so one failing cannot stop the next.
 
+### 4.8 Session-containers — where an agent runs, and how to reach it
+
+`displays:` was never the whole of what an integration is. SketchyBar only
+*shows* the session-store. zellij shows it **and is the thing agents run
+inside**, which is why it is the only integration that can answer *take me
+there*. A tmux integration would have the second half and not the first.
+
+So an integration does not have a KIND. It has CAPABILITIES, and it declares the
+ones it can answer (D69):
+
+| capability | the question it answers | driven by | who has it today |
+|---|---|---|---|
+| **display** | what should my surface show? | an event arriving | zellij, sketchybar |
+| **session-container** | where does this agent live, and take me there | you running something, or a click | zellij |
+| **raise** | bring that container's window to the front | a caller that is not inside it | nobody — D73 |
+
+zellij has two, SketchyBar has one, tmux would have one — and the one it would
+have is not the one SketchyBar has. That is the whole shape of the problem: a
+single word for "an integration" was hiding two unrelated abilities, and the
+config file had already split the same seam one level up (D47, push and pull).
+
+**The container contract already exists, and it is in the wrong directory.** It
+is the locator (D55): `owns-session`, `location-label`, `focus-session`. Not
+one of those three
+questions is the picker's — what was the picker's is only that it asked them
+first. So the fault was never a missing interface; it was a MISFILED one, a
+contract living inside its first consumer. The second consumer makes that
+concrete: a bar row's click would have to reach the picker to find out where an
+agent lives.
+
+It moves to `integrations/session-containers.nu`, beside the integrations that
+implement it rather than inside the command that needed it first, and the
+per-integration file follows: `zellij/locate.nu` becomes
+`zellij/session-container.nu`, because once `focus-session` carries the window
+the three
+questions are no longer only about finding (D70). naming.md's opening line
+already reserved the word — *"before session-containers are designed"* — and this
+is where it is spent.
+
+**One registry per capability, and never one merged table.** The tempting
+refactor is a single table with optional members, so adding an integration is
+one edit instead of two. It is wrong, and §4.4 is why: such a table would `use`
+both halves of every tool, so `core/dispatch.nu` — which every hook imports —
+would reach `jump.nu`, and through it `core/session-store.nu` and
+`core/config.nu`, by a SECOND import path. A module reached twice is parsed
+twice, on every event, forever (§10 measured exactly this diamond at 4.51ms
+against 3.57ms). So the split is load-bearing, not untidiness (D71):
+
+| registry | lives in | reached by | must never be reached by |
+|---|---|---|---|
+| displays | `core/dispatch.nu` | every hook, every event | — |
+| session-containers | `integrations/session-containers.nu` | `cli/jump.nu`, `cli/browse.nu`, `picker/rows.nu` | any display, therefore any hook |
+
+The rule a third capability will follow: **a registry lives where its consumers
+can reach it and no display can.**
+
+**There are TWO levels of "go there", and only one of them is zellij's.** A pane
+is inside a terminal; the terminal is inside a window; which window is in front
+is the operating system's business. `focus-session` makes pane 7 the active
+pane, correctly, and if you are looking at another application nothing on your
+screen changes. So the ladder is **focus the terminal's window, then focus the
+session inside it** — same verb, two levels, in the order they run.
+
+**`focus-session` decides whether to climb it; no caller ever says where it
+is.** The picker runs inside the terminal, where the window is already in front
+— the first rung was climbed by hand, for free, when you typed. A bar click is
+the first caller that arrives from the desktop, where it was not. The wrong fix
+is a flag — `focus-session --from-desktop` —
+because it makes every future caller learn something about itself that the
+container can simply look up: zellij knows whether we are inside it, since
+`$env.ZELLIJ_SESSION_NAME` is either set or it is not, and `jump argv` already
+branches on precisely that. So `focus-session` means *take me there from
+wherever I am*,
+and the picker and the click call the identical thing (D72).
+
+**The raise is the CONTAINER's setting, not the clicker's.** §9b.1 sketched
+`sketchybar.commands.raise:`, which is one level too low: what needs focusing is
+the window the CONTAINER sits in, so every caller arriving from outside would
+need its own copy of the same argv. It belongs to
+`zellij.commands.focus_terminal_window:` —
+user-supplied argv, run before the focus, **empty by default** (D73). That is
+what keeps D50 true — the module names no window manager and assumes no
+operating system, because the program is the user's word — and it turns §9b.1's
+second option, *do nothing*, from a decision into a default value.
+
+**So the contract gains a member and not a question.** `focus-session` needs a
+data half — `focus-session-argv`, returning what *would* be run, the window
+command included — for the same reason
+`render-items` sits in front of `push-items` and `jump argv` sits in front of
+`jump main`: rule 3 of `integrations/mod.nu`, a side effect is built as data
+first. It is what lets the suite assert a raise with no window manager on the
+machine, and what `agent-notify jump --dry-run` answers. Note what is NOT a
+member: *are we inside you right now* is how zellij implements
+`focus-session`, not
+something a caller may ask, because the moment it is askable a caller will ask
+it and decide for itself (D72).
+
+**`jump` stops being zellij's command.** `cli/jump.nu` resolves the agent, asks
+the registry who contains it, and calls `focus-session`;
+`integrations/zellij/jump.nu` stays
+exactly as it is, one implementation behind the contract. This retires the line
+in `mod.nu` that says *"a jump genuinely is zellij's, and stays here"* — true
+only while zellij was the only container (D74).
+
+**A bar click RUNS the module; it does not bake the argv.** D44 says a bar
+item's answer is baked in at paint time, because the alternative is a second
+nushell per HOVER — and a hover fires at pointer frequency. A click is one
+deliberate human action, and what it costs depends on the ENTRY it points at,
+not on the fact that a process starts. Measured on this machine, today, median
+of 15:
+
+| what the click script would run | ms |
+|---|---|
+| `nu -n --no-std-lib -c ''` — the floor | 17.2 |
+| `… -c 'use integrations/zellij/session-container.nu'` | 21.1 |
+| `… -c 'use …/jump.nu; jump argv <id>'` — the real decision, run | 22.5 |
+| `… -c 'use agent-notify; …'` — **through the facade** | 104.6 |
+
+So the click costs ~22ms pointed at the container cone and ~105ms pointed at the
+module, and it points at the container cone (D75). That is less than half what
+v1's *hover* cost, and re-reading the session-store is not a tax but the reason
+it is correct: **a pane can move without any state change**, and a baked argv
+would not know. The bar also learns nothing about zellij, which is the point of
+having a contract at all.
+
+Baking stays available and the seam is known: **dispatch** would ask the
+container registry per record and fold the answer into the records it hands
+`render-items`, exactly as it already folds in `discover-own-location` — dispatch
+being the one node allowed to import both, so the display stays a leaf. It is
+not built, because 22ms after a click is invisible.
+
+**What does not change.** Which container claims a record is decided by the
+RECORD, not by the config file (D56) — so a mixed fleet still works with nothing
+configured, and switching the zellij display off still does not take the jump
+away. And the contract asks no new QUESTION: `owns-session`, `location-label`,
+`focus-session`, and that last one's data half. `session-container` is a name that invites a fifth — *open a
+new agent here* — and `screen` already taught what a question with one caller is
+worth (D58).
+
 ---
 
 ## 5. Decisions
@@ -818,7 +957,7 @@ committed. Each display is wrapped alone, so one failing cannot stop the next.
 | D52 | `browse` runs IN PLACE; the floating pane belongs to the keybinding | **LOCKED** | step 6 — v1 re-launched itself through `zellij run --floating` and needed a `--here` flag to not. Same bargain as `sketchybarrc` and `settings.json`: we print the block, you own the file |
 | D53 | `browse` does not prune | **LOCKED** | step 6 — the prune-daemon already does, every 30s. A second mechanism for one guarantee, and all it saves is a jump that says "no session called 'x'" |
 | D54 | The picker OWNS ITS EVENT LOOP — `input listen`, not `input list` | **LOCKED** | step 6b — `input list` is OPAQUE: it blocks and reports nothing until enter, so nothing can redraw a preview beside it. Every design that kept it needed a second process parsing the highlight back off the picker's own screen |
-| D55 | The picker is `picker/`, its command is `cli/browse.nu`, and each integration answers a LOCATOR contract — three questions since D58, four before it | **LOCKED** | step 6b — what varies per multiplexer is where an agent lives and how to go there, and nothing else does. `screen` was the fourth and left with the pane preview (D58). tmux is one `locate.nu` and one row in `picker/locators.nu` |
+| D55 | The picker is `picker/`, its command is `cli/browse.nu`, and each integration answers a LOCATOR contract — three questions since D58, four before it | **LOCKED** | step 6b — what varies per multiplexer is where an agent lives and how to go there, and nothing else does. `screen` was the fourth and left with the pane preview (D58). tmux is one file and one row in that table. **RELOCATED by D70**: the contract is not the picker's, so it moved to `integrations/session-containers.nu` and the per-integration file to `session-container.nu` — the three questions are unchanged |
 | D56 | Which locator answers is decided by the RECORD, not by the config file | **LOCKED** | step 6b — `displays:` says what the session-store is PUSHED to and nothing else (D47), so switching the zellij display off must not stop the picker previewing a zellij pane. It also makes a MIXED fleet work with nothing configured |
 | D57 | The preview is the agent's LIVE SCREEN; the filter matches only what the row SHOWS | first half **REVERSED** by D58; second half **LOCKED** | step 6b — the filter half stands and always will: a message is kilobytes of prose, and folding it in made a two-letter query match an agent for an invisible reason, at character 4195 of something it said an hour ago. The preview half lasted until it was lived with — see D58 |
 | D58 | The preview is the agent's STORED MESSAGE, rendered the way the bar renders it | **LOCKED** | step 8 — truer lost to readable. A dump is the bottom of a TUI mid-redraw, half a spinner and a rule cut off at both edges; the agent already wrote the answer to "which of these wants me" in a sentence. It also cost a subprocess on every heartbeat and only ever covered agents that still had a pane — the rest already fell back to exactly this. Markdown rendering comes BACK to the picker, but not as new code: `core/markdown.nu` is the bar's flattener, moved up |
@@ -833,6 +972,13 @@ committed. Each display is wrapped alone, so one failing cannot stop the next.
 | D67 | The launcher is NAMED, never detected — with a completer | **LOCKED** | §4.6c — autodetection would be right nearly always and INVISIBLE WHEN WRONG, and wrong looks exactly like "dead agents linger", with nothing in any log. So the user names it and the completer's `description` column carries the explanation the detection used to hide. `status` still reports EVERY launcher, so asking whether the prune-daemon is running never depends on remembering which one was set up — which is also why no state file records it. REVISED BY D69: `available` was a validator that refused an `install`; with nothing installed, it is a note at the top of the printed help instead |
 | D68 | systemd's `AccuracySec=` is PINNED to 1s, in our own timer | **LOCKED** | §11 — it defaults to ONE MINUTE, and the default silently makes `--interval 30` a lie: the expiry lands at a stable, host-wide position inside the window, synchronised across every local timer, so a 30s timer snaps to the shared 60s grid and ticks every 60s forever. Not jitter — steady state. Pinned so that `--interval 30` MEANS THE SAME THING under both launchers; if the launchers disagree about what the number means, the abstraction is not one. Per-unit, in the `[Timer]` section of the file we write — the global knob is a different setting with a different name (`DefaultTimerAccuracySec=` in `user.conf`) and nothing here goes near it |
 | D69 | The prune-daemon is PRINTED, never installed — no `install`, no `uninstall` | **LOCKED** | D20 reaches the last thing that was still applying itself. A LaunchAgent and a systemd timer are the most privileged configs this module knows how to describe — something that runs on a timer forever whether or not you remember agreeing to it — so `help-setup <launcher>` lays out the files, the commands that load them, and the way back out, and runs none of it. What it buys beyond consistency: the launcher contract has NO side effect left in it. `load-commands` builds lines instead of running them (zellij's `commands`, the bar's `message`, rule 3 in integrations/mod.nu), so all that touches the world is `available` and `status`, both read-only. And `available` stops being a veto — printing is harmless, and printing the systemd files ON A MAC is the useful case, so an unavailable launcher gets a NOTE at the top rather than a refusal. Cost, accepted: setting the prune-daemon up is now four pasted lines instead of one command, and `naming.md`'s migration record names an `install` that no longer exists |
+| D69 | An integration has CAPABILITIES, not a kind — display, session-container, raise | **LOCKED** | §4.8 — zellij has two of the three, SketchyBar one, and the one SketchyBar has is not the one a tmux integration would have. One word was hiding two unrelated abilities; `displays:` names a capability rather than a roster, which is D47 one level up |
+| D70 | The container contract leaves `picker/` — `integrations/session-containers.nu`, and `locate.nu` → `session-container.nu` | **LOCKED** | §4.8 — nothing about `owns`/`location-label`/`go` is the picker's; what was the picker's is that it asked first, and a contract filed inside its first consumer is one the second has to reach *through* it. The file rename follows the contract: once `go` carries the raise, the three questions are no longer only about finding. naming.md's opening line reserved the word |
+| D71 | One registry per capability; never one merged table | **LOCKED** | §4.8 and §4.4 — a merged table `use`s both halves of every tool, so `core/dispatch.nu` would reach `core/session-store.nu` by a second import path and parse it twice on every event (§10, measured: 4.51ms against 3.57ms). The rule for the third capability: a registry lives where its consumers can reach it and no display can |
+| D72 | `focus-session` decides whether to focus the terminal's WINDOW first; no caller ever says where it is | **LOCKED** | §4.8 — the container already knows (`$env.ZELLIJ_SESSION_NAME`) and `jump argv` already branches on it. A `--from-desktop` flag would make every future caller learn something about itself that the container can look up, and would be wrong in the first place it was copied |
+| D73 | `focus_terminal_window` is user-supplied argv in the CONTAINER's `commands:` half, empty by default | **LOCKED** | §4.8 — keeps D50 intact: no window manager named, no OS assumed, because the program is the user's word. §9b.1 put it under `sketchybar.commands:`, one level too low — what needs focusing is the window the CONTAINER sits in, so every outside caller would need its own copy. Empty by default turns "do nothing" from a decision into a default value |
+| D74 | `jump` is the facade's command; zellij's is one implementation of it | **LOCKED** | §4.8 — `cli/jump.nu` resolves the agent and asks the registry who owns it, so `agent-notify jump` works for tmux the day tmux exists. Retires `mod.nu`'s "a jump genuinely is zellij's, and stays here", true only while zellij was the only container |
+| D75 | A bar click RUNS the module rather than baking the argv — the one place D44 does not reach | **LOCKED** | §4.8 — measured: 22.5ms through the container cone against 104.6ms through the facade, so what matters is the ENTRY, not that a process starts. A click is one human action where a hover is pointer frequency, and re-reading the session-store is what makes it *correct*: a pane can move with no state change, and a baked argv would not know. The baking seam is written down and deliberately not built |
 | D15 | Replace pandoc with a nu-native flattener | **LOCKED** (step 5b) | done: `integrations/sketchybar/text.nu` does it in nushell. 25.1ms off the event path and a dependency gone. v1 could afford pandoc because it converted where the preview was STORED, on a path already spawning processes; v2's whole paint is 6.5ms. Superseded in part by D60 — the flattener is a parser now, and still no subprocess |
 | D16 | Where the bench harness lives | **OPEN** | the only open row left. ~350 lines of documented nu; §8, and §9b.3 |
 | D17 | Promoted to `monomodules/agent-notify`, a module beside `ai` and the rest | **LOCKED** (2026-09-12) | step 7 — it was never `ai`-shaped: reflecting agent state on a status bar is not provider-agnostic content generation, and being a submodule is what made every hook parse the whole `ai` tree. The directory, the command, the session-store at `~/.local/share/agent-notify/` and the bar prefix `an_` all carry the one name |
@@ -1355,51 +1501,99 @@ in
 
 ---
 
+11. **Session-containers, and the click** — ⏳ designed, not built. §4.8 and
+   D69–D75. The design came out of a question about the bar and answered a
+   question about the architecture: zellij is not a display that happens to have
+   commands, it is an integration with two capabilities, and the contract for
+   the second one was already written — it was just filed under `picker/`.
+   **The work, in order, each part standing alone:**
+   1. **Move the contract.** `picker/locators.nu` →
+      `integrations/session-containers.nu`; `integrations/zellij/locate.nu` →
+      `integrations/zellij/session-container.nu`. `picker/rows.nu` and
+      `tests/fake.nu`'s fake locator follow the import; nothing else changes and
+      the suite must stay green on the move alone.
+   2. **`jump` becomes the facade's.** New `cli/jump.nu`: resolve the agent
+      (`find`, moved off zellij), ask the registry which container has it,
+      `focus-session`.
+      `integrations/zellij/jump.nu` keeps `argv` and `main` unchanged and stops
+      being exported from `mod.nu`. `agent-notify jump <who>` must behave
+      identically for a zellij agent and must now say something sensible for an
+      agent no container claims.
+   3. **`focus-session` climbs to the window.** Split it into
+      `focus-session-argv` (pure: every command that would run, the window
+      first) and `focus-session` (runs them), the same shape as
+      `render-items`/`push-items`. Add `zellij.commands.focus_terminal_window:`
+      to the config, validated by zellij's own `settings` like every other key.
+      Whether to climb is decided inside zellij's `focus-session-argv` from
+      `$env.ZELLIJ_SESSION_NAME` and is not a contract member (D72). Empty by
+      default, so the default path is byte-for-byte what it is today, and
+      `agent-notify jump --dry-run` falls out of the pure half for free.
+   4. **The click.** One `click_script` per row in
+      `integrations/sketchybar/items.nu`, baked at paint time the way the hover
+      is (D44) — but what is baked is the *invocation*,
+      `nu -n --no-std-lib -c 'use …/cli/jump.nu; jump <id>'`, not the zellij
+      argv (D75). A row that is switched off loses its script with
+      its label, exactly as the hover does.
+   **Done when:** clicking a row in any drawer raises the terminal and lands in
+   that agent's pane; `agent-notify jump` works through the registry and names
+   no integration; the picker is unchanged in behaviour and its suite unchanged
+   in content; `tests/fake.nu` proves a container the machine does not have; and
+   the hot path is untouched — re-measure the per-event cost and the parse cone,
+   and show that `core/dispatch.nu` cannot reach `core/session-store.nu` twice.
+
+---
+
 ## 9b. Deferred — what is not built, and what each one waits on
 
-Every step in §9 is done. These are not unfinished steps; they are work set
+Every step in §9 is done bar step 11, which these produced. They are work set
 aside on purpose, each for a reason that has not changed. Written down because
-the alternative is rediscovering them — and because the first and the third are
+the alternative is rediscovering them — and because the first and the third were
 blocked on a DECISION rather than on effort, which is a different kind of
-waiting and needs saying out loud. §9b.5 is the odd one: the code for it was
-written, integration-registry, lived with and deleted, and what is deferred is
-the SHAPE it should have come in. The fourth is not work at all: it is a
-behaviour that looks like a bug and is not, recorded so it does not get filed as
-one.
+waiting and needs saying out loud. **The first is no longer one of them**: the
+answer came from a question about the architecture rather than from more effort
+on the click, which is the case for writing a blocked thing down at all. §9b.5
+is the odd one: the code for it was written, shipped, lived with and deleted,
+and what is deferred is the SHAPE it should have come in. The fourth is not
+work at all: it is a behaviour that looks like a bug and is not, recorded so it
+does not get filed as one.
 
-### 9b.1 A click on a bar row should jump
+### 9b.1 A click on a bar row should jump — UNBLOCKED, and it is step 11
 
 **What it is.** v1 did this and this does not: clicking an agent in a drawer
 takes you to its pane. It is the only thing v1 did that is still missing.
 
 **Almost all of it exists.** The rows are already items
-(`an_<state>.row.<i>`), the jump is already a command, and D44 already settled
-how a bar item answers without spawning anything of ours: bake the answer in at
-PAINT TIME, as a shell command line, because the paint already knows which agent
-is in which row. So the click script is one generated line per row with the
-agent's id in it — no lookup, no nushell, no second process. v1 proved the
-mechanism with `jump.sh`; what it did not have was D44.
+(`an_<state>.row.<i>`), the jump is already a command, and the paint already
+knows which agent is in which row. v1 proved the mechanism with `jump.sh`; what
+it did not have was anywhere to put the answer.
 
-**What blocks it is the RAISE, and only the raise.** A bar click arrives from a
-desktop, not from a terminal, so before focusing a pane you have to bring the
+**What blocked it was the RAISE, and only the raise.** A bar click arrives from
+a desktop, not from a terminal, so before focusing a pane you have to bring the
 terminal's WINDOW to the front — and that is a window manager's job. The picker
-never needed this, which is exactly why the picker integration-registry first:
-it runs inside the terminal, where the window is already in front.
+never needed it, which is exactly why the picker was built first: it runs inside
+the terminal, where the window is already in front. D50 says this module names
+no window manager and assumes no operating system; v1 broke both, calling
+aerospace, falling back to `open -a Ghostty`, and reading the attached session
+out of the WINDOW TITLE. Three shapes were written down and none was chosen, and
+the question was deferred twice.
 
-D50 says this module names no window manager and assumes no operating system.
-v1 broke both — it called aerospace, fell back to `open -a Ghostty`, and read
-the attached session out of the WINDOW TITLE. So the click waits for an answer
-that keeps D50 true. Three shapes, none chosen:
+**The answer came from the other end** (§4.8, D69–D75). Asking *what interface
+does a bar click need* turned out to be the same question as *what is zellij,
+given that it both shows agents and contains them* — and once an integration has
+CAPABILITIES rather than a kind, the raise has an owner:
 
-| | |
+| what was open | how §4.8 settles it |
 |---|---|
-| a setting | `sketchybar.commands.raise: [<program>, <args>…]` — user-supplied argv, run before the jump. Names no program, assumes no OS, and is empty by default. Sketched during step 6, not built |
-| nothing | focus the pane and let the user bring the window up themselves. The jump is still correct; it just is not complete |
-| the terminal's own | many terminals can raise themselves from a CLI or a URL scheme. Correct per terminal, which makes it the same problem one level down |
+| where does the setting live? | on the **container**, `zellij.commands.focus_terminal_window:`, not on the bar — the window belongs to the container, so putting it on the caller means one copy per caller (D73) |
+| who decides whether to focus the window? | `focus-session` does, from whether we are inside the container already. No caller carries a flag (D72) |
+| what happens with nothing configured? | nothing — it is empty by default, which is §9b.1's "do nothing" option demoted from a decision to a default value |
+| how does the bar invoke a jump without learning zellij? | it runs `cli/jump.nu`, which asks the registry. Measured at 22.5ms against 104.6ms through the facade, so D44's "no second nushell" does not reach a click — the entry is what costs, not the process (D75) |
 
-The first is the only one that has survived a reading so far, and the user has
-deferred the question twice. It should be taken on its own, not folded into
-another step.
+**The one thing still to decide is not ours.** `focus_terminal_window` is argv
+the user writes,
+so what goes in it — `aerospace`, `open -a`, a terminal's own CLI — is a config
+line on this machine and not a line of nushell in this repo. That is the whole
+of what D50 was protecting.
 
 ### 9b.2 A palette for the picker — DONE (step 10, D62 and D64)
 
@@ -1484,6 +1678,17 @@ step 9.
 
 Things that cost time once and should not cost it twice. All verified on
 0.115.1.
+
+**A HYPHEN IN A MODULE NAME BECOMES AN UNDERSCORE IN ITS CONSTANT.** `use
+zellij/session-container.nu` makes the module addressable as
+`session-container` in COMMAND position — `session-container owns-session $rec`
+— and as **`$session_container`** in VARIABLE position, which is where an
+`export const` lives. Spelled the obvious way, `$session-container.INFO` is a
+parse error about an invalid variable name, reported at the `$` and not at the
+`use`, so the cause is some distance from the complaint. Nushell's "did you
+mean" does name the right spelling, which is the only reason this cost minutes
+rather than longer. It is the first module here whose name has a hyphen; every
+earlier one (`zellij`, `sketchybar`, `jump`) sidestepped it by accident.
 
 **A def named after a builtin shadows that builtin for every module the file
 imports** — whatever the order of the `use` statements, and the error displays

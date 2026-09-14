@@ -39,7 +39,7 @@ def said [seen: record]: nothing -> list<string> { $seen.rows | get t }
 def bare [ls: list<string>]: nothing -> list<string> { $ls | each {|l| $l | ansi strip } }
 use ../picker/keys.nu
 use ../picker/tty.nu
-use ../picker/locators.nu
+use ../integrations/session-containers.nu
 use fake.nu
 use assert.nu *
 
@@ -64,10 +64,10 @@ def fleet []: nothing -> list<record> {
 # stop being readable.
 def wordy []: nothing -> any {
     rows selected (rows build [{id: "eee", state: "working", name: "echo", fake: {where: "box/one"}
-        message: (1..20 | each {|i| $"- line ($i)" } | str join "\n")}] (fake locator)) {sel: "eee"}
+        message: (1..20 | each {|i| $"- line ($i)" } | str join "\n")}] (fake session-container)) {sel: "eee"}
 }
 
-def built []: nothing -> list<record> { rows build (fleet) (fake locator) }
+def built []: nothing -> list<record> { rows build (fleet) (fake session-container) }
 
 # `--ctrl` uses the spelling nushell ACTUALLY emits — `keymodifiers(control)`, a
 # Debug format leaking into the record — because the documented `control` is
@@ -92,22 +92,22 @@ export def main [] {
                (built | get id) ["ddd" "bbb" "aaa" "ccc"])
         (check "every row carries its record, so a pick needs no second lookup"
                (built | first | get rec.name) "delta")
-        (check "an empty session-store makes no rows at all" (rows build [] (fake locator)) [])
+        (check "an empty session-store makes no rows at all" (rows build [] (fake session-container)) [])
     ]
 
     # ── what the locator supplies ─────────────────────────────────────────────
     # The picker cannot know where an agent lives. It asks whatever claimed it,
     # and an agent nothing claims is still a row — just one with nowhere to go.
     let b = [
-        (check "`place` comes from the locator that claimed the record"
+        (check "`place` comes from the session-container that claimed the record"
                (built | where id == "bbb" | get 0.location-label) "box/two")
         (check "…and a record nothing claims has no place" (built | where id == "ddd" | get 0.location-label) "")
-        (check "a claimed record carries the locator that claimed it"
-               (built | where id == "bbb" | get 0.via | is-not-empty) true)
+        (check "a claimed record carries the session-container that claimed it"
+               (built | where id == "bbb" | get 0.container | is-not-empty) true)
         (check "…and an unclaimed one carries null, which is how the caller knows"
-               (built | where id == "ddd" | get 0.via) null)
-        (check "a locator answers THREE questions — `screen` went with the pane preview"
-               ((fake locator).fake | columns | sort) ["go" "info" "location-label" "owns"])
+               (built | where id == "ddd" | get 0.container) null)
+        (check "a session-container answers THREE questions — `screen` went with the pane preview"
+               ((fake session-container).fake | columns | sort) ["focus-session" "info" "location-label" "owns-session"])
     ]
 
     # ── the preview: what the agent last SAID ─────────────────────────────────
@@ -200,7 +200,7 @@ export def main [] {
     let before = built
     let after = rows build (fleet | each {|r|
         if $r.id == "aaa" { $r | merge {state: "needs-attention"} } else { $r }
-    }) (fake locator)
+    }) (fake session-container)
     let held = rows keep-in-view {sel: "aaa", query: "", top: 0} $after 10
     let e = [
         (check "the agent was third before it changed state" (rows index-of $before {sel: "aaa"}) 2)
@@ -455,14 +455,14 @@ export def main [] {
     # picks its own — not the config file, which says what the store is pushed
     # to and nothing else (D47).
     let m = [
-        (check "zellij ships as a locator" (locators integration-registry-names) ["zellij"])
+        (check "zellij ships as a session-container" (session-containers integration-registry-names) ["zellij"])
         (check "a record naming a tool is claimed by it"
-               (locators owner {fake: {where: "box/one"}} --table (fake locator) | is-not-empty) true)
+               (session-containers container-of {fake: {where: "box/one"}} --table (fake session-container) | is-not-empty) true)
         (check "…and one naming none is claimed by nobody"
-               (locators owner {id: "x"} --table (fake locator)) null)
+               (session-containers container-of {id: "x"} --table (fake session-container)) null)
         (check "a real zellij record is claimed only when it says where it is, completely"
-               [ (locators owner {zellij: {session: "home", pane_id: "3"}} | is-not-empty)
-                 (locators owner {zellij: {session: "home"}}) ]
+               [ (session-containers container-of {zellij: {session: "home", pane_id: "3"}} | is-not-empty)
+                 (session-containers container-of {zellij: {session: "home"}}) ]
                [true null])
     ]
 

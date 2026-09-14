@@ -10,35 +10,48 @@
 #          switched on by `displays:` in the config file, and configured under
 #          that tool's `display:` key.
 #
-#   PULL — its COMMANDS, and what the PICKER needs from it. Nothing turns these
-#          on, because you ran them. Configured under `commands:`.
+#   PULL — its COMMANDS, and what it answers about CONTAINING an agent. Nothing
+#          turns these on, because you ran them. Configured under `commands:`.
 #
 #   integrations/
+#     session-containers.nu    the registry of integrations agents RUN INSIDE
 #     zellij/
-#       mod.nu      PUSH   pane and tab titles
-#       jump.nu     PULL   go to an agent's pane
-#       locate.nu   PULL   where an agent lives, and how to go there
+#       mod.nu                 PUSH  pane and tab titles
+#       jump.nu                PULL  focus an agent's pane
+#       session-container.nu   PULL  where an agent lives, and how to get there
 #     sketchybar/
-#       mod.nu      PUSH   counters, drawers and hover previews
-#       items.nu           item names, the fixed pool, the generated shell —
-#                          and that shell's escaping, at the point of quoting
+#       mod.nu                 PUSH  counters, drawers and hover previews
+#       items.nu                     item names, the fixed pool, the generated
+#                                    shell — and that shell's escaping, at the
+#                                    point of quoting
 #
 # The markdown a message is written in is flattened by `core/markdown.nu`, which
 # was `sketchybar/text.nu` until the picker's preview became its second reader.
 #
+# AN INTEGRATION HAS CAPABILITIES, NOT A KIND (plan.md §4.8, D69). PUSH and PULL
+# above describe how it is DRIVEN; what it can DO is a separate question, and
+# the answers are not the same set:
+#
+#   display            what should my surface show?           zellij, sketchybar
+#   session-container  where does this agent live, take me    zellij
+#                      there
+#
+# zellij has both. SketchyBar only displays. A tmux integration would only
+# contain — and the half it would have is not the half SketchyBar has.
+#
 # THE PICKER IS NOT IN HERE, and that is the shape of it. `agent-notify browse`
 # lives in `cli/` with the other commands, and the machinery in `picker/`,
 # because a picker is not a zellij program: it asks whichever integration
-# claimed an agent the three questions in `locate.nu` and draws the answers. A
-# tmux integration is one more `locate.nu` and one more row in
-# `picker/locators.nu` — and not one line of the picker changes.
+# CONTAINS an agent the three questions below and draws the answers. A tmux
+# integration is one more `session-container.nu` and one more row in
+# `integrations/session-containers.nu` — and not one line of the picker changes.
 #
 # The halves are separate FILES, not just separate exports, and that is load
 # bearing: the push half is in the HOT cone of every hook, and the pull half
 # must never be. `core/dispatch.nu` imports `mod.nu`; the CLI imports the
 # others. A pull half that reached the hook's import cone would be parsed on
-# every tool call, forever — and `locate.nu` drags `jump.nu` and the config in
-# behind it.
+# every tool call, forever — and `session-container.nu` drags `jump.nu` and the
+# config in behind it.
 #
 # ── THE DISPLAY CONTRACT ──────────────────────────────────────────────────────
 # A display DESCRIBES; `core/dispatch.nu` DECIDES; the session-store holds the
@@ -69,25 +82,31 @@
 # name cannot be turned into a module at runtime. A new COMMAND is one file plus
 # one line in the facade — no table, because nothing dispatches to it.
 #
-# ── THE LOCATOR CONTRACT ──────────────────────────────────────────────────────
-# The same idea for the picker, and the same hand-written table, in
-# `picker/locators.nu`:
+# ── THE SESSION-CONTAINER CONTRACT ────────────────────────────────────────────
+# The same idea for the other capability, and the same hand-written table, in
+# `integrations/session-containers.nu`:
 #
 #   INFO            what it is
-#   owns            is this record yours?    it has a `zellij` namespace
+#   owns-session    is this session yours?   it has a `zellij` namespace
 #   location-label  where does it live?      home/root
-#   go              take me there            `jump`
+#   focus-session   take me there            `jump`
 #
 # There was a `screen` — dump me this agent's live terminal — and step 8 took it
 # out with the preview that needed it (D58). The picker shows the stored message
-# now, which every record has, so a locator asks only what the multiplexer alone
-# can answer.
+# now, which every record has, so a container asks only what the multiplexer
+# alone can answer.
 #
-# Which locator answers is decided by the RECORD, not by the config file:
+# IT IS A SEPARATE TABLE FROM THE DISPLAYS, AND THAT IS LOAD BEARING (D71). One
+# table with optional members would `use` both halves of every tool, putting
+# `core/session-store.nu` in the hook's import cone twice — see rule 2 below.
+# The rule: a registry lives where its consumers can reach it and no display
+# can.
+#
+# Which container answers is decided by the RECORD, not by the config file:
 # `displays:` says what the session-store is pushed to and nothing else (D47), so
-# switching the zellij display off must not stop the picker taking you to a
-# zellij pane. `tests/fake.nu` ships a fake locator beside the fake display, which
-# is how the whole picker is asserted with neither zellij nor tmux installed.
+# switching the zellij display off must not stop a caller taking you to a zellij
+# pane. `tests/fake.nu` ships a fake container beside the fake display, which is
+# how the whole picker is asserted with neither zellij nor tmux installed.
 #
 # ── THREE RULES, each of which cost real time when broken ─────────────────────
 #
