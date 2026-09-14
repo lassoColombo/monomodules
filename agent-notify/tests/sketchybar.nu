@@ -117,20 +117,29 @@ export def main [] {
     let capped = sketchybar settings {rows: 3}
     let b = [
         (check "agents are counted by state"
-               ($m | select "count|working" "count|awaiting" "count|needs-attention")
-               {"count|working": 1, "count|awaiting": 2, "count|needs-attention": 1})
+               ($m | select "count|working" "count|awaiting" "count|needs-attention"
+                  | values | each {|v| $v.n })
+               [1 2 1])
+        # A counter carries WHO it counts, because a counter is a thing you
+        # click — but only when there is one of them, which is the only time
+        # there is a correct session to go to.
+        (check "a counter standing for ONE agent carries that agent"
+               ($m | get "count|working" | get only) "a0")
+        (check "…and one standing for several carries nobody"
+               ($m | get "count|awaiting" | get only) "")
         (check "…and each one gets a row of its own"
                ($m | columns | where {|k| $k | str starts-with "row|" } | sort)
                ["row|awaiting|0" "row|awaiting|1" "row|needs-attention|0" "row|working|0"])
         (check "an empty session-store is three zeros and no rows"
                (sketchybar render-items [] $settings)
-               {"count|working": 0, "count|awaiting": 0, "count|needs-attention": 0})
+               {"count|working": {n: 0, only: ""}, "count|awaiting": {n: 0, only: ""}
+                "count|needs-attention": {n: 0, only: ""}})
         (check "idle is not a counter — a quiet agent gets no number and no row"
-               (sketchybar render-items (agents "idle" "idle") $settings)
-               {"count|working": 0, "count|awaiting": 0, "count|needs-attention": 0})
+               (sketchybar render-items (agents "idle" "idle") $settings | items {|k, v| $v.n })
+               [0 0 0])
         (check "a state we have never heard of is counted as nothing"
-               (sketchybar render-items [{id: "x", state: "napping"}] $settings)
-               {"count|working": 0, "count|awaiting": 0, "count|needs-attention": 0})
+               (sketchybar render-items [{id: "x", state: "napping"}] $settings | items {|k, v| $v.n })
+               [0 0 0])
         # Every row in a drawer shares a state, so the only ordering that says
         # anything is who has been in it longest.
         (check "the longest wait is at the top"
@@ -139,7 +148,9 @@ export def main [] {
         (check "a drawer is capped — the rest are counted, not drawn"
                (sketchybar render-items $many $capped | columns | where {|k| $k | str starts-with "row|" } | length) 3)
         (check "…and the count still tells the truth"
-               (sketchybar render-items $many $capped | get "count|working") 12)
+               (sketchybar render-items $many $capped | get "count|working" | get n) 12)
+        (check "…while a drawer of twelve names none of them, because there is no correct one"
+               (sketchybar render-items $many $capped | get "count|working" | get only) "")
     ]
 
     # ── what a row says ───────────────────────────────────────────────────────
@@ -215,8 +226,8 @@ export def main [] {
     ]
 
     # ── the message that would be sent ────────────────────────────────────────
-    let counter = sketchybar message {"count|working": 2} {} $settings
-    let empty = sketchybar message {"count|working": 0} {} $settings
+    let counter = sketchybar message {"count|working": {n: 2, only: ""}} {} $settings
+    let empty = sketchybar message {"count|working": {n: 0, only: ""}} {} $settings
     let e = [
         (check "a changed count writes the item-name and its header in one message"
                ($counter | where {|q| $q == "--set" } | length) 2)
@@ -229,12 +240,12 @@ export def main [] {
                ($"label.color=($settings.colors.dim)" in $empty) true)
         (check "the header counts what the drawer holds" ("label=  2 active" in $counter) true)
         (check "…and says so when some are not drawn"
-               ("label=  40 active · 10 shown" in (sketchybar message {"count|working": 40} {} $settings)) true)
+               ("label=  40 active · 10 shown" in (sketchybar message {"count|working": {n: 40, only: ""}} {} $settings)) true)
         (check "an empty drawer says so instead" ("label=  All clear" in $empty) true)
         (check "needs-attention becomes a legal item name"
-               ("an_attention" in (sketchybar message {"count|needs-attention": 1} {} $settings)) true)
+               ("an_attention" in (sketchybar message {"count|needs-attention": {n: 1, only: ""}} {} $settings)) true)
         (check "a custom prefix reaches the items"
-               ("x_working" in (sketchybar message {"count|working": 1} {} (sketchybar settings {prefix: "x_"})))
+               ("x_working" in (sketchybar message {"count|working": {n: 1, only: ""}} {} (sketchybar settings {prefix: "x_"})))
                true)
     ]
 
@@ -314,7 +325,7 @@ export def main [] {
         (check "…and so does its click, which would otherwise point at a pane it lost"
                ("click_script=" in $gone) true)
         (check "a count is never removed — an emptied drawer goes to zero"
-               (sketchybar message {} {"count|working": 3} $settings) [])
+               (sketchybar message {} {"count|working": {n: 3, only: ""}} $settings) [])
     ]
 
     # ── the click, which is the one thing that is NOT baked ───────────────────
@@ -449,8 +460,8 @@ export def main [] {
 
     # WHO SAYS SEEN. Every hover of ours, which costs one token on a message
     # that was being sent anyway.
-    let counter_hover = hover-scripts (sketchybar message {"count|working": 2} {} $settings) | first
-    let empty_hover = hover-scripts (sketchybar message {"count|working": 0} {} $settings) | first
+    let counter_hover = hover-scripts (sketchybar message {"count|working": {n: 2, only: ""}} {} $settings) | first
+    let empty_hover = hover-scripts (sketchybar message {"count|working": {n: 0, only: ""}} {} $settings) | first
     let row_hover = hover-scripts (sketchybar message {"row|working|0": {id: "x", label: "one", lines: [{k: "text", t: "hi"}]}} {} $settings) | first
     let q = [
         (check "hovering a counter tells the flash it has been seen"
@@ -560,6 +571,38 @@ export def main [] {
                ("update_freq=0" in $void) true)
     ]
 
+    # ── clicking the COUNTER itself ───────────────────────────────────────────
+    # A counter is the only part of this display that is visible without
+    # hovering, so it is the part a pointer reaches first. When it stands for
+    # exactly one agent there is a correct session to go to and the click goes
+    # there — no drawer, no second click on a list of one. When it stands for
+    # none or several there is no correct answer, so it does what it always did.
+    let alone = click-scripts (sketchybar message
+        {"count|working": {n: 1, only: "6923c0bc-1111"}} {} $settings) | first
+    let crowd = click-scripts (sketchybar message
+        {"count|working": {n: 4, only: ""}} {} $settings) | first
+    let none = click-scripts (sketchybar message
+        {"count|working": {n: 0, only: ""}} {} $settings) | first
+    let j2 = [
+        (check "a counter standing for ONE agent jumps straight to it"
+               ($alone | str contains "jump 6923c0bc-1111") true)
+        (check "…through the same command a row uses, so the path is walked once for both"
+               ($alone | str contains "cli/jump.nu") true)
+        (check "…and shuts the drawers on the way, like every other jump here"
+               ($alone | str starts-with $"click_script=($settings.binary) --set an_working popup.drawing=off")
+               true)
+        (check "a counter standing for SEVERAL jumps nowhere — the drawer is the answer"
+               ($crowd | str contains "jump") false)
+        (check "…it just shuts the drawers, which is what it always did"
+               ($crowd | str contains "popup.drawing=off") true)
+        (check "and an empty counter is the same" ($none | str contains "jump") false)
+        # The counter's own `script` is the hover, and it is untouched by any of
+        # this: hovering still opens the drawer whatever the count.
+        (check "hovering is unchanged — a counter of one still opens its drawer"
+               (hover-scripts (sketchybar message {"count|working": {n: 1, only: "x"}} {} $settings)
+                 | first | str contains "popup.drawing=on") true)
+    ]
+
     # ── the item pool, created once ───────────────────────────────────────────
     let inst = sketchybar install-message $settings
     let small = sketchybar install-message (sketchybar settings {rows: 2, preview_lines: 3, preview_depth: 5})
@@ -618,7 +661,7 @@ export def main [] {
                 | get -o discover-own-location | is-not-empty) true)
     ]
 
-    let all = ($a ++ $b ++ $c ++ $d ++ $e ++ $f ++ $g ++ $h ++ $j ++ $i ++ $k)
+    let all = ($a ++ $b ++ $c ++ $d ++ $e ++ $f ++ $g ++ $h ++ $j ++ $j2 ++ $i ++ $k)
     let flashed = ($n ++ $o ++ $p ++ $q ++ $r)
     let scrolled = ($t ++ $u ++ $v)
     summarise ($all ++ $flashed ++ $scrolled) --title "sketchybar display"

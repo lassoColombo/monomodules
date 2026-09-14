@@ -305,10 +305,15 @@ def is-lit [id: string, lit: string]: nothing -> bool { ($lit | is-not-empty) an
 # whole of the diffing: a row that did not move is not in `changed`, and a row
 # whose agent has gone arrives in `removed` with its old value.
 #
-#   count|working     2
+#   count|working     {n: 2, only: ""}
 #   row|working|0     {id: "6923c0bc-…", label: "zz-picker-refactor", lines: [...],
 #                      flash: false}
 #   flash             {state: "awaiting", index: 1, until: 1789386573, lines: [...]}
+#
+# A COUNTER CARRIES WHO IT COUNTS, not only how many, because a counter is a
+# thing you click. `only` is the agent's id when the counter stands for exactly
+# ONE — the only time there is a correct session to go to — and "" for none or
+# many, where the drawer is the answer instead.
 #
 # Idle agents appear nowhere: an agent with nothing to say does not deserve a
 # number. Within a drawer the oldest is first — every row shares a state, so
@@ -328,7 +333,10 @@ export def render-items [records: list<record>, settings: record]: nothing -> re
         let here = $records
             | where {|record| ($record.state? | default "idle") == $state }
             | sort-by {|record| $record.state_since? | default "" } {|record| $record.id? | default "" }
-        $out = ($out | upsert $"count|($state)" ($here | length))
+        $out = ($out | upsert $"count|($state)" {
+            n: ($here | length)
+            only: (if ($here | length) == 1 { $here | first | get -o id | default "" } else { "" })
+        })
         # The chip lights even when the agent it announces is past the cap and
         # has no row to light — the number moving is itself the news.
         if ($here | any {|record| is-lit ($record.id? | default "") $lit }) {

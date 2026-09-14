@@ -1004,6 +1004,7 @@ and `screen` already taught what a question with one caller is worth (D58).
 | D82 | The pointer ends a flash early, and never loses the drawer | **LOCKED** | step 13 — the only unforgivable failure mode is a drawer shutting under a pointer that came to read it, and a flash that opens one and closes it six seconds later will do exactly that. So every hover of ours `--trigger`s one event: the announcement has been read, the light goes out, the timer stands down, and the drawer is LEFT EXACTLY WHERE IT IS — from that moment it is the pointer's, and it closes the way every other drawer closes. One token on a message that was being sent anyway, and between flashes the item it wakes has an empty script, so it runs no shell at all |
 | D83 | The footer HOLDS more than it SHOWS, and a scroll moves `drawing`, never text | **LOCKED** | step 14 — `preview_depth` rows are written to the bar by the paint and `preview_lines - 1` are drawn, so scrolling turns slots on and off over words that are already there. Three things fall out of it and each one mattered: **no text moves**, so a wheel can never carry something an agent wrote and there is nothing to quote (the one hazard this display has, D45); **the work is O(what changed)** — two `--set`s for a nudge, ten for a shove, never the whole footer; and **the scroll needs nothing from a paint**, so its script is written once at install and no repaint touches it. The price is a deeper item pool — 168 `--add`s against 76 — which measured 127ms at bar load and NOTHING per hover (§11): a message costs what a process costs |
 | D84 | The position lives in an item property, and a wheel is forwarded to ONE item | **LOCKED** | step 14 — a SketchyBar script is handed `SENDER`, `NAME`, `BUTTON` and `SCROLL_DELTA` and nothing else (§11), so the only place a scroll can leave something for the next scroll is a property, and the only way to read it back is `--query`. That is 4.3ms, affordable ONLY because the wheel is throttled to about seven events a second — probed before anything was built, and the number that chose the design. The forward exists because a mouse event reaches only the item under the pointer: every row and every footer line carries one `--trigger`, three tokens, and the thinking lives once on the item that holds the position. Not D76 coming back — a click may spend 22.6ms on a nushell because it happens once; a wheel may not, because it happens seven times a second |
+| D85 | A COUNTER JUMPS WHEN IT COUNTS EXACTLY ONE; otherwise it shuts the drawers, as before | **LOCKED** | step 15 — the counters are the only part of this display visible without hovering, so they are what a pointer reaches first, and until now clicking one could not take you anywhere. It can when there is a correct session to take you to, which is precisely when the count is 1: no drawer, no second click on a list of one. At 0 or many there IS no correct session and the drawer is the answer, so the click keeps its old meaning rather than guessing at a most-urgent one — a click that teleports you somewhere you did not choose is worse than a click that does nothing. Hovering is untouched at every count. The cost is that `count|<state>` stops being an int and becomes `{n, only}`: a counter is a thing you CLICK, so it has to carry who it counts and not only how many |
 | D15 | Replace pandoc with a nu-native flattener | **LOCKED** (step 5b) | done: `integrations/sketchybar/text.nu` does it in nushell. 25.1ms off the event path and a dependency gone. v1 could afford pandoc because it converted where the preview was STORED, on a path already spawning processes; v2's whole paint is 6.5ms. Superseded in part by D60 — the flattener is a parser now, and still no subprocess |
 | D16 | Where the bench harness lives | **OPEN** | the only open row left. ~350 lines of documented nu; §8, and §9b.3 |
 | D17 | Promoted to `monomodules/agent-notify`, a module beside `ai` and the rest | **LOCKED** (2026-09-12) | step 7 — it was never `ai`-shaped: reflecting agent state on a status bar is not provider-agnostic content generation, and being a submodule is what made every hook parse the whole `ai` tree. The directory, the command, the session-store at `~/.local/share/agent-notify/` and the bar prefix `an_` all carry the one name |
@@ -1894,6 +1895,30 @@ in
     message, which is the macOS natural-scrolling convention and a guess until
     somebody's fingers disagree. Inverting it is one `case` pattern in
     `scroll-shell`.
+15. **The counter is clickable too** — ✅ done, 2026-09-14. Step 12 wired the
+   chain jump into the drawer ROWS, which is where an agent is named. It left
+   the three COUNTERS doing what they had always done — shutting the drawers —
+   and they are the only part of this display you can see without hovering.
+   **So the part a pointer reaches first was the part that could not take you
+   anywhere.** It can now, whenever there is a correct session to go to, which
+   is exactly when the count is 1 (D85). No drawer, no second click on a list of
+   one. At 0 or many the click keeps its old meaning: there is no correct
+   session, the drawer is how you choose among several, and a click that
+   teleports you somewhere you did not pick is worse than a click that does
+   nothing. Hovering is untouched at every count.
+   **What it cost is one shape change.** `count|<state>` was an int and is now
+   `{n, only}` — `only` being the agent's id when there is exactly one, "" when
+   there is not. A counter is a thing you CLICK, so its slot has to carry WHO it
+   counts and not only how many; a row's slot already did. Everything else falls
+   out: the per-key diff (D46) still rewrites a counter only when its value
+   moves, and `click-shell` is the same one the rows use, so the path is walked
+   by one piece of code for both.
+   **Verified on the real bar**, which is the only place this can be: the
+   `awaiting` counter read 1, its click script carried one id, and clicking it
+   from behind Firefox on another workspace landed on Ghostty, workspace 1,
+   pane 188 — the agent that counter stood for. The `working` counter read 2 at
+   the same moment and carried no jump at all.
+   The suite is 164 checks with this in it, all of them passing.
 
 ---
 

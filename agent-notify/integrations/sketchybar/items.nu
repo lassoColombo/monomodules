@@ -471,11 +471,20 @@ export def flash-args [settings: record, value: record]: nothing -> list<string>
 
 # ── what a paint writes ───────────────────────────────────────────────────────
 
-# A drawer's size changed: the item-name's number, its header, and — since an
-# empty drawer opens nothing — the script behind it.
-export def counter-args [settings: record, state: string, count: int]: nothing -> list<string> {
+# A drawer's size changed: the counter's number, its header, the script behind
+# it — since an empty drawer opens nothing — and WHERE CLICKING IT GOES.
+#
+# A COUNTER IS A THING YOU CLICK, AND SOMETIMES THERE IS A CORRECT ANSWER. When
+# it stands for exactly one agent, that agent is unambiguously what you meant,
+# so the click jumps straight there rather than opening a drawer to show you a
+# list of one. When it stands for none or for several there is no correct
+# session, so the click does what it always did and shuts the drawers. Hovering
+# is unchanged either way — the drawer is still how you choose among several.
+export def counter-args [settings: record, state: string, value: record]: nothing -> list<string> {
     let item = item-name $settings $state
     let hue = $settings.colors | get $state
+    let count = $value.n
+    let only = $value.only? | default ""
     let label = if $count == 0 { "  All clear"
         } else if $count > $settings.rows { $"  ($count) active · ($settings.rows) shown"
         } else { $"  ($count) active" }
@@ -484,6 +493,7 @@ export def counter-args [settings: record, state: string, count: int]: nothing -
       $"label=($count)"
       $"label.color=(if $count > 0 { $hue } else { $settings.colors.dim })"
       $"script=(open-shell $settings $state $count)"
+      $"click_script=(if ($only | is-empty) { (close-shell $settings) } else { (click-shell $settings $only) })"
       "--set" (head $settings $state)
       $"icon=(if $count == 0 { '✓' } else { '' })"
       $"icon.color=(if $count == 0 { $settings.colors.working } else { $settings.colors.dim })"
