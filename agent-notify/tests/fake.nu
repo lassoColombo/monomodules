@@ -59,9 +59,22 @@ export def owns-session [rec: record]: nothing -> bool {
 
 export def location-label [rec: record]: nothing -> string { $rec.fake?.where? | default "" }
 
+# The `commands` half of this tool's namespace, validated. Present so the
+# contract's optional fifth member is exercised too: `agent-notify config check`
+# asks a container what its own settings mean, exactly as it asks a display, and
+# it asks WHETHER OR NOT the tool is in `displays:` — nothing turns commands on.
+export def commands-settings [given: record] {
+    for k in ($given | columns | where {|k| $k != "where" }) {
+        error make --unspanned {msg: $"fake: '($k)' is not a command setting"}
+    }
+    $given
+}
+
 export def session-container []: nothing -> record {
     { fake: {info: $CONTAINER_INFO
              owns-session: {|rec| owns-session $rec }
              location-label: {|rec| location-label $rec }
+             commands-settings: {|given| commands-settings $given }
+             focus-session-argv: {|rec| [["echo" "fake"]] }
              focus-session: {|rec| null }} }
 }

@@ -18,7 +18,8 @@
 #     binary: zellij                 #   what both halves share
 #     display:                       #   PUSH — how it SHOWS the session-store
 #       glyphs: {working: 🧠, awaiting: 🔔}
-#     commands: {}                   #   PULL — how its COMMANDS behave
+#     commands:                      #   PULL — how its COMMANDS behave
+#       focus_terminal_window: []    #     argv that brings the terminal forward
 #
 # THE TWO HALVES ARE THE POINT (D47). A tool can do two unrelated things
 # with the session-store, and they are not configured by the same switch:
@@ -101,13 +102,20 @@ export def settings-for [cfg: record, tool: string, half: string]: nothing -> re
 # list means the file is good — or absent, which is also good: no file, no
 # displays.
 #
-# Takes the integration-registry table rather than a list of names, because the
-# last check needs each tool's own `settings`: only the tool knows what a key
+# Takes the integration-registry tables rather than lists of names, because the
+# last checks need each tool's own `settings`: only the tool knows what a key
 # MEANS, and a misspelled colour is the failure this command exists to explain.
-# That check runs for ENABLED tools only — settings for a tool you have switched
-# off are not a problem, and resolving them can require a program you have not
-# installed.
-export def problems [displays: record]: nothing -> list<string> {
+#
+# TWO TABLES, because a tool has two halves and they are validated on different
+# terms (D47, D71). The DISPLAY half is checked for ENABLED tools only —
+# settings for a display you switched off are not a problem, and resolving them
+# can require a program you have not installed. The COMMANDS half is checked
+# WHETHER OR NOT the tool is in `displays:`, because nothing turns commands on:
+# a jump runs because you ran it, so a typo in `commands:` is always live.
+#
+# `containers` is optional so the hot path and the older callers are unaffected;
+# an empty table means the commands half is simply not checked.
+export def problems [displays: record, containers: record = {}]: nothing -> list<string> {
     let f = file
     if not ($f | path exists) { return [] }
 
@@ -173,6 +181,22 @@ export def problems [displays: record]: nothing -> list<string> {
         let owned = $why | str starts-with $"($k): "
         let msg = if $owned { $why | str substring (($k | str length) + 2).. } else { $why }
         $problems = $problems ++ [$"($k).display: ($msg)"]
+    }
+
+    # And the COMMANDS half, for every tool that has one — enabled or not. A
+    # container validates it by BUILDING it, the same way a display does, which
+    # is why the table is closures and not names.
+    for k in ($containers | columns | where {|k| $k in ($cfg | columns) }) {
+        let entry = $containers | get $k
+        if ($entry.commands-settings? == null) { continue }
+        let why = try {
+            do $entry.commands-settings (settings-for $cfg $k "commands")
+            null
+        } catch {|e| $e.msg }
+        if ($why == null) { continue }
+        let owned = $why | str starts-with $"($k): "
+        let msg = if $owned { $why | str substring (($k | str length) + 2).. } else { $why }
+        $problems = $problems ++ [$"($k).commands: ($msg)"]
     }
 
     $problems

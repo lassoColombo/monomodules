@@ -77,4 +77,10 @@ export def location-label [rec: record]: nothing -> string {
 # `error make` and a def annotated with one cannot (plan.md §10).
 export def focus-session-argv [rec: record] { jump argv $rec }
 
+# What this container was told, validated — the `commands` half of its
+# namespace. Exported for `agent-notify config check`, which is the only caller:
+# a jump validates the same settings on its way through, but only when you run
+# one, and a typo should be findable before that.
+export def commands-settings [given: record] { jump commands-settings $given }
+
 export def focus-session [rec: record]: nothing -> nothing { jump $rec }

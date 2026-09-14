@@ -39,7 +39,15 @@
 #   zellij:
 #     binary: zellij         # shared
 #     display: {glyphs: …}   # push — how it shows the session-store
-#     commands: {}           # pull — how its commands behave
+#     commands:              # pull — how its commands behave
+#       focus_terminal_window: [open, -a, Ghostty]
+#
+# That last one is the only setting this module has that names a program, and it
+# names one because it cannot know one: a jump from the BAR arrives from the
+# desktop, so the terminal's window has to come forward before its pane can be
+# focused, and which command does that is your terminal's and your window
+# manager's business (plan.md D50, D73). Empty by default; a jump from inside
+# the terminal never needs it.
 #
 # The commands, every one of them under `agent-notify`:
 #

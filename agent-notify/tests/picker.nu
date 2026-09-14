@@ -106,8 +106,13 @@ export def main [] {
                (built | where id == "bbb" | get 0.container | is-not-empty) true)
         (check "…and an unclaimed one carries null, which is how the caller knows"
                (built | where id == "ddd" | get 0.container) null)
-        (check "a session-container answers THREE questions — `screen` went with the pane preview"
-               ((fake session-container).fake | columns | sort) ["focus-session" "info" "location-label" "owns-session"])
+        (check "a session-container answers THREE questions, with a data half and a settings half"
+               ((fake session-container).fake | columns | sort)
+               ["commands-settings" "focus-session" "focus-session-argv" "info"
+                "location-label" "owns-session"])
+        (check "…and the picker uses only the three it needs — no jump, no settings"
+               ((fake session-container).fake | columns
+                 | where {|c| $c in ["owns-session" "location-label" "focus-session"] } | length) 3)
     ]
 
     # ── the preview: what the agent last SAID ─────────────────────────────────

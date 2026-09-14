@@ -91,6 +91,43 @@ export def main [] {
                ($live.0 | last) "terminal_9")
     ]
 
+    # ── the window, which only a caller from outside climbs to ────────────────
+    # Two levels: the terminal's WINDOW, then the SESSION inside it. Inside
+    # zellij by any route the window is already in front, so the rung is skipped
+    # — and with nothing configured it does not exist at all, which is the
+    # default and must stay byte-for-byte what it was (D72, D73).
+    $env.AGENT_NOTIFY_CONFIG = ($TMP | path join "windowed.yaml")
+    "zellij: {commands: {focus_terminal_window: [/bin/echo, up, Ghostty]}}\n"
+        | save --force $env.AGENT_NOTIFY_CONFIG
+
+    hide-env ZELLIJ_SESSION_NAME
+    let outside = jump argv (find-session "alpha")
+    $env.ZELLIJ_SESSION_NAME = "home"
+    let inside = jump argv (find-session "alpha")
+
+    let g = [
+        (check "from outside the terminal, the window is focused FIRST"
+               ($outside | length) 2)
+        (check "…with exactly the argv the user wrote"
+               ($outside | first) ["/bin/echo" "up" "Ghostty"])
+        (check "…and the pane after it, unchanged"
+               ($outside | last | skip 1)
+               ["--session" "home" "action" "focus-pane-id" "terminal_7"])
+        (check "from inside zellij there is no window to climb to"
+               ($inside | length) 1)
+        (check-err "a setting that is not a list is a loud error, not a guess"
+                   "must be a list of arguments"
+                   {|| "zellij: {commands: {focus_terminal_window: nope}}\n"
+                         | save --force $env.AGENT_NOTIFY_CONFIG
+                       jump argv (find-session "alpha") })
+        (check-err "…and a program that is not on PATH says why that matters here"
+                   "not on PATH"
+                   {|| "zellij: {commands: {focus_terminal_window: [definitely-not-a-program]}}\n"
+                         | save --force $env.AGENT_NOTIFY_CONFIG
+                       jump argv (find-session "alpha") })
+    ]
+    $env.AGENT_NOTIFY_CONFIG = ($TMP | path join "no-config.yaml")
+
     # ── agents there is nowhere to jump to ────────────────────────────────────
     let f = [
         (check-err "an agent that was never seen in a pane is a clear no, not a crash"
@@ -100,6 +137,6 @@ export def main [] {
     ]
 
     hide-env ZELLIJ_SESSION_NAME
-    let all = ($b ++ $c ++ $d ++ $e ++ $f)
+    let all = ($b ++ $c ++ $d ++ $e ++ $f ++ $g)
     summarise $all --title "jump"
 }

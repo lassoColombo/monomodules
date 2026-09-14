@@ -38,14 +38,35 @@
 #      spelling; `switch-session --pane-id` takes only the long one. The store
 #      holds the short one, so the conversion lives in one place below.
 #
-# WHAT IS DELIBERATELY NOT HERE: any window manager. Raising the terminal's
-# window is a different problem with a different caller — the picker runs INSIDE
-# the terminal, where the window is already in front, and a bar click is the
-# only case that needs it. Leaving it until the click is built is what keeps
-# this file from naming a program we do not ship or assuming an operating
-# system. v1 did both, and read the attached session out of the terminal's
-# WINDOW TITLE besides; running inside zellij makes that a lookup of
-# `$env.ZELLIJ_SESSION_NAME`.
+# ── TWO LEVELS OF "GO THERE", AND ONLY ONE OF THEM IS ZELLIJ'S ────────────────
+# A pane is inside a terminal; the terminal is inside a window; which window is
+# in FRONT is the operating system's business. Focusing pane 7 is correct and
+# changes nothing on your screen if you are looking at another application. So
+# the ladder is: focus the terminal's WINDOW, then focus the SESSION inside it.
+#
+# WHO CLIMBS IT IS DECIDED HERE, not by the caller (D72). The question is only
+# "are we inside zellij right now", which `$env.ZELLIJ_SESSION_NAME` answers for
+# free and which this file was already branching on:
+#
+#   inside zellij, same session       focus the pane
+#   inside zellij, another session    switch, which focuses the pane
+#   NOT INSIDE ZELLIJ AT ALL          focus the window FIRST, then the pane
+#
+# The picker is always the first two — it runs in the terminal, so the first
+# rung was climbed by hand when you typed. A click on a bar row is the third,
+# and it is the only caller that has ever needed the window.
+#
+# A flag would have been the wrong shape: `--from-desktop` makes every future
+# caller work out something about itself that this file can simply look up, and
+# it would be wrong in the first place somebody copied it.
+#
+# WHAT THE WINDOW COMMAND IS, WE DO NOT KNOW AND WILL NOT GUESS (D50, D73). It
+# is `zellij.commands.focus_terminal_window:` — argv the user writes, because
+# which program brings a terminal forward depends on their terminal and their
+# window manager. Empty by default, which is not a fallback but the honest
+# answer: with nothing configured this file behaves exactly as it did before the
+# rung existed. v1 guessed, called aerospace, fell back to `open -a Ghostty`,
+# and read the attached session out of the terminal's WINDOW TITLE besides.
 
 use ../../core/config.nu
 use program.nu
@@ -54,10 +75,59 @@ use program.nu
 const BENIGN = ["already focused"]
 
 # The `commands` half of this tool's namespace, plus what it shares with the
-# display half — which today is the whole of it.
-def settings []: nothing -> record {
-    let given = config settings-for (config load) "zellij" "commands"
-    {binary: (program resolve ($given.binary? | default ""))}
+# display half.
+#
+# Strict about `focus_terminal_window` because the failure it prevents is
+# SILENT: a bar click runs under launchd, whose PATH is /usr/bin:/bin and
+# nothing else, so a bare `aerospace` there is not a command that fails — it is
+# a command that does not exist, on a path nobody is watching. The first element
+# is resolved the way `binary` is, and for the same reason (§11).
+#
+# PURE, and exported, for the same reason a display's `settings` is: only the
+# tool knows what its keys mean, so `agent-notify config check` has to be able
+# to ask. Unlike a display's, it is checked WHETHER OR NOT the tool is in
+# `displays:` — nothing turns commands on, so a typo here is always live.
+#
+# No return-type signature: a def annotated with one cannot END in `error make`
+# (plan.md §10).
+export def commands-settings [given: record] {
+    for k in ($given | columns | where {|k| $k not-in ["binary" "focus_terminal_window"] }) {
+        error make --unspanned {msg: ($"zellij: '($k)' is not a command setting "
+            + "\(try: binary, focus_terminal_window\)")}
+    }
+    { binary: (program resolve ($given.binary? | default ""))
+      focus_terminal_window: (window-argv ($given.focus_terminal_window? | default [])) }
+}
+
+def settings [] { commands-settings (config settings-for (config load) "zellij" "commands") }
+
+# An empty list means "do not climb", which is the default and is not an error:
+# with nothing configured a jump does exactly what it did before there was a
+# rung to climb.
+def window-argv [given: any] {
+    if ($given == null) or ($given == []) { return [] }
+    if not (($given | describe) | str starts-with "list") {
+        error make --unspanned {msg: ($"zellij: `commands.focus_terminal_window` must be a list of "
+            + $"arguments, got ($given | describe) \(try: [open, -a, Ghostty])")}
+    }
+    let parts = $given | each {|a| $a | into string }
+    if ($parts | any {|a| ($a | str trim) | is-empty }) {
+        error make --unspanned {msg: "zellij: `commands.focus_terminal_window` has an empty argument"}
+    }
+    let head = $parts | first
+    if ($head | str starts-with "/") {
+        if not ($head | path exists) {
+            error make --unspanned {msg: $"zellij: no program at '($head)' \(commands.focus_terminal_window)"}
+        }
+        return $parts
+    }
+    let found = which $head | get -o 0.path | default ""
+    if ($found | is-empty) {
+        error make --unspanned {msg: ($"zellij: `commands.focus_terminal_window` names '($head)', which "
+            + "is not on PATH — give its absolute path, because a bar click runs with launchd's PATH "
+            + "and not your shell's")}
+    }
+    [$found] ++ ($parts | skip 1)
 }
 
 # See note 3.
@@ -95,10 +165,18 @@ export def argv [
             + "nothing to jump to")}
     }
 
-    let binary = (settings).binary
+    let cfg = settings
+    let binary = $cfg.binary
     let here = $env.ZELLIJ_SESSION_NAME? | default ""
+
+    # The first rung, and only when we are not on the ladder already — see the
+    # header. Inside zellij by any route, the window is in front by definition.
+    let window = if ($here | is-empty) and ($cfg.focus_terminal_window | is-not-empty) {
+        [$cfg.focus_terminal_window]
+    } else { [] }
+
     if ($here == $session) or ($here | is-empty) {
-        return [[$binary "--session" $session "action" "focus-pane-id" (pane-ref $pane)]]
+        return ($window ++ [[$binary "--session" $session "action" "focus-pane-id" (pane-ref $pane)]])
     }
 
     # Only now, and only here — see note 2.
@@ -106,7 +184,7 @@ export def argv [
         error make --unspanned {msg: ($"agent-notify: zellij has no session called '($session)', "
             + $"which is where '($label)' says it is")}
     }
-    [[$binary "--session" $here "action" "switch-session" $session "--pane-id" (pane-ref $pane)]]
+    $window ++ [[$binary "--session" $here "action" "switch-session" $session "--pane-id" (pane-ref $pane)]]
 }
 
 # Focus the agent's pane, switching session first when it lives in another one.
