@@ -13,7 +13,7 @@
 #    place: "home/root"         from the locator; "" when nothing claims it
 #    match: "awaiting monomodules home/root"
 #    rec:   {…}                 the record, for the locator and for the caller
-#    container: {info, owns-session, location-label, focus-session} | null}
+#    containers: [{info, owns-session, location-label, …}]  outermost first}
 #
 # `match` IS EXACTLY WHAT THE ROW SHOWS, and it was not always: the first
 # version folded the agent's last message in too, so that a phrase you
@@ -62,17 +62,20 @@ export def build [records: list<record>, table?: record]: nothing -> list<record
     let t = $table | default (session-containers integration-registry)
     $records
     | each {|r|
-        let container = session-containers container-of $r --table $t
+        let containers = session-containers containers-of $r --table $t
         let state = $r.state? | default "idle"
         let name = label-of $r
-        let location_label = if ($container == null) { "" } else { try { do $container.location-label $r } catch { "" } }
+        # The path, not a place: each container's own label, outside in. One
+        # that has nothing worth a column says "" and drops out, so a chain of
+        # three can still read as one word.
+        let location_label = session-containers location-label $r --table $t
         { id: ($r.id? | default "")
           state: $state
           name: $name
           location-label: $location_label
           match: (flatten-text $"($state) ($name) ($location_label)" | str lowercase)
           rec: $r
-          container: $container }
+          containers: $containers }
       }
     | sort-by {|c| rank $c.state } {|c| $c.location-label } {|c| $c.name }
 }

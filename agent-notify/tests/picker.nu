@@ -102,12 +102,16 @@ export def main [] {
         (check "`place` comes from the session-container that claimed the record"
                (built | where id == "bbb" | get 0.location-label) "box/two")
         (check "…and a record nothing claims has no place" (built | where id == "ddd" | get 0.location-label) "")
-        (check "a claimed record carries the session-container that claimed it"
-               (built | where id == "bbb" | get 0.container | is-not-empty) true)
-        (check "…and an unclaimed one carries null, which is how the caller knows"
-               (built | where id == "ddd" | get 0.container) null)
-        (check "a session-container answers THREE questions — `screen` went with the pane preview"
-               ((fake session-container).fake | columns | sort) ["focus-session" "info" "location-label" "owns-session"])
+        (check "a claimed record carries the PATH it is at, not one container"
+               (built | where id == "bbb" | get 0.containers | length) 1)
+        (check "…and an unclaimed one carries an empty path, which is how the caller knows"
+               (built | where id == "ddd" | get 0.containers) [])
+        (check "a session-container answers THREE questions, with a data half in front of the last"
+               ((fake session-container).fake | columns | sort)
+               ["focus-session" "focus-session-argv" "info" "location-label" "owns-session"])
+        (check "…and the picker uses only the two that may not touch the world"
+               ((fake session-container).fake | columns
+                 | where {|c| $c in ["owns-session" "location-label"] } | length) 2)
     ]
 
     # ── the preview: what the agent last SAID ─────────────────────────────────
@@ -451,19 +455,19 @@ export def main [] {
     ]
 
     # ── the locator table ─────────────────────────────────────────────────────
-    # One row per integration that can answer the three questions. The RECORD
-    # picks its own — not the config file, which says what the store is pushed
-    # to and nothing else (D47).
+    # One row per integration that can answer the three questions, written in
+    # NESTING ORDER (D78). The RECORD picks its own — not the config file, which
+    # says what the store is pushed to and nothing else (D47).
     let m = [
         (check "zellij ships as a session-container" (session-containers integration-registry-names) ["zellij"])
         (check "a record naming a tool is claimed by it"
-               (session-containers container-of {fake: {where: "box/one"}} --table (fake session-container) | is-not-empty) true)
+               (session-containers containers-of {fake: {where: "box/one"}} --table (fake session-container) | length) 1)
         (check "…and one naming none is claimed by nobody"
-               (session-containers container-of {id: "x"} --table (fake session-container)) null)
+               (session-containers containers-of {id: "x"} --table (fake session-container)) [])
         (check "a real zellij record is claimed only when it says where it is, completely"
-               [ (session-containers container-of {zellij: {session: "home", pane_id: "3"}} | is-not-empty)
-                 (session-containers container-of {zellij: {session: "home"}}) ]
-               [true null])
+               [ (session-containers containers-of {zellij: {session: "home", pane_id: "3"}} | length)
+                 (session-containers containers-of {zellij: {session: "home"}} | length) ]
+               [1 0])
     ]
 
     summarise ($a ++ $b ++ $b2 ++ $b3 ++ $c ++ $d ++ $e ++ $f ++ $g ++ $h ++ $i ++ $j ++ $k ++ $l ++ $m) --title "picker"

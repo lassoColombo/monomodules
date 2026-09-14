@@ -43,9 +43,36 @@
 # That is the open session-schema (D11c) doing the dispatching for free, and it
 # means a MIXED fleet works with nothing configured.
 #
-# ORDER IS THE TIE-BREAK, and it is the order written below. An agent reporting
-# two namespaces is not a thing today; when it is, first-listed wins, which is
-# at least stable.
+# ── ORDER IS NESTING ORDER, AND IT IS THE ORDER WRITTEN BELOW (D78) ───────────
+# A session is not inside ONE container. It is at a PATH through several (D77):
+#
+#     aerospace  ──▶  Ghostty  ──▶  zellij  ──▶  pane 7
+#     workspace 1     window 39     home/root
+#
+# so `containers-of` returns EVERY container that claims a record, and reaching
+# the agent is each of them focusing its own coordinate in turn, outside in.
+# Read this file's table top to bottom and you are reading outside to inside.
+#
+# There is no taxonomy to derive that order from and there is not going to be
+# one: a window-manager/application/multiplexer vocabulary was drafted and cut,
+# because the list already says it and naming the kinds named nothing (D78).
+# Adding tmux is one file and one row, placed where it nests.
+#
+# What the single list assumes is that nesting order is the same for everyone,
+# which holds for the real case — a window manager is never inside a
+# multiplexer. Where it would not hold is zellij inside tmux inside zellij, and
+# one list can spell only one order. Written down as the limit rather than
+# designed around.
+#
+# ── `owns-session` AND `location-label` MUST NOT TOUCH THE WORLD ──────────────
+# The picker calls both FOR EVERY RECORD, every two seconds and on every
+# keypress (`picker/mod.nu`, REFRESH_EVERY). A container that answered either by
+# running a program would put one subprocess per agent on a 2-second timer.
+#
+# So the rule is: the two cheap questions are answered FROM THE RECORD, and a
+# container that can only find out by asking the world claims OPTIMISTICALLY and
+# discovers at jump time — where a subprocess is already being run and a human
+# is already waiting. `focus-session-argv` is the member allowed to look.
 
 # A HYPHEN IN A MODULE NAME BECOMES AN UNDERSCORE IN ITS CONSTANT (§10).
 # `use zellij/session-container.nu` makes the module addressable as
@@ -67,17 +94,62 @@ export def integration-registry []: nothing -> record {
 
 export def integration-registry-names []: nothing -> list<string> { integration-registry | columns }
 
-# The container that claims this session, or null when none does.
+# Every container that claims this session, outermost first. Empty when none
+# does, which is an ordinary answer: an agent nothing contains is still a row in
+# the picker — just one with no place and nowhere to go.
 #
-# `--table` is how the suite runs the whole picker with nothing installed: a
-# fake container answers out of a record, the same move `tests/fake.nu` makes
-# for the display contract.
-export def container-of [rec: record, --table: record]: nothing -> any {
+# `--table` is how the suite runs the whole picker with nothing installed: fake
+# containers answer out of a record, the same move `tests/fake.nu` makes for the
+# display contract.
+export def containers-of [rec: record, --table: record]: nothing -> list<record> {
     let t = $table | default (integration-registry)
-    for name in ($t | columns) {
+    $t | columns | each {|name|
         let c = $t | get $name
         let mine = try { do $c.owns-session $rec } catch { false }
-        if $mine { return $c }
+        if $mine { $c } else { null }
+    } | where {|c| $c != null }
+}
+
+# Where the session lives, as a path — each container's own label, outside in,
+# joined. A container with nothing worth a column says "" and drops out, so a
+# chain of three can still read as one word.
+export def location-label [rec: record, --table: record]: nothing -> string {
+    containers-of $rec --table ($table | default (integration-registry))
+    | each {|c| try { do $c.location-label $rec } catch { "" } }
+    | where {|l| $l | is-not-empty }
+    | str join "/"
+}
+
+# PURE: every command reaching this session would run, outermost first. This is
+# what `agent-notify jump --dry-run` prints, and it is the whole decision as
+# data — the same split `render-items`/`push-items` make for a display.
+#
+# A container that claims a session but cannot work out how to reach it right
+# now returns nothing and drops out, rather than failing the whole path: it is
+# the OUTER rungs that are uncertain, and not climbing one is worth less than
+# not arriving at all.
+export def focus-session-argv [rec: record, --table: record]: nothing -> list<list<string>> {
+    containers-of $rec --table ($table | default (integration-registry))
+    | each {|c| try { do $c.focus-session-argv $rec } catch { [] } }
+    | flatten
+}
+
+# Walk the path. Each container runs its OWN commands rather than this walking a
+# flattened argv, because what a command's failure MEANS is the container's to
+# know — zellij's "already focused" is a success, and nothing out here could
+# tell that from a real failure (plan.md §11).
+#
+# BEST EFFORT, AND IT RAISES AT THE END. A container that fails does not stop
+# the ones inside it: focusing a pane you cannot see is exactly what this did
+# before there was an outer rung, and it is worth more than refusing to move.
+# But it is not swallowed either — a jump that half-worked says so, once, naming
+# what failed.
+export def focus-session [rec: record, --table: record]: nothing -> nothing {
+    let failures = containers-of $rec --table ($table | default (integration-registry))
+        | each {|c|
+            try { do $c.focus-session $rec; null } catch {|e| $"($c.info.name): ($e.msg)" }
+        } | where {|f| $f != null }
+    if ($failures | is-not-empty) {
+        error make --unspanned {msg: $"agent-notify: ($failures | str join '; ')"}
     }
-    null
 }

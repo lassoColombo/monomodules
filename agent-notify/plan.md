@@ -1588,8 +1588,9 @@ in
 
 ---
 
-12. **The container chain** — ⏳ in progress; PHASE 1 (probe aerospace) done,
-   2026-09-14. An EXPLORATION, not a design. D77 and D78 settle
+12. **The container chain** — ⏳ in progress. PHASE 1 (probe aerospace) and
+   PHASE 2 (the walk, on fakes) done, 2026-09-14. An EXPLORATION, not a design.
+   D77 and D78 settle
    the model; D79 is open on purpose, and this step is the probing that has to
    happen before an interface is worth writing down. It exists because step 11
    answered the wrong question well: it made `focus-session` climb one extra
@@ -1683,6 +1684,38 @@ in
    member that let `config check` validate a container's own settings — was
    unwound with the window and will be wanted back the moment a container has
    anything to configure.
+   **PHASE 2 IS DONE, and it settled two things the design had not.**
+   `container-of` became `containers-of` — every claimant, outermost first —
+   and the walk lives in `integrations/session-containers.nu` rather than in
+   either caller, so `cli/jump.nu` and `cli/browse.nu` are both one line and
+   neither knows how long the path is. `tests/fake.nu` ships a second container
+   and the whole composition is asserted with nothing installed.
+   **`owns-session` AND `location-label` MAY NOT TOUCH THE WORLD.** Not a style
+   rule — `picker/rows.nu` calls both FOR EVERY RECORD every two seconds
+   (REFRESH_EVERY) and on every keypress, so a container answering either by
+   running a program would put one subprocess per agent on a 2-second timer.
+   Which forces the shape of every outer container, aerospace included: the two
+   cheap questions are answered FROM THE RECORD, and a container that can only
+   find out by asking the world CLAIMS OPTIMISTICALLY and discovers in
+   `focus-session-argv`, where a subprocess is already being run and a human is
+   already waiting. The outer fake is built to that shape on purpose.
+   **A CLAIMANT THAT CANNOT REACH DROPS OUT rather than failing the path.** It
+   is the OUTER rungs that are uncertain — a window that has closed, a window
+   manager that is not running — and not climbing one is worth less than not
+   arriving at all. So `focus-session-argv` contributes nothing and the inner
+   containers still run. The walk itself is BEST EFFORT AND RAISES AT THE END:
+   one container failing does not stop the ones inside it, because focusing a
+   pane you cannot see is exactly what this did before there was an outer rung,
+   but a jump that half-worked says so once, naming what failed.
+   **And the label is a path too.** Each container's own label, outside in,
+   joined — with "" dropping out, so a container with nothing worth a column
+   does not pad one. A one-container path reads exactly as it did.
+   **One knowing compromise.** `cli/browse.nu` now reaches
+   `session-containers` both directly and through `picker/rows.nu`, so that
+   module is parsed twice (§10). Measured at ~1ms on a command a human types,
+   against the 2.5ms D29 was written about, which was every tool call forever.
+   The alternative is browse walking the path itself, which would put the
+   best-effort-and-raise rule in two places.
    **What must NOT happen** is this being folded into another step. Step 11 is
    what folding it in looks like: a model invented to fit the one caller in
    front of it, built, and unwound the same day. Probe first, interface second.

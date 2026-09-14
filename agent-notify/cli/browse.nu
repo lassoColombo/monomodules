@@ -20,7 +20,14 @@
 # mechanism for one guarantee, and the worst it saves you from is a jump that
 # says "no session called 'x'".
 
+# A DIAMOND, KNOWINGLY. `picker/rows.nu` reaches `session-containers` too — it
+# needs the labels — so this module is parsed by two import paths and therefore
+# twice (§10). Measured at ~1ms on a command a human types, against the 2.5ms
+# D29 was written about, which was every tool call forever. The alternative is
+# browse walking the path itself, which would put the best-effort-and-raise rule
+# in two places. One of those is a real cost and the other is a real bug.
 use ../core/session-store.nu
+use ../integrations/session-containers.nu
 use ../picker
 
 const SELF = path self
@@ -43,10 +50,10 @@ export def main [
     # Nothing claimed it, so there is nowhere to go — an agent that never
     # reported a pane. Worth a sentence rather than a silent return: you chose
     # it on purpose.
-    if ($picked.container == null) {
+    if ($picked.containers | is-empty) {
         error make --unspanned {msg: $"agent-notify: '($picked.name)' is not in a pane — nothing to jump to"}
     }
-    do $picked.container.focus-session $picked.rec
+    session-containers focus-session $picked.rec
 }
 
 # What to put in your zellij config so Alt-a opens this. Printed, never applied.

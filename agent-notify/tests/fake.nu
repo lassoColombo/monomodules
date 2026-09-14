@@ -40,7 +40,7 @@ export def push-items [changed: record, removed: record, settings: record]: noth
 # ── and a SESSION-CONTAINER ───────────────────────────────────────────────────
 #
 # The other capability an integration can have (plan.md §4.8), in the same
-# spirit: three questions answered out of the record itself, so the whole picker
+# spirit: every question answered out of the record itself, so the whole picker
 # — rows, filtering, scrolling, frames, keys — can be asserted on a machine with
 # no zellij and no tmux.
 #
@@ -59,9 +59,50 @@ export def owns-session [rec: record]: nothing -> bool {
 
 export def location-label [rec: record]: nothing -> string { $rec.fake?.where? | default "" }
 
+export def focus-session-argv [rec: record]: nothing -> list<list<string>> {
+    [["echo" "fake" ($rec.fake?.where? | default "")]]
+}
+
 export def session-container []: nothing -> record {
     { fake: {info: $CONTAINER_INFO
              owns-session: {|rec| owns-session $rec }
              location-label: {|rec| location-label $rec }
+             focus-session-argv: {|rec| focus-session-argv $rec }
              focus-session: {|rec| null }} }
+}
+
+# ── AND AN OUTER ONE, so the CHAIN can be exercised ───────────────────────────
+#
+# A session is at a PATH through containers (D77), so one fake proves the
+# contract and two prove the walk. This one is deliberately the awkward shape
+# the real outer container has: it cannot tell from the record alone whether it
+# can actually reach the session, because only the world knows — so it CLAIMS
+# OPTIMISTICALLY and finds out in `focus-session-argv`, which is the member
+# allowed to look. `owns-session` stays free, which is what the picker needs: it
+# asks every record, every two seconds.
+#
+#   {fake: {where: "box/one", outer: "desk-3"}}   claimed, and reachable
+#   {fake: {where: "box/one"}}                    claimed, and nowhere to go
+#
+# `location-label` is "" on purpose: a container with nothing worth a column
+# should drop out of the path rather than pad it.
+export const OUTER_INFO = {name: "fake-outer", title: "whatever the box sits on"}
+
+export def outer-owns-session [rec: record]: nothing -> bool {
+    (($rec.fake?.where? | default "") | is-not-empty)
+}
+
+export def outer-focus-session-argv [rec: record]: nothing -> list<list<string>> {
+    let handle = $rec.fake?.outer? | default ""
+    if ($handle | is-empty) { [] } else { [["echo" "outer" $handle]] }
+}
+
+# OUTERMOST FIRST — the order of this record is the nesting order (D78).
+export def session-container-chain []: nothing -> record {
+    { fake-outer: {info: $OUTER_INFO
+                   owns-session: {|rec| outer-owns-session $rec }
+                   location-label: {|rec| "" }
+                   focus-session-argv: {|rec| outer-focus-session-argv $rec }
+                   focus-session: {|rec| null }} }
+    | merge (session-container)
 }
