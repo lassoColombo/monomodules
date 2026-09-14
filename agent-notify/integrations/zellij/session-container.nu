@@ -5,11 +5,18 @@
 # RUN INSIDE (plan.md §4.8, D69). Three questions, none of which a caller can
 # answer for itself:
 #
-#   owns-session    is this session yours?      it has a `zellij` namespace
-#   location-label  where does it live?         home/root
-#   focus-session   take me there               jump
+#   owns-session         is this session yours?  it has a `zellij` namespace
+#   location-label       where does it live?     home/root
+#   focus-session-argv   what would take me      jump argv
+#                        there?
+#   focus-session        take me there           jump
 #
-# A tmux integration is the same three functions and one more row in
+# The last two are one question with a data half in front of it, the same split
+# `render-items`/`push-items` make for a display and for the same reason (rule 3
+# of `integrations/mod.nu`): a side effect is built as data first, so the suite
+# can assert what a jump WOULD run without moving a real screen.
+#
+# A tmux integration is the same four functions and one more row in
 # `integrations/session-containers.nu`. Nothing in `picker/` changes, and
 # nothing in the bar does either — which is the whole reason this file exists
 # rather than each caller reaching for zellij directly.
@@ -62,9 +69,12 @@ export def location-label [rec: record]: nothing -> string {
     if ($label | is-empty) { $session } else { $"($session)/($label)" }
 }
 
-# Take me there. One line, because `jump` already knows the three things zellij
-# does that can turn a jump into a silent no-op, and knowing them twice would be
-# one place too many.
-export def focus-session [rec: record]: nothing -> nothing {
-    jump ($rec.id? | default "")
-}
+# Take me there, and what that would run. One line each, because `jump` already
+# knows the three things zellij does that can turn a jump into a silent no-op,
+# and knowing them twice would be one place too many.
+#
+# No return-type signature on `focus-session-argv`: `jump argv` can END in
+# `error make` and a def annotated with one cannot (plan.md §10).
+export def focus-session-argv [rec: record] { jump argv $rec }
+
+export def focus-session [rec: record]: nothing -> nothing { jump $rec }

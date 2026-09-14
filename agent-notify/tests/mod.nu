@@ -14,6 +14,7 @@
 #   nu agent-notify/tests/sketchybar.nu
 #   nu agent-notify/tests/prune-daemon.nu
 #   nu agent-notify/tests/jump.nu
+#   nu agent-notify/tests/jump-command.nu
 #   nu agent-notify/tests/picker.nu
 #
 # Not part of the module — nothing in ../mod.nu imports this, so `use
@@ -28,6 +29,7 @@ export use markdown.nu
 export use sketchybar.nu
 export use prune-daemon.nu
 export use jump.nu
+export use jump-command.nu
 export use picker.nu
 
 # Run everything; returns false if any suite had a failure.
@@ -38,6 +40,6 @@ export use picker.nu
 # `main` means the runner is spelled `tests`, and no suite can be poisoned by it
 # (§10).
 export def main []: nothing -> bool {
-    let results = [(session-store) (claude) (codex) (dispatch) (zellij) (agent-process) (markdown) (sketchybar) (prune-daemon) (jump) (picker)]
+    let results = [(session-store) (claude) (codex) (dispatch) (zellij) (agent-process) (markdown) (sketchybar) (prune-daemon) (jump) (jump-command) (picker)]
     ($results | where {|ok| not $ok } | is-empty)
 }

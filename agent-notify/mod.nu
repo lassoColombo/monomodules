@@ -53,7 +53,7 @@
 #   prune-daemon status                      the periodic look for dead agents
 #   prune-daemon help-setup <launcher>       …how to set it up, printed
 #   browse [query]                           pick a live agent, land in its pane
-#   jump <who>                               …or go straight there, by name or id
+#   jump <who> [--dry-run]                   …or go straight there, by name or id
 #
 # The command set is deliberately reachable from outside nushell (plan.md P5):
 #
@@ -67,13 +67,10 @@ export use cli/config.nu *
 export use cli/displays.nu
 export use cli/prune-daemon.nu *
 export use cli/browse.nu
+export use cli/jump.nu
 
-# The PULL half of an integration: commands, not a display. Nothing dispatches
-# to them and `displays:` does not turn them on — see integrations/mod.nu.
-#
-# `browse` is NOT here, and that is the shape of it: a picker is not a zellij
-# program. It asks whichever integration claimed an agent where it lives and
-# what is on its screen (`picker/locators.nu`), so it sits with the other
-# commands and a tmux integration would never touch it. A jump genuinely is
-# zellij's, and stays here.
-export use integrations/zellij/jump.nu
+# `browse` and `jump` are both up there with the rest, and neither names a tool.
+# A picker is not a zellij program and neither is a jump: both ask whichever
+# integration CONTAINS an agent where it lives and how to get there
+# (`integrations/session-containers.nu`), so a tmux integration adds one file
+# and one row in that table and touches neither command (plan.md §4.8, D74).

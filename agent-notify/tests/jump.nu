@@ -1,4 +1,9 @@
-# Step 6 — `agent-notify jump`: which agent you meant, and what zellij is asked.
+# What ZELLIJ is asked, when something wants to focus one of its panes.
+#
+# HALF A SUITE, because step 11 split the command from the integration (D74).
+# Which agent you meant, and which integration has it, is `tests/jump-command.nu`
+# — this file is one container's answer and nothing else. `find-session` appears
+# only to turn a name into the record `jump argv` now takes.
 #
 # NOT ONE JUMP HAPPENS HERE, and that is the point of the file's shape. The
 # cross-session branch moves a real screen to a real other session, which a test
@@ -10,6 +15,7 @@
 # (zellij would CREATE it) and that refusal is the thing worth proving.
 
 use ../integrations/zellij/jump.nu
+use ../core/find-session.nu
 use ../core/session-store.nu
 use assert.nu *
 
@@ -37,32 +43,18 @@ export def main [] {
                                  zellij: {session: "elsewhere", pane_id: "terminal_9"}}
     session-store patch "2222cccc-0000" {agent: "claude", state: "idle", name: "gamma"}
 
-    # ── which agent you meant ─────────────────────────────────────────────────
-    # An id is a uuid. Nobody types one, so neither should this command insist.
-    let a = [
-        (check "an exact id finds it" (jump find "1111aaaa-0000" | get name) "alpha")
-        (check "so does a unique prefix" (jump find "1111" | get name) "alpha")
-        (check "…and so does the name the agent gave itself"
-               (jump find "beta" | get id) "2222bbbb-0000")
-        (check "a name beats a prefix that also matches something else"
-               (jump find "gamma" | get id) "2222cccc-0000")
-        (check-err "a prefix matching nothing says so, and says where to look"
-                   "no agent called 'zzz'" {|| jump find "zzz" })
-        (check-err "…and an ambiguous one lists the candidates rather than guessing"
-                   "could be any of" {|| jump find "2222" })
-        (check-err "…naming them" "2222bbbb-0000" {|| jump find "2222" })
-    ]
-
     # ── what zellij is asked ──────────────────────────────────────────────────
     # Same session: focus the pane, and nothing else. No `list-sessions` is run
     # on this path — a session that is gone answers for itself.
     $env.ZELLIJ_SESSION_NAME = "home"
-    let same = jump argv "alpha"
+    let same = jump argv (find-session "alpha")
     let b = [
+        (check "a jump is a LIST of commands, even when it is one"
+               ($same | length) 1)
         (check "in the same session, the pane is simply focused"
-               ($same | skip 1) ["--session" "home" "action" "focus-pane-id" "terminal_7"])
+               ($same.0 | skip 1) ["--session" "home" "action" "focus-pane-id" "terminal_7"])
         (check "an ABSOLUTE program, because a daemon's PATH is not a shell's"
-               ($same | first | str starts-with "/") true)
+               ($same.0 | first | str starts-with "/") true)
     ]
 
     # Outside zellij altogether there is no client to move, so the best that can
@@ -70,7 +62,7 @@ export def main [] {
     hide-env ZELLIJ_SESSION_NAME
     let c = [
         (check "from outside zellij, the target session is asked directly"
-               (jump argv "alpha" | skip 1)
+               (jump argv (find-session "alpha") | get 0 | skip 1)
                ["--session" "home" "action" "focus-pane-id" "terminal_7"])
     ]
 
@@ -80,32 +72,34 @@ export def main [] {
     $env.ZELLIJ_SESSION_NAME = "home"
     let d = [
         (check-err "a switch to a session that is gone is refused, not obeyed"
-                   "has no session called 'elsewhere'" {|| jump argv "beta" })
-        (check-err "…and says which agent claimed it" "'beta'" {|| jump argv "beta" })
+                   "has no session called 'elsewhere'" {|| jump argv (find-session "beta") })
+        (check-err "…and says which agent claimed it" "'beta'"
+                   {|| jump argv (find-session "beta") })
     ]
 
     # And against one that really is there, the switch is spelled out — note the
     # pane id, which `switch-session` will only take in its long form.
     probe-session "up"
     session-store patch "2222bbbb-0000" {zellij: {session: $PROBE}}
-    let live = jump argv "beta"
+    let live = jump argv (find-session "beta")
     probe-session "down"
     let e = [
         (check "a live session is switched to, from the one asking"
-               ($live | skip 1)
+               ($live.0 | skip 1)
                ["--session" "home" "action" "switch-session" $PROBE "--pane-id" "terminal_9"])
         (check "…and a pane id already in its long form is left alone"
-               ($live | last) "terminal_9")
+               ($live.0 | last) "terminal_9")
     ]
 
     # ── agents there is nowhere to jump to ────────────────────────────────────
     let f = [
         (check-err "an agent that was never seen in a pane is a clear no, not a crash"
-                   "is not in a zellij pane" {|| jump argv "gamma" })
-        (check-err "…named, so you know which one" "'gamma'" {|| jump argv "gamma" })
+                   "is not in a zellij pane" {|| jump argv (find-session "gamma") })
+        (check-err "…named, so you know which one" "'gamma'"
+                   {|| jump argv (find-session "gamma") })
     ]
 
     hide-env ZELLIJ_SESSION_NAME
-    let all = ($a ++ $b ++ $c ++ $d ++ $e ++ $f)
+    let all = ($b ++ $c ++ $d ++ $e ++ $f)
     summarise $all --title "jump"
 }

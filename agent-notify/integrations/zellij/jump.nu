@@ -1,8 +1,19 @@
-# `agent-notify jump <who>` — go to an agent's pane.
+# Focus an agent's pane — zellij's half of `focus-session`.
 #
 # The PULL half of the zellij integration. Nothing dispatches to it and nothing
-# in `displays:` turns it on: it runs because you ran it (plan.md D47). The
-# picker's last line is a call to this, and a click on a bar row will be too.
+# in `displays:` turns it on: it runs because you ran it (plan.md D47). It is no
+# longer the `agent-notify jump` COMMAND — that is `cli/jump.nu`, which asks the
+# registry which container has the agent (D74). This is one container's answer,
+# and it is what both the picker and a click on a bar row end up in.
+#
+# IT TAKES A RECORD, NOT A NAME. Resolving a name is `core/find-session.nu`'s
+# job and never was zellij's; the caller has already done it, and asking twice
+# would be two reads of the session-store for one jump.
+#
+# `argv` RETURNS A LIST OF COMMANDS, not one. Today it is always a single
+# focus — but a caller arriving from the desktop has a window to focus first
+# (D72), and a shape that can only hold one command would have to be broken to
+# say so.
 #
 # THREE THINGS ZELLIJ DOES THAT THE CODE HAS TO KNOW. All three were probed
 # rather than assumed, and all three can turn a jump into a silent no-op:
@@ -36,7 +47,6 @@
 # WINDOW TITLE besides; running inside zellij makes that a lookup of
 # `$env.ZELLIJ_SESSION_NAME`.
 
-use ../../core/session-store.nu
 use ../../core/config.nu
 use program.nu
 
@@ -64,47 +74,17 @@ def sessions [binary: string]: nothing -> list<string> {
     $r.stdout | lines | each {|l| $l | str trim } | where {|l| $l | is-not-empty }
 }
 
-# Which agent you meant. An id is a uuid, which nobody types, so a unique PREFIX
-# of one works — and so does an agent's NAME, which is the thing the naming
-# convention exists to give it. Ambiguity is an error that lists the candidates
-# rather than a coin toss.
-#
-# No return-type signature: a def annotated with one cannot END in `error make`
-# (plan.md §10). Same for `argv` below.
-@search-terms agent notify jump find which resolve id name prefix
-@example "which agent does this prefix mean?" { agent-notify jump find 6923c0 }
-export def find [
-    who: string     # an agent's id, a unique prefix of one, or its name
-] {
-    let all = session-store list
-    let exact = $all | where {|r| ($r.id? | default "") == $who }
-    if ($exact | is-not-empty) { return ($exact | first) }
-
-    let byname = $all | where {|r| ($r.name? | default "") == $who }
-    let prefix = $all | where {|r| ($r.id? | default "") | str starts-with $who }
-    let hits = ($byname ++ $prefix) | uniq-by id
-    if ($hits | length) == 1 { return ($hits | first) }
-    if ($hits | is-empty) {
-        error make --unspanned {msg: $"agent-notify: no agent called '($who)' \(try: agent-notify session-store list\)"}
-    }
-    let which = $hits | each {|r| $"($r.id) \(($r.name? | default '-')\)" } | str join ", "
-    error make --unspanned {msg: $"agent-notify: '($who)' could be any of: ($which)"}
-}
-
 # THE WHOLE DECISION, as DATA — the same split `mod.nu`'s `commands` and the
 # bar's `message` use, and here it earns its keep twice over: the cross-session
 # branch moves your screen to another session, which is not something a test
-# suite may do, and `agent-notify jump argv <who>` answers "what would that
+# suite may do, and `agent-notify jump --dry-run` answers "what would that
 # actually run?" without running it.
 #
 # Being outside zellij (`here` empty) reads as "tell the target session to move
-# whatever client it has" — the best available without a window to raise.
-@search-terms agent notify jump argv dry run command preview what would
-@example "what would that do?" { agent-notify jump argv build-the-thing }
+# whatever client it has" — the best available without a window in front of it.
 export def argv [
-    who: string     # an agent's id, a unique prefix of one, or its name
+    rec: record     # the session to focus, already resolved
 ] {
-    let rec = find $who
     let z = $rec.zellij? | default {}
     let session = $z.session? | default ""
     let pane = $z.pane_id? | default ""
@@ -118,7 +98,7 @@ export def argv [
     let binary = (settings).binary
     let here = $env.ZELLIJ_SESSION_NAME? | default ""
     if ($here == $session) or ($here | is-empty) {
-        return [$binary "--session" $session "action" "focus-pane-id" (pane-ref $pane)]
+        return [[$binary "--session" $session "action" "focus-pane-id" (pane-ref $pane)]]
     }
 
     # Only now, and only here — see note 2.
@@ -126,23 +106,21 @@ export def argv [
         error make --unspanned {msg: ($"agent-notify: zellij has no session called '($session)', "
             + $"which is where '($label)' says it is")}
     }
-    [$binary "--session" $here "action" "switch-session" $session "--pane-id" (pane-ref $pane)]
+    [[$binary "--session" $here "action" "switch-session" $session "--pane-id" (pane-ref $pane)]]
 }
 
 # Focus the agent's pane, switching session first when it lives in another one.
 #
 # Silent on success, the way a command that moved your screen should be: you are
 # looking at the result.
-@search-terms agent notify jump go focus goto pane session zellij attach switch
-@example "go to an agent by name" { agent-notify jump build-the-thing }
-@example "…or by the start of its id" { agent-notify jump 6923c0bc }
 export def main [
-    who: string     # an agent's id, a unique prefix of one, or its name
+    rec: record     # the session to focus, already resolved
 ] {
-    let cmd = argv $who
-    let r = ^($cmd | first) ...($cmd | skip 1) | complete
-    let why = $r.stderr | str trim
-    if ($why | is-empty) { return }
-    if ($BENIGN | any {|b| $why | str contains $b }) { return }
-    error make --unspanned {msg: $"agent-notify: ($why)"}
+    for cmd in (argv $rec) {
+        let r = ^($cmd | first) ...($cmd | skip 1) | complete
+        let why = $r.stderr | str trim
+        if ($why | is-empty) { continue }
+        if ($BENIGN | any {|b| $why | str contains $b }) { continue }
+        error make --unspanned {msg: $"agent-notify: ($why)"}
+    }
 }
