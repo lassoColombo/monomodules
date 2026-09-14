@@ -63,7 +63,12 @@
 # WHAT THE WINDOW COMMAND IS, WE DO NOT KNOW AND WILL NOT GUESS (D50, D74). It
 # is `zellij.commands.focus_terminal_window:` — argv the user writes, because
 # which program brings a terminal forward depends on their terminal and their
-# window manager. Empty by default, which is not a fallback but the honest
+# window manager. What that looks like, for the two shapes it usually takes:
+#
+#   focus_terminal_window: [/usr/bin/open, -a, Ghostty]        # the terminal
+#   focus_terminal_window: [/opt/homebrew/bin/aerospace, focus-monitor, …]
+#
+# The first is the safe one and works without a window manager at all. Empty by default, which is not a fallback but the honest
 # answer: with nothing configured this file behaves exactly as it did before the
 # rung existed. v1 guessed, called aerospace, fell back to `open -a Ghostty`,
 # and read the attached session out of the terminal's WINDOW TITLE besides.
