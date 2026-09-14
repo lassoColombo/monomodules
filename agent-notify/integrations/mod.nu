@@ -86,28 +86,10 @@
 # The same idea for the other capability, and the same hand-written table, in
 # `integrations/session-containers.nu`:
 #
-#   INFO                what it is
-#   owns-session        is this session yours?  it has a `zellij` namespace
-#   location-label      where does it live?     home/root
-#   focus-session-argv  what would take me      `jump argv`
-#                       there?
-#   focus-session       take me there           `jump`
-#   commands-settings   OPTIONAL: validate the `commands` half of this tool's
-#                       namespace, the way a display's `settings` validates the
-#                       `display` half — and checked WHETHER OR NOT the tool is
-#                       in `displays:`, because nothing turns commands on.
-#
-# The two `focus-session` members are one question with a data half in front of
-# it, the same split `render-items`/`push-items` make, for the same reason: see
-# rule 3 below.
-#
-# THE WINDOW IS THE CONTAINER'S PROBLEM, NOT THE CALLER'S (D73). A pane is
-# inside a terminal, the terminal is inside a window, and focusing a pane you
-# cannot see changes nothing. So `focus-session` climbs both rungs when it has
-# to — it knows whether we are inside it already — and no caller carries a flag
-# saying where it came from. What brings a window forward is the user's argv
-# (`commands.focus_terminal_window`), because it depends on their terminal and
-# their window manager, and this module names neither (D50, D74).
+#   INFO            what it is
+#   owns-session    is this session yours?   it has a `zellij` namespace
+#   location-label  where does it live?      home/root
+#   focus-session   take me there            `jump`
 #
 # There was a `screen` — dump me this agent's live terminal — and step 8 took it
 # out with the preview that needed it (D58). The picker shows the stored message

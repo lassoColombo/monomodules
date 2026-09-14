@@ -7,12 +7,7 @@
 #
 # FOUR MEMBERS, THREE QUESTIONS — `focus-session` has a data half in front of
 # it, `focus-session-argv`, so a jump can be asserted without moving a screen.
-# And it was four questions until step 8.
-#
-# `commands-settings` is a fifth member and not a question at all: it is how
-# `agent-notify config check` asks a container what its own settings mean,
-# exactly as it asks a display. OPTIONAL — a container with nothing to configure
-# leaves it out. `screen` — dump me this agent's
+# And it was four questions until step 8. `screen` — dump me this agent's
 # live terminal — went with the preview that needed it (D58): what the picker
 # shows is the stored message now, which every record has and no tool has to be
 # asked for. A container answers only what the multiplexer alone can answer.
@@ -66,7 +61,6 @@ export def integration-registry []: nothing -> record {
     { zellij: {info: $session_container.INFO
                owns-session: {|rec| session-container owns-session $rec }
                location-label: {|rec| session-container location-label $rec }
-               commands-settings: {|given| session-container commands-settings $given }
                focus-session-argv: {|rec| session-container focus-session-argv $rec }
                focus-session: {|rec| session-container focus-session $rec }} }
 }

@@ -31,12 +31,6 @@ def displays []: nothing -> record {
              push-items: {|changed, removed, s| fake push-items $changed $removed $s }} }
 }
 
-# The SESSION-CONTAINER table, the other capability an integration can have
-# (plan.md §4.8). `config check` is handed both, because a tool's two halves are
-# validated on different terms: a display's only when it is switched on, a
-# container's always.
-def containers []: nothing -> record { fake session-container }
-
 def write-config [cfg: record] { $cfg | to yaml | save --force $CFG }
 def log-lines []: nothing -> int {
     if ($LOG | path exists) { open --raw $LOG | lines | where {|l| $l | is-not-empty } | length } else { 0 }
@@ -131,32 +125,6 @@ export def main [] {
     write-config {displays: [], fake: {display: {}}}
     let a10 = [
         (check "settings for a tool that is switched off are not a problem"
-               (config problems (displays)) [])
-    ]
-
-    # ── and the COMMANDS half, which no list turns on ─────────────────────────
-    # A display is only checked when it is switched on, because settings for
-    # something you are not using are not a problem. Commands have no switch —
-    # you run one and it runs — so a typo there is live whether or not the tool
-    # appears in `displays:`, and `config check` must say so.
-    write-config {displays: [], fake: {commands: {nonsense: 1}}}
-    let a11 = [
-        (check "a commands typo is caught even for a tool nothing pushes to"
-               (config problems (displays) (containers) | length) 1)
-        (check "…in the tool's own words"
-               (config problems (displays) (containers) | first
-                 | str contains "'nonsense' is not a command setting") true)
-        (check "…and says which tool and which half"
-               (config problems (displays) (containers) | first
-                 | str starts-with "fake.commands:") true)
-        (check "a good commands half is silent"
-               (config problems {displays: ["fake"], fake: {commands: {where: "box/one"}}}
-                 | describe | str starts-with "list") true)
-    ]
-    write-config {displays: [], fake: {commands: {where: "box/one"}}}
-    let a12 = [
-        (check "…and so is a correct one" (config problems (displays) (containers)) [])
-        (check "a container table that is not passed means the half is not checked"
                (config problems (displays)) [])
     ]
 
@@ -265,7 +233,7 @@ export def main [] {
                (last-line) "Wa1")
     ]
 
-    let all = ($a ++ $a2 ++ $a3 ++ $a4 ++ $a5 ++ $a6 ++ $a7 ++ $a8 ++ $a9 ++ $a10 ++ $a11 ++ $a12
+    let all = ($a ++ $a2 ++ $a3 ++ $a4 ++ $a5 ++ $a6 ++ $a7 ++ $a8 ++ $a9 ++ $a10
                ++ $b ++ $b_gate ++ $b_key ++ $b_gone ++ $b_force
                ++ $c ++ $c_iso ++ $c_settings ++ $c_nofile ++ $d ++ $e)
     summarise $all --title "config + dispatch"

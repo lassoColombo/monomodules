@@ -813,46 +813,63 @@ against 3.57ms). So the split is load-bearing, not untidiness (D72):
 The rule a third capability will follow: **a registry lives where its consumers
 can reach it and no display can.**
 
-**There are TWO levels of "go there", and only one of them is zellij's.** A pane
-is inside a terminal; the terminal is inside a window; which window is in front
-is the operating system's business. `focus-session` makes pane 7 the active
-pane, correctly, and if you are looking at another application nothing on your
-screen changes. So the ladder is **focus the terminal's window, then focus the
-session inside it** — same verb, two levels, in the order they run.
+**A SESSION IS NOT INSIDE ONE CONTAINER — IT IS AT A PATH THROUGH SEVERAL, and
+this section got that wrong twice before getting it right.** A pane is inside a
+terminal; the terminal is inside a window; which window is in front is a window
+manager's business. Reaching an agent is every one of those focusing its own
+coordinate, in order, from the outside in:
 
-**`focus-session` decides whether to climb it; no caller ever says where it
-is.** The picker runs inside the terminal, where the window is already in front
-— the first rung was climbed by hand, for free, when you typed. A bar click is
-the first caller that arrives from the desktop, where it was not. The wrong fix
-is a flag — `focus-session --from-desktop` —
-because it makes every future caller learn something about itself that the
-container can simply look up: zellij knows whether we are inside it, since
-`$env.ZELLIJ_SESSION_NAME` is either set or it is not, and `jump argv` already
-branches on precisely that. So `focus-session` means *take me there from
-wherever I am*,
-and the picker and the click call the identical thing (D73).
+    aerospace  ──▶  Ghostty  ──▶  zellij  ──▶  pane 7
+    workspace 1     window 39     home/root
 
-**The raise is the CONTAINER's setting, not the clicker's.** §9b.1 sketched
-`sketchybar.commands.raise:`, which is one level too low: what needs focusing is
-the window the CONTAINER sits in, so every caller arriving from outside would
-need its own copy of the same argv. It belongs to
-`zellij.commands.focus_terminal_window:` —
-user-supplied argv, run before the focus, **empty by default** (D74). That is
-what keeps D50 true — the module names no window manager and assumes no
-operating system, because the program is the user's word — and it turns §9b.1's
-second option, *do nothing*, from a decision into a default value.
+**What was built instead**, and unwound on the same day (D73, D74 — both
+REVERSED): `focus-session` climbed exactly two rungs, and the outer one was a
+`zellij.commands.focus_terminal_window:` argv the user wrote. Two things wrong
+with it, and the second is the one that matters.
 
-**So the contract gains a member and not a question.** `focus-session` needs a
-data half — `focus-session-argv`, returning what *would* be run, the window
-command included — for the same reason
-`render-items` sits in front of `push-items` and `jump argv` sits in front of
-`jump main`: rule 3 of `integrations/mod.nu`, a side effect is built as data
-first. It is what lets the suite assert a raise with no window manager on the
-machine, and what `agent-notify jump --dry-run` answers. Note what is NOT a
-member: *are we inside you right now* is how zellij implements
-`focus-session`, not
-something a caller may ask, because the moment it is askable a caller will ask
-it and decide for itself (D73).
+It put the window on the wrong tool: zellij does not contain a window, it is
+contained BY one, so a setting describing the window sat on the thing least
+able to know anything about it. And it made the outermost container something
+you CONFIGURE rather than something you HAVE — which is precisely the
+distinction `displays:` exists to keep (D47): a tool is not a string in a list,
+it is a file that answers questions. aerospace answering "which window is this
+agent in, and focus it" is the same shape as zellij answering "which pane", one
+level out. Written as a config blob it could never be more than argv; written
+as a container it is an integration like any other, and D50 is served BETTER
+rather than bent — the module still names no window manager, because naming one
+means opting into one.
+
+**Which leaves one concept and no vocabulary of kinds.** A container is a
+container. There is no window-manager/application/multiplexer taxonomy, no
+layer, no depth field: the registry is hand-written already (D26), so the ORDER
+IT IS WRITTEN IN is the nesting order, outermost first, and that is the whole of
+it (D78). One list, read top to bottom, reads outside to inside.
+
+**And the chain is what the caller never has to know.** `containers-of` returns
+every container that claims a record rather than the first, and `focus-session`
+walks them. A chain of one, two or three is the same code — so a user with
+Ghostty splits and no zellij, and an agent living on the desktop with no
+terminal at all, are not special cases. That also retires the flag question for
+good: nobody passes `--from-desktop`, because there is nothing to decide.
+
+**THE INTERFACE FOR THAT IS OPEN (D79), AND STEP 12 IS THE EXPLORATION.** What
+is settled is the model above. What is not settled is every mechanism it needs,
+and some of it was probed and found harder than it looks — see step 12. The
+committed contract is unchanged and still right for one container; what a chain
+does to `discover-own-location`, to coordinates that go stale, and to
+`location-label` is exactly what has to be found out by building rather than
+decided here.
+
+**The contract's data half earns its keep either way.**  `focus-session` needs
+a data half — `focus-session-argv`, returning what *would* be run — for the
+same reason `render-items` sits in front of `push-items` and `jump argv` sits
+in front of `jump main`: rule 3 of `integrations/mod.nu`, a side effect is
+built as data first. It is what lets the suite assert a raise with no window
+manager on the machine, and what `agent-notify jump --dry-run` answers. It is
+also the member a chain composes: each container says what IT would run, and
+walking the path is concatenating those answers. That is why `jump argv`
+returns a LIST of commands today although it is always one — a shape that holds
+one command would have to be broken the day there are two.
 
 **`jump` stops being zellij's command.** `cli/jump.nu` resolves the agent, asks
 the registry who contains it, and calls `focus-session`;
@@ -889,12 +906,12 @@ being the one node allowed to import both, so the display stays a leaf. It is
 not built, because 22ms after a click is invisible.
 
 **What does not change.** Which container claims a record is decided by the
-RECORD, not by the config file (D56) — so a mixed fleet still works with nothing
-configured, and switching the zellij display off still does not take the jump
-away. And the contract asks no new QUESTION: `owns-session`, `location-label`,
-`focus-session`, and that last one's data half. `session-container` is a name that invites a fifth — *open a
-new agent here* — and `screen` already taught what a question with one caller is
-worth (D58).
+RECORD, not by the config file (D56) — so a mixed fleet still works with
+nothing configured, and switching the zellij display off still does not take
+the jump away. And the contract asks no new QUESTION: `owns-session`,
+`location-label`, `focus-session`, and that last one's data half.
+`session-container` is a name that invites a fifth — *open a new agent here* —
+and `screen` already taught what a question with one caller is worth (D58).
 
 ---
 
@@ -975,10 +992,13 @@ worth (D58).
 | D70 | An integration has CAPABILITIES, not a kind — display, session-container, raise | **LOCKED** | §4.8 — zellij has two of the three, SketchyBar one, and the one SketchyBar has is not the one a tmux integration would have. One word was hiding two unrelated abilities; `displays:` names a capability rather than a roster, which is D47 one level up |
 | D71 | The container contract leaves `picker/` — `integrations/session-containers.nu`, and `locate.nu` → `session-container.nu` | **LOCKED** | §4.8 — nothing about `owns`/`location-label`/`go` is the picker's; what was the picker's is that it asked first, and a contract filed inside its first consumer is one the second has to reach *through* it. The file rename follows the contract: once `go` carries the raise, the three questions are no longer only about finding. naming.md's opening line reserved the word |
 | D72 | One registry per capability; never one merged table | **LOCKED** | §4.8 and §4.4 — a merged table `use`s both halves of every tool, so `core/dispatch.nu` would reach `core/session-store.nu` by a second import path and parse it twice on every event (§10, measured: 4.51ms against 3.57ms). The rule for the third capability: a registry lives where its consumers can reach it and no display can |
-| D73 | `focus-session` decides whether to focus the terminal's WINDOW first; no caller ever says where it is | **LOCKED** | §4.8 — the container already knows (`$env.ZELLIJ_SESSION_NAME`) and `jump argv` already branches on it. A `--from-desktop` flag would make every future caller learn something about itself that the container can look up, and would be wrong in the first place it was copied |
-| D74 | `focus_terminal_window` is user-supplied argv in the CONTAINER's `commands:` half, empty by default | **LOCKED** | §4.8 — keeps D50 intact: no window manager named, no OS assumed, because the program is the user's word. §9b.1 put it under `sketchybar.commands:`, one level too low — what needs focusing is the window the CONTAINER sits in, so every outside caller would need its own copy. Empty by default turns "do nothing" from a decision into a default value |
+| D73 | ~~`focus-session` decides whether to focus the terminal's WINDOW first~~ | **REVERSED** by D77, same day | the shape of the answer was wrong, not the instinct. Two rungs is not the structure — a session is at a PATH through however many containers, and each of them focuses its own coordinate. A rule that says "climb one extra level when outside" cannot express aerospace → Ghostty → zellij, and cannot express an agent on the desktop with no terminal at all. It also kept the decision inside zellij, which is the one container that by definition cannot see the window it is inside |
+| D74 | ~~`focus_terminal_window` is user-supplied argv in the container's `commands:` half~~ | **REVERSED** by D77, same day | it put the window on the tool least able to know anything about it, and it made the outermost container something you CONFIGURE rather than something you HAVE. A tool is not a string in a list — that is the whole of D47 — it is a file that answers questions, and aerospace answering "which window, and focus it" is the same shape as zellij answering "which pane". Written as a config blob it could never be more than argv. D50 comes out stronger, not bent: the module still names no window manager, because naming one means opting into an integration |
 | D75 | `jump` is the facade's command; zellij's is one implementation of it | **LOCKED** | §4.8 — `cli/jump.nu` resolves the agent and asks the registry who owns it, so `agent-notify jump` works for tmux the day tmux exists. Retires `mod.nu`'s "a jump genuinely is zellij's, and stays here", true only while zellij was the only container |
 | D76 | A bar click RUNS the module rather than baking the argv — the one place D44 does not reach | **LOCKED** | §4.8 — measured: 22.5ms through the container cone against 104.6ms through the facade, so what matters is the ENTRY, not that a process starts. A click is one human action where a hover is pointer frequency, and re-reading the session-store is what makes it *correct*: a pane can move with no state change, and a baked argv would not know. The baking seam is written down and deliberately not built |
+| D77 | A session is at a PATH through containers, not inside one; `containers-of` returns the CHAIN | **LOCKED** (the model) | §4.8 — aerospace → Ghostty → zellij → pane 7. `focus-session` walks it outermost first, concatenating what each container says it would run, which is why `focus-session-argv` exists and why `jump argv` already returns a list. A chain of one, two or three is the same code, so Ghostty-splits-without-zellij and an agent on the desktop with no terminal stop being special cases — and nobody ever passes `--from-desktop`, because there is nothing left to decide |
+| D78 | ONE concept — the container. No taxonomy of kinds, no layer, no depth | **LOCKED** | §4.8 — user decision, and it deletes a whole vocabulary: a window-manager/application/multiplexer split was drafted and rejected as naming something that does not need naming. The registry is hand-written already (D26), so the order it is written in IS the nesting order, outermost first. One list, read top to bottom, reads outside to inside — and a new container is still one file and one row |
+| D79 | The container interface FOR A CHAIN | **OPEN** — step 12 | the model (D77, D78) is settled; every mechanism it needs is not, and the parts that were probed came back harder than they look (step 12). `discover-own-location` sits on the DISPLAY contract and a container that is not also a display has nowhere to record where it is. Coordinates are not all the same kind: a pane id is durable and stored, a workspace is volatile and must be resolved at jump time. And `location-label` becomes a path rather than a string. To be found out by building, not decided here |
 | D15 | Replace pandoc with a nu-native flattener | **LOCKED** (step 5b) | done: `integrations/sketchybar/text.nu` does it in nushell. 25.1ms off the event path and a dependency gone. v1 could afford pandoc because it converted where the preview was STORED, on a path already spawning processes; v2's whole paint is 6.5ms. Superseded in part by D60 — the flattener is a parser now, and still no subprocess |
 | D16 | Where the bench harness lives | **OPEN** | the only open row left. ~350 lines of documented nu; §8, and §9b.3 |
 | D17 | Promoted to `monomodules/agent-notify`, a module beside `ai` and the rest | **LOCKED** (2026-09-12) | step 7 — it was never `ai`-shaped: reflecting agent state on a status bar is not provider-agnostic content generation, and being a submodule is what made every hook parse the whole `ai` tree. The directory, the command, the session-store at `~/.local/share/agent-notify/` and the bar prefix `an_` all carry the one name |
@@ -1519,23 +1539,30 @@ in
       being exported from `mod.nu`. `agent-notify jump <who>` must behave
       identically for a zellij agent and must now say something sensible for an
       agent no container claims.
-   3. **`focus-session` climbs to the window.** Split it into
-      `focus-session-argv` (pure: every command that would run, the window
-      first) and `focus-session` (runs them), the same shape as
-      `render-items`/`push-items`. Add `zellij.commands.focus_terminal_window:`
-      to the config, validated by zellij's own `settings` like every other key.
-      Whether to climb is decided inside zellij's `focus-session-argv` from
-      `$env.ZELLIJ_SESSION_NAME` and is not a contract member (D73). Empty by
-      default, so the default path is byte-for-byte what it is today, and
-      `agent-notify jump --dry-run` falls out of the pure half for free.
+   3. ~~**`focus-session` climbs to the window.**~~ **UNWOUND** — see above and
+      step 12. What survives is the half that was right for its own reasons:
+      `focus-session-argv` (pure) in front of `focus-session` (runs it), the
+      same shape as `render-items`/`push-items`, and `jump argv` returning a
+      LIST of commands. Both are what a chain will compose, so neither was
+      reverted. What went is `zellij.commands.focus_terminal_window:`, the
+      branch that read `$env.ZELLIJ_SESSION_NAME` to decide whether to climb,
+      and the `commands-settings` contract member that existed to validate the
+      setting — that last one is a real loss and step 12 will want it back.
    4. **The click.** One `click_script` per row in
       `integrations/sketchybar/items.nu`, baked at paint time the way the hover
       is (D44) — but what is baked is the *invocation*,
       `nu -n --no-std-lib -c 'use …/cli/jump.nu; jump <id>'`, not the zellij
       argv (D76). A row that is switched off loses its script with
       its label, exactly as the hover does.
-   **All four landed, 562/562**, and three things came out of building it that
-   the design did not have.
+   **Three of the four landed, 549/549.** The third — `focus-session` climbing
+   to the terminal's window — was built, lived with for an hour and UNWOUND the
+   same day, because the model under it was wrong: a session is at a path
+   through containers, not inside one with a special case bolted on for the
+   level above (D73 and D74, both REVERSED; the shape that replaces it is D77,
+   D78 and step 12). What shipped focuses the pane and nothing else, which is
+   correct and incomplete: a click from the bar lands in the right pane and
+   leaves you looking at whatever was in front of your terminal.
+   **And three things came out of building it that the design did not have.**
    **A HYPHEN IN A MODULE NAME BECOMES AN UNDERSCORE IN ITS CONSTANT.**
    `$session-container.INFO` is a parse error about an invalid variable name,
    reported at the `$` rather than at the `use`; the module is
@@ -1553,18 +1580,91 @@ in
    **AND THE CLICK IS WHERE `binary` RESOLUTION EARNS ITS KEEP AGAIN.** A bar
    click runs under launchd, whose PATH is /usr/bin:/bin, so a bare `aerospace`
    there is not a command that fails but one that does not exist — the same
-   failure §11 records for the prune-daemon. Both the nushell and the window
-   program are baked absolute, and a `focus_terminal_window` that is not on PATH
-   is a configuration error that says why it matters *here*.
+   failure §11 records for the prune-daemon. The nushell in every click script
+   is baked absolute for that reason, and every container a chain ever adds will
+   have to be too.
    **Verified on the real bar**, not only in the suite: the generated line is on
    the live item and running it lands in the pane.
 
 ---
 
+12. **The container chain** — ⏳ an EXPLORATION, not a design. D77 and D78 settle
+   the model; D79 is open on purpose, and this step is the probing that has to
+   happen before an interface is worth writing down. It exists because step 11
+   answered the wrong question well: it made `focus-session` climb one extra
+   rung when the caller was outside, which is not a structure — it is a special
+   case wearing one.
+   **THE MODEL, which is settled.** A session is at a PATH:
+
+       aerospace  ──▶  Ghostty  ──▶  zellij  ──▶  pane 7
+       workspace 1     window 39     home/root
+
+   Each container focuses its own coordinate, in order, outside in.
+   `containers-of` returns every container that claims the record rather than
+   the first; the order is the order of the hand-written registry, because there
+   is only one concept and no taxonomy to derive an order from (D78). A chain of
+   one, two or three is the same code, so these stop being special cases: a
+   Ghostty user with no multiplexer, a tmux user, and an agent running on the
+   desktop inside no terminal at all.
+   **WHAT WAS PROBED, AND WHY IT IS NOT A DESIGN YET.** The aerospace end works
+   and the Ghostty end does not, and the gap between them is the whole of the
+   problem:
+
+   | | |
+   |---|---|
+   | aerospace CAN focus a window | `aerospace focus --window-id N`, and `list-windows --all --format '%{window-id}\|%{app-pid}\|%{workspace}\|%{window-title}'` reports everything it knows |
+   | Ghostty CANNOT say which window a process is in | `GHOSTTY_*` is resources, bin and shell features — no window id, no tab id. Nothing running inside it can learn where it is |
+   | Ghostty CANNOT focus a window from the CLI | `ghostty +action` has no such action, and on macOS launching the emulator from the CLI is unsupported |
+   | a pid does not disambiguate | aerospace reports `app-pid` 698 for EVERY Ghostty window — one process, many windows |
+   | **process ancestry dead-ends** | agent → claude → nu → **zellij (pid 907, parent 1)**. The zellij SERVER is a daemon; the client rendering in the window is a separate tree. There is no walk from an agent to its window |
+
+   So the only handle that exists today is the WINDOW TITLE — aerospace sees
+   `home |  snip-git-integration`, which is our own zellij tab title. That
+   works, and it is v1's sin returning one level up: D28 deleted title parsing
+   on the grounds that a name is a fact and facts live in the session-store. It
+   would also make the outermost container depend on the zellij DISPLAY being
+   switched on, which contradicts D57. It is the obvious answer and it is
+   probably the wrong one.
+   **The better candidate, unprobed:** zellij's `discover-own-location` already
+   runs one `list-panes` at session start. At that instant the agent's terminal
+   IS the focused window, so `aerospace list-windows --focused` would give the
+   right window id once, cheaply, and durably enough — a window id survives
+   moving between workspaces and dies with the window. No title round-trip, no
+   cross-layer string matching. What it costs is one subprocess per session, in
+   the one place that already pays for one.
+   **THE THREE THINGS THE INTERFACE HAS TO ANSWER**, none of which should be
+   decided before the above is tried:
+   1. **Where does a container that is not a display record its coordinate?**
+      `discover-own-location` is on the DISPLAY contract and works today only
+      because zellij happens to be both. It is a containment question. Moving it
+      is the obvious fix and it drags the question of WHEN it runs: dispatch
+      calls it per event, inside the agent's process, for enabled displays only.
+   2. **Coordinates are not all the same kind.** A pane id is DURABLE —
+      discovered once, stored, valid for the session's life. Which workspace a
+      window is on is VOLATILE — it changes with no event we see, so storing it
+      guarantees staleness. Volatile coordinates must be resolved at JUMP time,
+      which the contract already permits and nothing currently says.
+   3. **A container may need what the one inside it knows.** aerospace's handle
+      is a window id that only the terminal or the moment-of-start can supply.
+      If that is how it works it must be explicit — a container PUBLISHES a
+      coordinate for the one outside it — rather than discovered later as an
+      accident of who reads whose namespace.
+   **And two smaller ones.** `location-label` becomes a path (`1/home/root`)
+   rather than a string, which the picker gets for free and the `where` column
+   may or may not want. And `commands-settings` — the fifth, optional contract
+   member that let `config check` validate a container's own settings — was
+   unwound with the window and will be wanted back the moment a container has
+   anything to configure.
+   **What must NOT happen** is this being folded into another step. Step 11 is
+   what folding it in looks like: a model invented to fit the one caller in
+   front of it, built, and unwound the same day. Probe first, interface second.
+
+---
+
 ## 9b. Deferred — what is not built, and what each one waits on
 
-Every step in §9 is done, step 11 included — it is what §9b.1 turned into. These
-are work set aside on purpose, each for a reason that has not changed. Written down because
+Every step in §9 is done bar step 12, which step 11 produced by getting a model
+wrong. These are work set aside on purpose, each for a reason that has not changed. Written down because
 the alternative is rediscovering them — and because the first and the third were
 blocked on a DECISION rather than on effort, which is a different kind of
 waiting and needs saying out loud. **The first stopped being one of them and is now
