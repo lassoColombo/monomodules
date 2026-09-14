@@ -12,6 +12,8 @@
 #   bench work         zellij / sketchybar / pandoc costs
 #   bench rate         how often hooks actually fire, from real transcripts
 #   bench v2           the end-to-end cost per event — the number to protect
+#   bench aerospace-windows
+#                      can aerospace be a session-container? step 12 phase 1
 #
 # `v1.nu` and `store_bench.nu` measured the OLD module and retired with it at
 # the cutover, as this file always said they would. The numbers they produced
@@ -22,3 +24,4 @@ export use parse.nu
 export use work.nu
 export use rate.nu
 export use v2.nu
+export use aerospace-windows.nu

@@ -1588,7 +1588,8 @@ in
 
 ---
 
-12. **The container chain** — ⏳ an EXPLORATION, not a design. D77 and D78 settle
+12. **The container chain** — ⏳ in progress; PHASE 1 (probe aerospace) done,
+   2026-09-14. An EXPLORATION, not a design. D77 and D78 settle
    the model; D79 is open on purpose, and this step is the probing that has to
    happen before an interface is worth writing down. It exists because step 11
    answered the wrong question well: it made `focus-session` climb one extra
@@ -1625,13 +1626,40 @@ in
    would also make the outermost container depend on the zellij DISPLAY being
    switched on, which contradicts D57. It is the obvious answer and it is
    probably the wrong one.
-   **The better candidate, unprobed:** zellij's `discover-own-location` already
-   runs one `list-panes` at session start. At that instant the agent's terminal
-   IS the focused window, so `aerospace list-windows --focused` would give the
-   right window id once, cheaply, and durably enough — a window id survives
-   moving between workspaces and dies with the window. No title round-trip, no
-   cross-layer string matching. What it costs is one subprocess per session, in
-   the one place that already pays for one.
+   **The better candidate was probed, and it is wrong** (phase 1, 2026-09-14,
+   `bench/aerospace-windows.nu`, measurements in §11). The idea was that
+   zellij's `discover-own-location` already runs one `list-panes` at session
+   start, and that at that instant the agent's terminal IS the focused window —
+   so `aerospace list-windows --focused` would hand back the right window id
+   once, cheaply, with no title round-trip. **`--focused` is not the agent's
+   window**, and the probe caught it being wrong live: focused was Firefox on
+   workspace 2 while the agent sat in Ghostty on workspace 1. The mechanism is
+   not self-validating, and `discover-own-location` caches on `stored`, so one
+   wrong answer is wrong for the life of the session.
+   **So the obvious answer is the one that stands, and it is better than it
+   looked.** A window is found FROM THE RECORD at JUMP time — the title is
+   `<session> | <active tab>` and `zellij.session` is already in the record —
+   rather than discovered and stored at paint time. Three things follow, and
+   they make the rest of this step smaller:
+   - **aerospace needs no `discover-own-location` at all**, so the contract
+     question below (1) is not on its critical path. A container whose
+     coordinate is volatile does not have one to record.
+   - **Nothing is cached, so nothing can go stale.** The staleness that killed
+     the first candidate cannot arise.
+   - **It costs nothing until you jump.** The whole outer rung — resolve the
+     window from the session name, then focus it — is **23.0ms**, paid by a
+     human action and nowhere near the hot path.
+   **And the D28 tension is real but not the same sin.** D28 deleted title
+   parsing because v1 recovered a NAME — a fact — by reading a title back. Here
+   the fact is `zellij.session`, which comes from the record, and the title is
+   only the INDEX that finds the window carrying it. A lookup key, not a source
+   of truth. Worth writing down as its own decision when phase 4 lands, because
+   the two read identically from a distance.
+   **What is still untested: two clients on one zellij session.** Both windows
+   would carry the same title prefix and the match would be ambiguous. The probe
+   could not reproduce it — `open -na` gives a separate app instance, which is
+   not how a second window is made. First match wins, stable order, is the
+   cheapest mitigation if it ever bites.
    **THE THREE THINGS THE INTERFACE HAS TO ANSWER**, none of which should be
    decided before the above is tried:
    1. **Where does a container that is not a display record its coordinate?**
@@ -1969,6 +1997,41 @@ fresh pipeline and fails with "Command `+` not found".
 
 Not nushell — the programs underneath. Same rule as §10: cost time once, not
 twice.
+
+**aerospace and macOS windows** — probed in step 12 phase 1, 2026-09-14, with
+`bench/aerospace-windows.nu`. Costs: `list-windows --all` 10.9ms,
+`--focused` 13.3ms, `focus --window-id` 20.6ms, and the whole outer rung of a
+jump — find the window from a session name, then focus it — **23.0ms**.
+
+- **`list-windows --focused` IS NOT THE AGENT'S WINDOW**, and it was caught
+  being wrong live: focused was Firefox on workspace 2 while the agent sat in
+  Ghostty on workspace 1. Anything that captures it once and stores it captures
+  whatever the user happened to be looking at.
+- **A window id survives a workspace move.** Moved a window from workspace 1 to
+  2 and the id did not change, which makes it a usable handle — if you can get
+  the right one.
+- **`focus --window-id` reaches another workspace and switches to it**, and is
+  LOUD when it cannot: a bogus id exits **1** with `Invalid <window-id> …`. That
+  is the opposite of zellij, which exits 0 whatever happens, and it means a jump
+  needs no guard of the `switch-session` kind.
+- **`close --window-id` exits 0 and does nothing.** The window stays. Focusing
+  it first and calling bare `close` does nothing either. What closed the
+  throwaway windows in the probe was killing their processes. A silent no-op
+  with a zero exit, which is the exact shape this file exists to record.
+- **`open -na App.app` starts a separate APP INSTANCE**, not a new window in the
+  running one. So a throwaway Ghostty has its own pid — and aerospace went on
+  **listing a window for an instance that no longer had one** until the process
+  died. aerospace can report windows that are not there; see the point above
+  about failing loudly, which is what saves this.
+- **A pid does not identify a window.** aerospace reports `app-pid` 698 for
+  every Ghostty window, because they are one process. Nor does process
+  ancestry: agent → claude → nu → **zellij server, whose parent is 1**. The
+  server is a daemon and the client rendering in the window is a separate tree,
+  so there is no walk from an agent to its window.
+- **The terminal window title is `<session> | <active tab>`** when zellij is
+  attached, and the SESSION half is zellij's own — it does not depend on our
+  display being enabled, which is what makes it usable without contradicting
+  D57. It is the only index from a record to a window that exists.
 
 **zellij**
 
