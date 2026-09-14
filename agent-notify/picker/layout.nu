@@ -7,8 +7,8 @@
 #
 #   agents ❯ zz                              ● 1 awaiting  ● 2 working
 #   ──────────────────────────────────────────────────────────────────
-#   > awaiting  monomodules  home/root
-#     working   bar-preview  home/root
+#   > awaiting  monomodules  home
+#     working   bar-preview  home
 #   ──────────────────────────────────────────────────────────────────
 #   ▊ Committed as 7fd6289.
 #     Used git commit with the staged index only…

@@ -10,8 +10,8 @@
 #   {id:    "6923c0bc-…"        the agent, and the SELECTION KEY — see `keep-in-view`
 #    state: "awaiting"
 #    name:  "monomodules"
-#    place: "home/root"         from the locator; "" when nothing claims it
-#    match: "awaiting monomodules home/root"
+#    place: "home"              the path it is at; "" when nothing claims it
+#    match: "awaiting monomodules home"
 #    rec:   {…}                 the record, for the locator and for the caller
 #    containers: [{info, owns-session, location-label, …}]  outermost first}
 #

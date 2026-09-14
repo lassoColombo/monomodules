@@ -20,12 +20,17 @@
 # mechanism for one guarantee, and the worst it saves you from is a jump that
 # says "no session called 'x'".
 
-# A DIAMOND, KNOWINGLY. `picker/rows.nu` reaches `session-containers` too — it
-# needs the labels — so this module is parsed by two import paths and therefore
-# twice (§10). Measured at ~1ms on a command a human types, against the 2.5ms
-# D29 was written about, which was every tool call forever. The alternative is
-# browse walking the path itself, which would put the best-effort-and-raise rule
-# in two places. One of those is a real cost and the other is a real bug.
+# A DIAMOND, KNOWINGLY, AND IT IS NOT FREE. `picker/rows.nu` reaches
+# `session-containers` too — it needs the labels — so that cone is parsed by two
+# import paths and therefore twice (§10). MEASURED: browse costs 37.8ms with it
+# and 34.2ms without, so the diamond is **3.7ms**.
+#
+# Kept, because both consumers are RIGHT: a picker asks which container claims a
+# record, and a jump asks that container to go there. Removing it means making
+# one of them wrong — either the picker stops resolving its own labels, or this
+# file walks the path itself and the stop-at-first-failure rule lives in two
+# places. D29 is about the HOT cone, where 2.5ms was every tool call forever;
+# this is 3.7ms on a picker a human opened and is waiting 37ms for anyway.
 use ../core/session-store.nu
 use ../integrations/session-containers.nu
 use ../picker

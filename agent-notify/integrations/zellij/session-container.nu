@@ -6,7 +6,7 @@
 # answer for itself:
 #
 #   owns-session         is this session yours?  it has a `zellij` namespace
-#   location-label       where does it live?     home/root
+#   location-label       where does it live?     home
 #   focus-session-argv   what would take me      jump argv
 #                        there?
 #   focus-session        take me there           jump
@@ -58,15 +58,19 @@ export def owns-session [rec: record]: nothing -> bool {
     (($z.session? | default "") | is-not-empty) and (($z.pane_id? | default "") | is-not-empty)
 }
 
-# One short string for the `where` column. The tab's own name when we learned it
-# (`discover-own-location` does, once per session), its id when we did not.
+# One short string for the `where` column: THE SESSION NAME, and nothing else.
+#
+# It was `<session>/<tab>` until the path arrived. A label is one container's
+# contribution to a path now (D77), joined with the ones outside it, so every
+# container spending two words where one would do makes the column unreadable by
+# the third. The session is the part that tells two agents apart; the tab is
+# already visible on the tab bar of the terminal you are about to land in.
+#
+# The tab is still LEARNED — `discover-own-location` reads it once per session —
+# because the zellij DISPLAY needs it to write tab titles. It is simply not what
+# a list of agents is for.
 export def location-label [rec: record]: nothing -> string {
-    let z = zellij-of $rec
-    let session = $z.session? | default ""
-    if ($session | is-empty) { return "" }
-    let tab = $z.tab_base? | default ""
-    let label = if ($tab | is-not-empty) { $tab } else { $z.tab_id? | default "" | into string }
-    if ($label | is-empty) { $session } else { $"($session)/($label)" }
+    $rec.zellij?.session? | default ""
 }
 
 # Take me there, and what that would run. One line each, because `jump` already

@@ -1699,23 +1699,36 @@ in
    find out by asking the world CLAIMS OPTIMISTICALLY and discovers in
    `focus-session-argv`, where a subprocess is already being run and a human is
    already waiting. The outer fake is built to that shape on purpose.
-   **A CLAIMANT THAT CANNOT REACH DROPS OUT rather than failing the path.** It
-   is the OUTER rungs that are uncertain — a window that has closed, a window
-   manager that is not running — and not climbing one is worth less than not
-   arriving at all. So `focus-session-argv` contributes nothing and the inner
-   containers still run. The walk itself is BEST EFFORT AND RAISES AT THE END:
-   one container failing does not stop the ones inside it, because focusing a
-   pane you cannot see is exactly what this did before there was an outer rung,
-   but a jump that half-worked says so once, naming what failed.
-   **And the label is a path too.** Each container's own label, outside in,
-   joined — with "" dropping out, so a container with nothing worth a column
-   does not pad one. A one-container path reads exactly as it did.
-   **One knowing compromise.** `cli/browse.nu` now reaches
-   `session-containers` both directly and through `picker/rows.nu`, so that
-   module is parsed twice (§10). Measured at ~1ms on a command a human types,
-   against the 2.5ms D29 was written about, which was every tool call forever.
-   The alternative is browse walking the path itself, which would put the
-   best-effort-and-raise rule in two places.
+   **TWO ANSWERS ARE NOT THE SAME, and the walk treats them differently.** *I
+   have nothing to do* and *I tried and could not* look alike from outside and
+   are not alike at all. A claimant that CANNOT REACH — a window that has
+   closed, a window manager that is not running — contributes no commands and
+   the walk carries straight past it, because it is the OUTER rungs that are
+   uncertain and not climbing one is worth less than not arriving. A claimant
+   that TRIES AND FAILS **stops the walk** (user decision): a rung that failed
+   is a rung you are standing below, so the ones inside it would be focusing
+   something you cannot see, and arriving half way saying nothing is worse than
+   not arriving and saying so. The error names the container, because "the jump
+   failed" is not actionable and "aerospace failed" is. `--dry-run` is
+   unaffected either way, which is what keeps it useful while a jump is failing.
+   **And the label is a path too — so each container gets ONE WORD.** zellij's
+   was `<session>/<tab>` and is now the session name alone (user decision): a
+   label is one container's contribution to a path now, and every container
+   spending two words where one would do makes the column unreadable by the
+   third. A container with nothing worth a column says "" and drops out rather
+   than padding one. The tab is still learned, because the zellij DISPLAY writes
+   tab titles with it; it is simply not what a list of agents is for. The BAR is
+   untouched — it builds its own where-line and has room for `home/root · ~/…`.
+   **One knowing compromise, and it costs more than first estimated.**
+   `cli/browse.nu` reaches `session-containers` both directly and through
+   `picker/rows.nu`, so that cone is parsed twice (§10). Measured properly:
+   **37.8ms with it against 34.2ms without, so 3.7ms** — not the ~1ms first
+   guessed from the module's own parse cost, which missed what it drags. Kept,
+   because both consumers are right: a picker asks which container claims a
+   record, a jump asks that container to go there, and removing the diamond
+   means making one of them wrong. D29 is about the HOT cone, where 2.5ms was
+   every tool call forever; this is a picker a human opened and is waiting 37ms
+   for anyway.
    **What must NOT happen** is this being folded into another step. Step 11 is
    what folding it in looks like: a model invented to fit the one caller in
    front of it, built, and unwound the same day. Probe first, interface second.

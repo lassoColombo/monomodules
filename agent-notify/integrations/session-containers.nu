@@ -134,22 +134,25 @@ export def focus-session-argv [rec: record, --table: record]: nothing -> list<li
     | flatten
 }
 
-# Walk the path. Each container runs its OWN commands rather than this walking a
-# flattened argv, because what a command's failure MEANS is the container's to
-# know — zellij's "already focused" is a success, and nothing out here could
-# tell that from a real failure (plan.md §11).
+# Walk the path, outside in. Each container runs its OWN commands rather than
+# this walking a flattened argv, because what a command's failure MEANS is the
+# container's to know — zellij's "already focused" is a success, and nothing out
+# here could tell that from a real failure (plan.md §11).
 #
-# BEST EFFORT, AND IT RAISES AT THE END. A container that fails does not stop
-# the ones inside it: focusing a pane you cannot see is exactly what this did
-# before there was an outer rung, and it is worth more than refusing to move.
-# But it is not swallowed either — a jump that half-worked says so, once, naming
-# what failed.
+# IT STOPS AT THE FIRST FAILURE. A rung that fails is a rung you are standing
+# below, so the ones inside it would be focusing something you cannot see:
+# arriving half way and saying nothing about it is worse than not arriving and
+# saying so. The error names the container, because "the jump failed" is not
+# actionable and "aerospace failed" is.
+#
+# A container that CANNOT REACH is not a failure and does not stop anything — it
+# contributes no commands and the walk carries on past it (see
+# `focus-session-argv`). The two are different answers: *I have nothing to do*
+# and *I tried and could not*.
 export def focus-session [rec: record, --table: record]: nothing -> nothing {
-    let failures = containers-of $rec --table ($table | default (integration-registry))
-        | each {|c|
-            try { do $c.focus-session $rec; null } catch {|e| $"($c.info.name): ($e.msg)" }
-        } | where {|f| $f != null }
-    if ($failures | is-not-empty) {
-        error make --unspanned {msg: $"agent-notify: ($failures | str join '; ')"}
+    for c in (containers-of $rec --table ($table | default (integration-registry))) {
+        try { do $c.focus-session $rec } catch {|e|
+            error make --unspanned {msg: $"agent-notify: ($c.info.name): ($e.msg)"}
+        }
     }
 }

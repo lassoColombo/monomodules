@@ -110,6 +110,33 @@ export def main [] {
                [[] []])
     ]
 
+    # ── a rung that FAILS stops the walk ──────────────────────────────────────
+    # Different from a rung that has nothing to do. A container that cannot
+    # reach contributes no commands and the walk carries on past it; one that
+    # TRIES AND FAILS is a rung you are standing below, so the ones inside it
+    # would be focusing something you cannot see. Arriving half way and saying
+    # nothing is worse than not arriving and saying so.
+    let boom = { boom: {info: {name: "boom", title: "always fails"}
+                        owns-session: {|rec| true }
+                        location-label: {|rec| "" }
+                        focus-session-argv: {|rec| [["echo" "boom"]] }
+                        focus-session: {|rec| error make --unspanned {msg: "window is gone"} }} }
+        | merge (fake session-container)
+    let d2 = [
+        (check "the failing container is outermost, so it is reached first"
+               (session-containers containers-of $reachable --table $boom | get info.name)
+               ["boom" "fake"])
+        (check-err "a rung that fails stops the walk" "window is gone"
+                   {|| session-containers focus-session $reachable --table $boom })
+        (check-err "…and the error names WHICH container, because 'the jump failed' is not actionable"
+                   "boom:" {|| session-containers focus-session $reachable --table $boom })
+        # The data half does not run anything, so it is unaffected — which is
+        # also how `--dry-run` stays useful when a jump is failing.
+        (check "the dry run still shows the whole path, failing rung included"
+               (session-containers focus-session-argv $reachable --table $boom)
+               [["echo" "boom"] ["echo" "fake" "box/one"]])
+    ]
+
     # ── the label is a PATH too ───────────────────────────────────────────────
     # Each container's own label, outside in, joined — and one with nothing
     # worth a column says "" and drops out rather than padding it.
@@ -121,10 +148,17 @@ export def main [] {
         # alpha's record knows its session but not its tab, which is what a
         # pane looks like before `discover-own-location` has paid for a
         # `list-panes` — so the label is the session and nothing else.
-        (check "a one-container path is unchanged by any of this"
+        # THE SESSION NAME, and nothing else. It was `<session>/<tab>` until a
+        # label became one container's contribution to a path rather than the
+        # whole answer — every container spending two words where one would do
+        # makes the column unreadable by the third.
+        (check "zellij's label is the session name and nothing else"
                (session-containers location-label $alpha) "home")
+        (check "…even when the tab is known"
+               (session-containers location-label
+                 {zellij: {session: "home", pane_id: "7", tab_base: "root"}}) "home")
     ]
 
     hide-env ZELLIJ_SESSION_NAME
-    summarise ($a ++ $b ++ $c ++ $d ++ $e) --title "jump-command"
+    summarise ($a ++ $b ++ $c ++ $d ++ $d2 ++ $e) --title "jump-command"
 }
