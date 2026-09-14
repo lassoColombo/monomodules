@@ -155,6 +155,46 @@ export def hover-shell [settings: record, state: string, rows: list<record>]: no
     $GUARD + $"($settings.binary) ($args | str join ' ')"
 }
 
+# ── the shell a CLICK runs ────────────────────────────────────────────────────
+#
+# Where `cli/jump.nu` is, worked out from where this file is. Baked as an
+# ABSOLUTE path into every click script, because the bar daemon's working
+# directory is not ours and its PATH is launchd's.
+const JUMP_MODULE = (path self | path dirname | path dirname | path dirname | path join "cli" "jump.nu")
+
+# A CLICK RUNS THE MODULE; IT DOES NOT GET A BAKED ARGV (plan.md D75). That is
+# the one place D44 does not reach, and the reason is not the process — it is
+# WHEN THE DECISION IS MADE. A hover shows text the same paint wrote, so baking
+# it cannot be stale. A jump is a decision about where an agent is NOW, and a
+# pane can move with no state change at all, so a paint-time argv can send you
+# somewhere nobody is.
+#
+# The cost of deciding at click time is one nushell, and what that costs depends
+# entirely on what it is pointed at. Measured, median of 15:
+#
+#   nu -n --no-std-lib -c ''                   16.5ms   the floor
+#   … -c 'use cli/jump.nu; jump <id>'          22.6ms   what this runs
+#   … -c 'use agent-notify; …'                 97.3ms   through the facade
+#
+# So it points at `cli/jump.nu` and not at the module. 22.6ms after a deliberate
+# click is invisible — it is less than half what ONE of v1's hovers cost, and a
+# hover fires at pointer frequency where a click fires once.
+#
+# The drawers shut first, because you are about to be looking at something else
+# and a popup left open over another application is litter.
+#
+# QUOTING: the nushell payload is wrapped in SINGLE QUOTES for the shell, so
+# `$HOME` and backticks inside it stay literal (probed on the real daemon —
+# see `quotable`). An id is a uuid and cannot carry a quote; the module path
+# could in principle, and a path containing `'` is the one case this cannot
+# express. It is not defended against, because defending would mean mangling a
+# path we need to be exact.
+export def click-shell [settings: record, id: string]: nothing -> string {
+    let shut = $"($settings.binary) (close-args $settings | str join ' ')"
+    let jump = $"($nu.current-exe) -n --no-std-lib -c 'use \"($JUMP_MODULE)\"; jump ($id)'"
+    $"($shut); exec ($jump)"
+}
+
 # ── what a paint writes ───────────────────────────────────────────────────────
 
 # A drawer's size changed: the item-name's number, its header, and — since an
@@ -176,18 +216,25 @@ export def counter-args [settings: record, state: string, count: int]: nothing -
       $"label=($label)" ]
 }
 
-# One agent's row: what it says, and what hovering it shows.
+# One agent's row: what it says, what hovering it shows, and where clicking it
+# takes you.
 export def row-args [settings: record, state: string, index: int, value: record]: nothing -> list<string> {
     [ "--set" (row-name $settings $state $index)
       $"label=($value.label)"
       "drawing=on"
-      $"script=(hover-shell $settings $state $value.lines)" ]
+      $"script=(hover-shell $settings $state $value.lines)"
+      # A row with no id behind it gets NO click rather than a click that goes
+      # nowhere. It cannot happen from a live paint — `render-items` always has
+      # the record — but a value written by an older paint and diffed against by
+      # this one can, and an empty setting is how SketchyBar is told to forget.
+      $"click_script=(if (($value.id? | default '') | is-empty) { '' } else { (click-shell $settings $value.id) })" ]
 }
 
-# A row with no agent behind it any more. The script goes too, so a 1KB preview
-# of an agent that is gone is not left sitting on the item.
+# A row with no agent behind it any more. BOTH scripts go: a 1KB preview of an
+# agent that is gone must not be left sitting on the item, and neither must a
+# click that would take you to a pane it no longer has.
 export def row-off-args [settings: record, state: string, index: int]: nothing -> list<string> {
-    ["--set" (row-name $settings $state $index) "drawing=off" "script="]
+    ["--set" (row-name $settings $state $index) "drawing=off" "script=" "click_script="]
 }
 
 # ── the pool, created once ────────────────────────────────────────────────────
@@ -251,14 +298,9 @@ export def preallocate-args [settings: record]: nothing -> list<string> {
             "icon.padding_left=14" "label.padding_right=14"
             "background.drawing=off" "y_offset=1"
         ]
-        # THE GAP: a row has no `click_script`, so clicking an agent does
-        # nothing. Not an oversight — see plan.md §9b.1. Everything the click
-        # needs is already here (the row knows its agent at paint time, and D44
-        # says bake the answer in as a shell line rather than spawn one of
-        # ours). What is missing is the RAISE: a bar click comes from a desktop,
-        # so the terminal's WINDOW has to come forward before a pane can be
-        # focused, and that is a window manager's job. D50 says this module
-        # names none.
+        # A row's `click_script` is written per PAINT, not here, because it
+        # carries that row's agent id — see `click-shell`. The pool only has to
+        # subscribe to the hover; a click needs no subscription.
         for index in 0..<$settings.rows {
             let slot = row-name $settings $state $index
             $args = $args ++ [

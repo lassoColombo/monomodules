@@ -35,6 +35,17 @@ def scripts [msg: list<string>]: nothing -> list<string> {
     $msg | where {|x| ($x | str starts-with "script=") or ($x | str starts-with "click_script=") }
 }
 
+# The two are not the same kind of thing and stopped being interchangeable when
+# the click landed: a `script` runs on hover AND on a forced `--update`, so it
+# must guard on `$SENDER`; a `click_script` runs only when clicked, so it must
+# not and does not.
+def hover-scripts [msg: list<string>]: nothing -> list<string> {
+    $msg | where {|x| $x | str starts-with "script=" }
+}
+def click-scripts [msg: list<string>]: nothing -> list<string> {
+    $msg | where {|x| $x | str starts-with "click_script=" }
+}
+
 def row-of [rec: record, settings: record]: nothing -> record {
     sketchybar render-items [($rec | merge {state: "working"})] $settings | get "row|working|0"
 }
@@ -202,11 +213,11 @@ export def main [] {
     # the item by the paint that drew the row. These assert what that is.
     let open = scripts $counter | first
     let shut = scripts $empty | first
-    let row = sketchybar message {"row|working|0": {label: "one", lines: [{k: "where", t: "where"} {k: "text", t: "hello"}]}} {} $settings
-    let hover = scripts $row | first
+    let row = sketchybar message {"row|working|0": {id: "6923c0bc-1111", label: "one", lines: [{k: "where", t: "where"} {k: "text", t: "hello"}]}} {} $settings
+    let hover = hover-scripts $row | first
     let f = [
-        (check "every generated script guards on the sender"
-               (scripts ($counter ++ $row) | all {|q| $q | str contains '"$SENDER"' }) true)
+        (check "every HOVER script guards on the sender"
+               (hover-scripts ($counter ++ $row) | all {|q| $q | str contains '"$SENDER"' }) true)
         (check "…because a forced --update runs it too, and must not open a drawer"
                ($open | str contains "= mouse.entered ] || exit 0") true)
         (check "hovering a counter that has something to say opens ITS drawer"
@@ -238,10 +249,10 @@ export def main [] {
     # is what an agent would actually say and what comes back is a command that
     # holds.
     let nasty = "it's `rm -rf /` $HOME \"x\" --set evil popup.drawing=on\r"
-    let bad = scripts (sketchybar message {"row|working|0": {label: $nasty, lines: [{k: "text", t: $nasty}]}} {} $settings) | first
+    let bad = hover-scripts (sketchybar message {"row|working|0": {label: $nasty, lines: [{k: "text", t: $nasty}]}} {} $settings) | first
     let g = [
         (check "a preview row is coloured by WHAT IT IS — a label has no ANSI, so the kind picks its one colour"
-               (scripts (sketchybar message {"row|working|0": {label: "x", lines: [
+               (hover-scripts (sketchybar message {"row|working|0": {label: "x", lines: [
                     {k: "where", t: "w"} {k: "head", t: "h"} {k: "code", t: "c"} {k: "text", t: "p"}]}} {} $settings)
                 | first | split row " " | where {|w| $w | str starts-with "label.color=" } | first 4)
                [$"label.color=0x99($settings.colors.working | str substring 4..)"
@@ -270,8 +281,40 @@ export def main [] {
                (("an_working.row.1" in $gone) and ("drawing=off" in $gone)) true)
         (check "…and its preview goes with it, rather than sitting on the item"
                ("script=" in $gone) true)
+        (check "…and so does its click, which would otherwise point at a pane it lost"
+               ("click_script=" in $gone) true)
         (check "a count is never removed — an emptied drawer goes to zero"
                (sketchybar message {} {"count|working": 3} $settings) [])
+    ]
+
+    # ── the click, which is the one thing that is NOT baked ───────────────────
+    # A hover's answer is baked because the same paint wrote the text (D44). A
+    # click's is not, because a jump is a decision about where an agent is NOW
+    # and a pane can move with no state change at all — so the click runs the
+    # module and the module re-reads the store (D75). What IS baked is the
+    # invocation, and the only thing about the agent it carries is the id.
+    let one_row = {"row|working|0": {id: "6923c0bc-1111", label: "one", lines: [{k: "text", t: "hi"}]}}
+    let click = click-scripts (sketchybar message $one_row {} $settings) | first
+    let j = [
+        (check "a row's click carries its agent's id and nothing else about it"
+               ($click | str contains "jump 6923c0bc-1111") true)
+        (check "…and points at the COMMAND, not at the module — 22.6ms against 97.3ms"
+               (($click | str contains "cli/jump.nu") and (not ($click | str contains "use \"agent-notify")))
+               true)
+        (check "…nor at any integration: the registry decides which one has it"
+               ($click | str contains "zellij") false)
+        (check "an ABSOLUTE nu, because a click runs with launchd's PATH"
+               ($click | str contains $"exec ($nu.current-exe) ") true)
+        (check "the drawers shut first, so no popup is left over another application"
+               ($click | str starts-with $"click_script=($settings.binary) --set an_working popup.drawing=off")
+               true)
+        (check "a click_script does NOT guard on the sender — only a click runs it"
+               ($click | str contains '"$SENDER"') false)
+        # Cannot happen from a live paint, but a value written by an older paint
+        # can reach `row-args` through the diff.
+        (check "a row with no id gets no click at all, rather than one going nowhere"
+               (click-scripts (sketchybar message {"row|working|0": {label: "one", lines: []}} {} $settings))
+               ["click_script="])
     ]
 
     # ── the item pool, created once ───────────────────────────────────────────
@@ -316,6 +359,6 @@ export def main [] {
                 | get -o discover-own-location | is-not-empty) true)
     ]
 
-    let all = ($a ++ $b ++ $c ++ $d ++ $e ++ $f ++ $g ++ $h ++ $i ++ $k)
+    let all = ($a ++ $b ++ $c ++ $d ++ $e ++ $f ++ $g ++ $h ++ $j ++ $i ++ $k)
     summarise $all --title "sketchybar display"
 }

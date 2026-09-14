@@ -220,7 +220,7 @@ def lines-of [record: record, settings: record]: nothing -> list<record> {
 # whose agent has gone arrives in `removed` with its old value.
 #
 #   count|working     2
-#   row|working|0     {label: "zz-picker-refactor", lines: [...]}
+#   row|working|0     {id: "6923c0bc-…", label: "zz-picker-refactor", lines: [...]}
 #
 # Idle agents appear nowhere: an agent with nothing to say does not deserve a
 # number. Within a drawer the oldest is first — every row shares a state, so
@@ -234,6 +234,10 @@ export def render-items [records: list<record>, settings: record]: nothing -> re
         $out = ($out | upsert $"count|($state)" ($here | length))
         for e in ($here | first $settings.rows | enumerate) {
             $out = ($out | upsert $"row|($state)|($e.index)" {
+                # The id is here so a click can be baked without a lookup, and
+                # so a row whose OCCUPANT changed repaints even when the two
+                # agents happen to look identical.
+                id: ($e.item.id? | default "")
                 label: (label-of $e.item $settings)
                 lines: (lines-of $e.item $settings)
             })
