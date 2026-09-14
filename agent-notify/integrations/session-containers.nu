@@ -105,6 +105,7 @@ export def integration-registry []: nothing -> record {
                   focus-session-argv: {|rec| aerospace-container focus-session-argv $rec }
                   focus-session: {|rec| aerospace-container focus-session $rec }}
       zellij: {info: $zellij_container.INFO
+               commands-settings: {|given| zellij-container commands-settings $given }
                owns-session: {|rec| zellij-container owns-session $rec }
                location-label: {|rec| zellij-container location-label $rec }
                focus-session-argv: {|rec| zellij-container focus-session-argv $rec }

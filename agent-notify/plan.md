@@ -998,7 +998,7 @@ and `screen` already taught what a question with one caller is worth (D58).
 | D76 | A bar click RUNS the module rather than baking the argv — the one place D44 does not reach | **LOCKED** | §4.8 — measured: 22.5ms through the container cone against 104.6ms through the facade, so what matters is the ENTRY, not that a process starts. A click is one human action where a hover is pointer frequency, and re-reading the session-store is what makes it *correct*: a pane can move with no state change, and a baked argv would not know. The baking seam is written down and deliberately not built |
 | D77 | A session is at a PATH through containers, not inside one; `containers-of` returns the CHAIN | **LOCKED** (the model) | §4.8 — aerospace → Ghostty → zellij → pane 7. `focus-session` walks it outermost first, concatenating what each container says it would run, which is why `focus-session-argv` exists and why `jump argv` already returns a list. A chain of one, two or three is the same code, so Ghostty-splits-without-zellij and an agent on the desktop with no terminal stop being special cases — and nobody ever passes `--from-desktop`, because there is nothing left to decide |
 | D78 | ONE concept — the container. No taxonomy of kinds, no layer, no depth | **LOCKED** | §4.8 — user decision, and it deletes a whole vocabulary: a window-manager/application/multiplexer split was drafted and rejected as naming something that does not need naming. The registry is hand-written already (D26), so the order it is written in IS the nesting order, outermost first. One list, read top to bottom, reads outside to inside — and a new container is still one file and one row |
-| D79 | The container interface FOR A CHAIN | **OPEN** — step 12 | the model (D77, D78) is settled; every mechanism it needs is not, and the parts that were probed came back harder than they look (step 12). `discover-own-location` sits on the DISPLAY contract and a container that is not also a display has nowhere to record where it is. Coordinates are not all the same kind: a pane id is durable and stored, a workspace is volatile and must be resolved at jump time. And `location-label` becomes a path rather than a string. To be found out by building, not decided here |
+| D79 | The container interface for a chain: FOUR MEMBERS AND ONE OPTIONAL, and the two cheap ones may not touch the world | **LOCKED** | step 12 — `owns-session`, `location-label`, `focus-session-argv`, `focus-session`, plus `commands-settings` where a tool has settings. The rule that shaped all of it was found by looking at who CALLS them: `picker/rows.nu` asks the first two for every record every two seconds, so a container answering either by running a program puts one subprocess per agent on a timer. Hence claim-optimistically-and-look-later, which is what let aerospace exist at all. Two of the three questions step 12 opened turned out not to be questions — nothing needs `discover-own-location` (aerospace stores nothing, so there is no coordinate to record), and the durable/volatile split needs no vocabulary because resolving at jump time is simply what an uncertain container does. The third is real and is DEFERRED: aerospace finds its window by the `zellij.session` an inner container wrote, and whether that should become a contract member is a question one caller cannot answer |
 | D15 | Replace pandoc with a nu-native flattener | **LOCKED** (step 5b) | done: `integrations/sketchybar/text.nu` does it in nushell. 25.1ms off the event path and a dependency gone. v1 could afford pandoc because it converted where the preview was STORED, on a path already spawning processes; v2's whole paint is 6.5ms. Superseded in part by D60 — the flattener is a parser now, and still no subprocess |
 | D16 | Where the bench harness lives | **OPEN** | the only open row left. ~350 lines of documented nu; §8, and §9b.3 |
 | D17 | Promoted to `monomodules/agent-notify`, a module beside `ai` and the rest | **LOCKED** (2026-09-12) | step 7 — it was never `ai`-shaped: reflecting agent state on a status bar is not provider-agnostic content generation, and being a submodule is what made every hook parse the whole `ai` tree. The directory, the command, the session-store at `~/.local/share/agent-notify/` and the bar prefix `an_` all carry the one name |
@@ -1588,9 +1588,10 @@ in
 
 ---
 
-12. **The container chain** — ⏳ in progress. PHASES 1 (probe aerospace), 2
-   (the walk, on fakes) and 4 (the aerospace container) done, 2026-09-14.
-   An EXPLORATION, not a design.
+12. **The container chain** — ✅ done, 2026-09-14. It ran as an EXPLORATION
+   rather than a design, in phases, and phase 1 killed the mechanism phases 3
+   and 4 were planned around — which is the whole argument for having run it
+   that way.
    D77 and D78 settle
    the model; D79 is open on purpose, and this step is the probing that has to
    happen before an interface is worth writing down. It exists because step 11
@@ -1764,16 +1765,50 @@ in
    ITSELF does is not asserted there: that was probed once, on a real machine,
    and lives in §11 and `bench/aerospace-windows.nu`. A suite that shells out to
    a window manager is a suite that runs on one desktop.
-   **What must NOT happen** is this being folded into another step. Step 11 is
-   what folding it in looks like: a model invented to fit the one caller in
-   front of it, built, and unwound the same day. Probe first, interface second.
+   **PHASE 3 NEVER HAPPENED, and that is the result rather than an omission.**
+   It existed to answer "where does a container that is not a display record its
+   coordinate", and phase 1 removed the question: aerospace records nothing.
+   `discover-own-location` stays on the display contract, where it is the only
+   thing that has ever needed it, and `core/dispatch.nu` never learns that
+   containers exist — so the hook's import cone is untouched, measured at
+   **37.6ms before and after** the whole step.
+   **PHASE 5 — WHAT IT COSTS, end to end, on the real bar.** The acceptance test
+   is a click with the terminal genuinely behind another application: focus on
+   Firefox on workspace 2, click a row, land on Ghostty on workspace 1 with the
+   agent's pane active. **220ms median over five runs**, and where it goes is
+   worth knowing, because it is not where the module is:
+
+   | | ms |
+   |---|---|
+   | `sh` + three `--set` to shut the drawers | ~10 |
+   | `nu -n --no-std-lib` + parse `cli/jump.nu` | 25.3 |
+   | `aerospace list-windows --all` — finding the window | 29.9 |
+   | `aerospace focus --window-id` ACROSS workspaces | 40.9 |
+   | zellij `focus-pane-id` | ~11 |
+   | macOS settling the window switch | the rest |
+
+   **Nine tenths of a click is the desktop, not us**, and the module's own share
+   is the 25ms of nushell that D76 already priced against 97.3ms through the
+   facade. A click is one deliberate human action and 220ms of it is a window
+   coming forward, which is a thing you can watch happen.
+   **AND `commands-settings` CAME BACK, on both containers.** It was unwound
+   with `focus_terminal_window` because it existed only to validate that
+   setting; it returns because aerospace's namespace cannot legally appear in
+   the config file without it (D70), and zellij's got it too so that the two are
+   symmetric and `zellij: {commands: {binry: …}}` is not silently ignored.
+   **What did NOT happen, and the reason step 11 is worth remembering.** Step 11
+   invented a model to fit the one caller in front of it, built it, and unwound
+   it the same day. This step probed first: four experiments, one of which
+   killed the plan, before any interface was written down. The cost was an
+   afternoon; the cost of not doing it was step 11.
 
 ---
 
 ## 9b. Deferred — what is not built, and what each one waits on
 
-Every step in §9 is done bar step 12, which step 11 produced by getting a model
-wrong. These are work set aside on purpose, each for a reason that has not changed. Written down because
+Every step in §9 is done, step 12 included — it is what step 11 produced by
+getting a model wrong, and it is the last of these to close. These are work set
+aside on purpose, each for a reason that has not changed. Written down because
 the alternative is rediscovering them — and because the first and the third were
 blocked on a DECISION rather than on effort, which is a different kind of
 waiting and needs saying out loud. **The first stopped being one of them and is now
@@ -2080,9 +2115,11 @@ Not nushell — the programs underneath. Same rule as §10: cost time once, not
 twice.
 
 **aerospace and macOS windows** — probed in step 12 phase 1, 2026-09-14, with
-`bench/aerospace-windows.nu`. Costs: `list-windows --all` 10.9ms,
-`--focused` 13.3ms, `focus --window-id` 20.6ms, and the whole outer rung of a
-jump — find the window from a session name, then focus it — **23.0ms**.
+`bench/aerospace-windows.nu`. Costs measured two ways, and the difference is the
+point: **inside one nushell**, `list-windows --all` is 10.9ms, `--focused`
+13.3ms and `focus --window-id` 20.6ms; **as separate processes**, which is how a
+jump actually pays for them, 29.9ms and 40.9ms — the ~13ms process floor lands
+on every one. The whole outer rung of a real click is ~71ms of aerospace.
 
 - **`list-windows --focused` IS NOT THE AGENT'S WINDOW**, and it was caught
   being wrong live: focused was Firefox on workspace 2 while the agent sat in

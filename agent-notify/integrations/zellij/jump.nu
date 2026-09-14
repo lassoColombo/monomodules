@@ -61,9 +61,23 @@ const BENIGN = ["already focused"]
 
 # The `commands` half of this tool's namespace, plus what it shares with the
 # display half — which today is the whole of it.
-def settings []: nothing -> record {
-    let given = config settings-for (config load) "zellij" "commands"
+#
+# PURE, and exported, for the same reason a display's `settings` is: only the
+# tool knows what its keys mean, so `agent-notify config check` has to be able
+# to ask. Unlike a display's it is checked WHETHER OR NOT the tool is in
+# `displays:` — nothing turns commands on, so a typo here is always live.
+#
+# No return-type signature: a def annotated with one cannot END in `error make`
+# (plan.md §10).
+export def commands-settings [given: record] {
+    for k in ($given | columns | where {|k| $k != "binary" }) {
+        error make --unspanned {msg: $"zellij: '($k)' is not a command setting \(try: binary\)"}
+    }
     {binary: (program resolve ($given.binary? | default ""))}
+}
+
+def settings []: nothing -> record {
+    commands-settings (config settings-for (config load) "zellij" "commands")
 }
 
 # See note 3.

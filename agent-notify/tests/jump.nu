@@ -91,6 +91,20 @@ export def main [] {
                ($live.0 | last) "terminal_9")
     ]
 
+    # ── and what a human is told about the settings ───────────────────────────
+    # `commands-settings` is the optional fifth contract member: only the tool
+    # knows what its own keys mean, so `config check` has to be able to ask, and
+    # it asks WHETHER OR NOT zellij is in `displays:` — nothing turns commands
+    # on, so a typo there is always live.
+    let g = [
+        (check-err "a command setting we do not have is a typo, and is named"
+                   "is not a command setting" {|| jump commands-settings {binry: "x"} })
+        (check "an empty half is fine — the program is found on PATH"
+               (jump commands-settings {} | columns) ["binary"])
+        (check "…and the program is resolved ABSOLUTE, like everywhere else"
+               (jump commands-settings {} | get binary | str starts-with "/") true)
+    ]
+
     # ── agents there is nowhere to jump to ────────────────────────────────────
     let f = [
         (check-err "an agent that was never seen in a pane is a clear no, not a crash"
@@ -100,6 +114,6 @@ export def main [] {
     ]
 
     hide-env ZELLIJ_SESSION_NAME
-    let all = ($b ++ $c ++ $d ++ $e ++ $f)
+    let all = ($b ++ $c ++ $d ++ $e ++ $f ++ $g)
     summarise $all --title "jump"
 }
