@@ -38,10 +38,20 @@
 # EVERY SCRIPT GUARDS ON $SENDER. An item's script also runs on a forced
 # `--update`, which SketchyBar sends at bar load; without the guard the bar
 # would open a drawer nobody hovered.
+#
+# THE FLASH is the second generated shell in this file and the only one that is
+# not a reaction to the mouse — see `expiry-shell`, which is where the one timer
+# on the bar lives and where all three ways a flash can end are spelled out.
 
 # The three states worth a counter, in the order they are added to the bar. Idle
 # is not one: an agent with nothing to say does not deserve a number.
 export const COUNTED = ["working" "awaiting" "needs-attention"]
+
+# The states that ANNOUNCE THEMSELVES — everything an agent reports that is not
+# "still going". `working` is deliberately not one: an agent getting on with it
+# is the state the bar is in most of the day, and a bar that lit up for it would
+# be lit up all day and mean nothing.
+export const ANNOUNCED = ["awaiting" "needs-attention"]
 
 # Escapes, not literal characters — Private Use Area glyphs do not survive
 # ordinary tooling (plan.md §10). The same three shapes the zellij titles use,
@@ -67,12 +77,34 @@ export def pv-name [settings: record, state: string, index: int]: nothing -> str
 export def group [settings: record]: nothing -> string { $"($settings.prefix)group" }
 export def exit-item [settings: record]: nothing -> string { $"($settings.prefix)exit" }
 
+# The item that holds a flash: a hidden one, whose whole content is the moment
+# the flash is over and what to do then. It draws nothing ever.
+export def flash-item [settings: record]: nothing -> string { $"($settings.prefix)flash" }
+
+# What the pointer says when it arrives: the announcement has been read. Its own
+# event rather than a shared one, so a bar full of other people's items cannot
+# be listening and cannot be woken.
+export def seen-event [settings: record]: nothing -> string { $"($settings.prefix)flash_seen" }
+
 # Same hue, less alpha: a counter at zero stays recognisable by colour instead
 # of going grey, so the three icons read at a glance the way the wifi and
 # battery widgets do.
 export def tint [color: string, alpha: string]: nothing -> string {
     $"0x($alpha)($color | str substring 4..)"
 }
+
+# HOW LOUD A LIT THING IS. A wash and an edge, not a block of colour: a chip and
+# a row both have to stay readable while they are lit, and it is the border that
+# actually catches the eye — a filled pill just looks like a different theme.
+const LIT_FILL = "33"
+const LIT_EDGE = "aa"
+const UNLIT = "0x00000000"
+
+# Animation ticks, at 60 a second (probed). In long enough to read as something
+# arriving rather than as a repaint; out slower than in, because a thing leaving
+# should not be the part that catches your eye.
+const FADE_IN = 18
+const FADE_OUT = 30
 
 # ── the shell a hover runs ────────────────────────────────────────────────────
 
@@ -111,12 +143,17 @@ def close-shell [settings: record]: nothing -> string {
 # off a counter means you are done with the one you left. v1 needed a flag file
 # on disk to know which counters were empty; here the count is already in hand,
 # and the script is rewritten only when it crosses zero.
+#
+# AND IT TELLS THE FLASH IT HAS BEEN SEEN. `--trigger` is one token on a message
+# that was being sent anyway, and it is what stops a flash shutting a drawer
+# under a pointer that came to read it — see `expiry-shell`.
 export def open-shell [settings: record, state: string, count: int]: nothing -> string {
-    if $count == 0 { return ($GUARD + (close-shell $settings)) }
+    let seen = ["--trigger" (seen-event $settings)]
+    if $count == 0 { return ($GUARD + (close-shell $settings) + $" ($seen | str join ' ')") }
     let others = $COUNTED | where {|st| $st != $state }
         | each {|st| ["--set" (item-name $settings $st) "popup.drawing=off"] } | flatten
     let blank = 0..<$settings.preview_lines | each {|index| ["--set" (pv-name $settings $state $index) "drawing=off"] } | flatten
-    let args = ["--set" (item-name $settings $state) "popup.drawing=on"] ++ $others ++ $blank
+    let args = ["--set" (item-name $settings $state) "popup.drawing=on"] ++ $others ++ $blank ++ $seen
     $GUARD + $"($settings.binary) ($args | str join ' ')"
 }
 
@@ -137,22 +174,43 @@ def ink [settings: record, hue: string, kind: string]: nothing -> string {
     }
 }
 
-# One row's preview, as the command that will show it. Called at PAINT time with
-# the rows already wrapped and kinded, so the hover itself does no thinking.
-export def hover-shell [settings: record, state: string, rows: list<record>]: nothing -> string {
+# WHAT EACH PREVIEW SLOT SHOULD SAY, decided once and rendered twice. A hover
+# has it baked into a shell command; a flash sends it as plain argv, having
+# opened the drawer with nobody's pointer in it. The two differ only in
+# quoting — and quoting is the one thing that must live where the quote is
+# written, so the decision is here and neither rendering repeats it.
+def pv-slots [settings: record, state: string, rows: list<record>]: nothing -> list<record> {
     let hue = $settings.colors | get $state
-    let args = 0..<$settings.preview_lines | each {|index|
+    0..<$settings.preview_lines | each {|index|
         let r = $rows | get -o $index
-        if $r == null {
-            ["--set" (pv-name $settings $state $index) "drawing=off"]
-        } else {
-            ["--set" (pv-name $settings $state $index)
-             $"'label=(quotable $r.t)'"
-             $"label.color=(ink $settings $hue $r.k)"
-             "drawing=on"]
+        let name = pv-name $settings $state $index
+        if $r == null { {name: $name, on: false} } else {
+            {name: $name, on: true, label: $r.t, color: (ink $settings $hue $r.k)}
         }
+    }
+}
+
+# The preview as ARGV — no shell between us and the bar, so the agent's words go
+# through exactly as written.
+export def pv-args [settings: record, state: string, rows: list<record>]: nothing -> list<string> {
+    pv-slots $settings $state $rows | each {|s|
+        if $s.on {
+            ["--set" $s.name $"label=($s.label)" $"label.color=($s.color)" "drawing=on"]
+        } else { ["--set" $s.name "drawing=off"] }
     } | flatten
-    $GUARD + $"($settings.binary) ($args | str join ' ')"
+}
+
+# One row's preview, as the command that will show it. Called at PAINT time with
+# the rows already wrapped and kinded, so the hover itself does no thinking —
+# and it tells the flash it has been seen for the same reason `open-shell` does:
+# a pointer can reach a row without ever crossing the counter above it.
+export def hover-shell [settings: record, state: string, rows: list<record>]: nothing -> string {
+    let args = pv-slots $settings $state $rows | each {|s|
+        if $s.on {
+            ["--set" $s.name $"'label=(quotable $s.label)'" $"label.color=($s.color)" "drawing=on"]
+        } else { ["--set" $s.name "drawing=off"] }
+    } | flatten
+    $GUARD + $"($settings.binary) ($args ++ ['--trigger' (seen-event $settings)] | str join ' ')"
 }
 
 # ── the shell a CLICK runs ────────────────────────────────────────────────────
@@ -195,6 +253,89 @@ export def click-shell [settings: record, id: string]: nothing -> string {
     $"($shut); exec ($jump)"
 }
 
+# ── the flash ─────────────────────────────────────────────────────────────────
+#
+# A drawer that opens itself. An agent that says something other than "still
+# going" gets its chip lit, its drawer opened on its own words, and its row lit
+# inside it — and then, a few seconds later, all of that taken away again.
+#
+# THE HARD PART IS THE TAKING AWAY, because this module has no daemon. Three
+# things can end a flash and they all land in `unlit-args`:
+#
+#   the clock    the one timer on the bar. Armed by the raise, it ticks once a
+#                second and does nothing until the moment baked into its script
+#   the pointer  `<prefix>flash_seen`, triggered by every hover of ours
+#   the next paint
+#                the agent left the state, so `flash` arrives in `removed` and
+#                the undo is sent on the spot
+#
+# CANCELLATION IS STRUCTURAL, which is the part worth keeping. There is ONE
+# timer item and raising a flash REWRITES ITS SCRIPT, so an older announcement's
+# deadline cannot cut a newer one short and there is no generation counter
+# anywhere to say so. The deadline itself is `state_since` plus the window — a
+# fact about the record, not `now` plus the window — so it does not drift when
+# an unrelated paint re-sends it.
+#
+# WHAT IT COSTS when nothing is happening: nothing. `update_freq=0` is not a
+# slow tick, it is no tick at all (probed), and a disarmed flash item has an
+# empty script, so the `--trigger` every hover sends runs no shell.
+
+# Everything one flash lit, put back, and the timer that would have done it
+# disarmed. Built at RAISE time because that is when what got lit is known: the
+# same list is sent on the spot when an agent leaves the state, and baked into
+# the timer's script for when nothing else is ever going to happen.
+#
+# `--shut` closes the drawer the flash opened as well, and ONLY the clock uses
+# it. A pointer that has arrived owns the drawer from that moment, and nothing
+# of ours may shut one under a pointer that came to read it.
+export def unlit-args [settings: record, state: string, index: any, --shut]: nothing -> list<string> {
+    let item = item-name $settings $state
+    let row = if $index == null { [] } else {
+        ["--set" (row-name $settings $state $index)
+         $"background.color=($settings.colors.row)" "background.border_width=0"]
+    }
+    let drawer = if $shut { ["--set" $item "popup.drawing=off"] } else { [] }
+    let timer = ["--set" (flash-item $settings) "update_freq=0" "script="]
+    # The chip last, and behind the fade, because `--animate` colours everything
+    # after it in a message and nothing else here wants interpolating (probed).
+    let chip = ["--animate" "sin" ($FADE_OUT | into string)
+                "--set" $item $"background.color=($UNLIT)" "background.border_width=0"]
+    $timer ++ $row ++ $drawer ++ $chip
+}
+
+# The timer's whole mind, in four commands. Two senders reach it and they want
+# different things, so the first line is `&& exec` rather than a guard: a
+# pointer that said seen leaves by it, and anything else falls through to the
+# deadline. Nothing in here needs quoting — the agent's words are not in it.
+def expiry-shell [settings: record, value: record]: nothing -> string {
+    let quiet = $"($settings.binary) (unlit-args $settings $value.state $value.index | str join ' ')"
+    let over = $"($settings.binary) (unlit-args $settings $value.state $value.index --shut | str join ' ')"
+    [ $"[ \"$SENDER\" = (seen-event $settings) ] && exec ($quiet)"
+      "[ \"$SENDER\" = routine ] || exit 0"
+      $"[ \"$\(date +%s\)\" -ge ($value.until) ] || exit 0"
+      $"exec ($over)" ] | str join "; "
+}
+
+# Raise it. The ROW is not lit here — it is lit by its own key, because only the
+# diff knows which row STOPPED being the lit one when an agent's slot moves
+# under it. What is lit here is the chip, which belongs to no row and would
+# otherwise have nobody to switch it off.
+export def flash-args [settings: record, value: record]: nothing -> list<string> {
+    let item = item-name $settings $value.state
+    let hue = $settings.colors | get $value.state
+    let drawer = if not $settings.flash_drawer { [] } else {
+        let others = $COUNTED | where {|st| $st != $value.state }
+            | each {|st| ["--set" (item-name $settings $st) "popup.drawing=off"] } | flatten
+        let preview = pv-args $settings $value.state $value.lines
+        ["--set" $item "popup.drawing=on"] ++ $others ++ $preview
+    }
+    let timer = ["--set" (flash-item $settings) "update_freq=1" $"script=(expiry-shell $settings $value)"]
+    let chip = ["--animate" "sin" ($FADE_IN | into string)
+                "--set" $item $"background.color=(tint $hue $LIT_FILL)"
+                $"background.border_color=(tint $hue $LIT_EDGE)" "background.border_width=1"]
+    $drawer ++ $timer ++ $chip
+}
+
 # ── what a paint writes ───────────────────────────────────────────────────────
 
 # A drawer's size changed: the item-name's number, its header, and — since an
@@ -216,12 +357,23 @@ export def counter-args [settings: record, state: string, count: int]: nothing -
       $"label=($label)" ]
 }
 
-# One agent's row: what it says, what hovering it shows, and where clicking it
-# takes you.
+# One agent's row: what it says, whether it is the one that just arrived, what
+# hovering it shows, and where clicking it takes you.
+#
+# THE PILL IS A DIFFED FACT, not something the flash reaches in and sets. A
+# flashing agent's row moves when an older one leaves the state, and the diff is
+# the only thing that knows both slots — so `flash` rides in the row's own value
+# and the row that stopped being lit is unlit by the same mechanism that lights
+# the new one.
 export def row-args [settings: record, state: string, index: int, value: record]: nothing -> list<string> {
+    let hue = $settings.colors | get $state
+    let lit = $value.flash? | default false
     [ "--set" (row-name $settings $state $index)
       $"label=($value.label)"
       "drawing=on"
+      $"background.color=(if $lit { (tint $hue $LIT_FILL) } else { $settings.colors.row })"
+      $"background.border_color=(if $lit { (tint $hue $LIT_EDGE) } else { $UNLIT })"
+      $"background.border_width=(if $lit { 1 } else { 0 })"
       $"script=(hover-shell $settings $state $value.lines)"
       # A row with no id behind it gets NO click rather than a click that goes
       # nowhere. It cannot happen from a live paint — `render-items` always has
@@ -254,7 +406,10 @@ export def row-off-args [settings: record, state: string, index: int]: nothing -
 # prune-daemon is its own thing now (core/prune-daemon/), and this file is
 # only a display again.
 export def preallocate-args [settings: record]: nothing -> list<string> {
-    mut args = []
+    # The pointer's way of saying it has seen a flash. Declared before anything
+    # subscribes to it, and declaring it twice is not an error (probed), so a
+    # re-run of the install is still idempotent.
+    mut args = ["--add" "event" (seen-event $settings)]
     for state in $COUNTED {
         let item = item-name $settings $state
         let hue = $settings.colors | get $state
@@ -271,6 +426,13 @@ export def preallocate-args [settings: record]: nothing -> list<string> {
             "label=0"
             $"label.font=($settings.font):Semibold:13.0"
             $"label.color=($settings.colors.dim)"
+            # The chip's pill, present and invisible, so a flash has something
+            # to fade IN — an animation needs a value to come from, and a
+            # background that is switched off has none. Height and corner radius
+            # are left to the bar's own `--default`, which is where the bracket
+            # around these three already gets its shape: a chip that lights up
+            # must be the same pill as the group it sits in.
+            "background.drawing=on" $"background.color=($UNLIT)" "background.border_width=0"
             # popup.align=left so a drawer opens rightward; align=right ran it
             # off the screen edge.
             #
@@ -352,6 +514,17 @@ export def preallocate-args [settings: record]: nothing -> list<string> {
         "--set" $exit "drawing=off"
         $"script=[ \"$SENDER\" = mouse.exited.global ] || exit 0; exec (close-shell $settings)"
         "--subscribe" $exit "mouse.exited.global"
+    ]
+    # THE ONE TIMER ON THE BAR, and it arrives disarmed and empty. It holds a
+    # flash's deadline and nothing else; liveness is still not a display's job
+    # and never was (core/prune-daemon/). A flash writes both properties when it
+    # raises one and puts them back when it is over, so between flashes this
+    # item costs the bar nothing at all.
+    let flash = flash-item $settings
+    $args = $args ++ [
+        "--add" "item" $flash $settings.position
+        "--set" $flash "drawing=off" "update_freq=0" "script="
+        "--subscribe" $flash (seen-event $settings)
     ]
     let names = $COUNTED | each {|state| item-name $settings $state }
     $args ++ ["--add" "bracket" (group $settings) ...$names

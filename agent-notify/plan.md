@@ -924,7 +924,7 @@ and `screen` already taught what a question with one caller is worth (D58).
 | D3 | Config at `$XDG_CONFIG_HOME/agent-notify/config.yaml` | **LOCKED** | runtime read, entry-point agnostic, 0.06ms |
 | D4 | Colours in the config file | **LOCKED** | user decision |
 | D5 | Strict config validation | **LOCKED** | user decision |
-| D6 | No animations — static glyphs, coloured by state | **LOCKED** | user decision; also removes the only 1Hz process (~15ms/s forever) |
+| D6 | No animations — static glyphs, coloured by state | **REVISED** (step 13) | the glyphs are still static and always will be: a spinner is a 1Hz process forever, which is the half of this that was never about taste. What step 13 added is a TRANSITION — a highlight that fades in over 0.3s and out over 0.5s, animated by the bar itself with `--animate`, costing nothing at all when nothing is arriving. The flash's timer is the same bargain: it ticks at 1Hz *while a flash is up*, a few seconds after a state change, and `update_freq=0` between them is not a slow tick but no tick at all (probed). Steady state is unchanged — zero ticks, zero animation |
 | D7 | No display/render cache, no `displays/` namespace | **LOCKED** | saves ~2.4ms in a rare case; costs a namespace, a staleness class, and a concurrency race |
 | D8 | One session-store namespace: `sessions/`, one file per session, temp+rename | **LOCKED** | inherited from v1, measured cheap (0.26ms put) |
 | D9 | In-process dispatch — no poke, no `render.sh`, no second process | **LOCKED** | step 3 — built and running: `core/dispatch.nu` fans out inside the agent's own process. It removed a whole nu spawn + parse (34.6ms/event measured) and two glue scripts with it |
@@ -999,6 +999,9 @@ and `screen` already taught what a question with one caller is worth (D58).
 | D77 | A session is at a PATH through containers, not inside one; `containers-of` returns the CHAIN | **LOCKED** (the model) | §4.8 — aerospace → Ghostty → zellij → pane 7. `focus-session` walks it outermost first, concatenating what each container says it would run, which is why `focus-session-argv` exists and why `jump argv` already returns a list. A chain of one, two or three is the same code, so Ghostty-splits-without-zellij and an agent on the desktop with no terminal stop being special cases — and nobody ever passes `--from-desktop`, because there is nothing left to decide |
 | D78 | ONE concept — the container. No taxonomy of kinds, no layer, no depth | **LOCKED** | §4.8 — user decision, and it deletes a whole vocabulary: a window-manager/application/multiplexer split was drafted and rejected as naming something that does not need naming. The registry is hand-written already (D26), so the order it is written in IS the nesting order, outermost first. One list, read top to bottom, reads outside to inside — and a new container is still one file and one row |
 | D79 | The container interface for a chain: FOUR MEMBERS AND ONE OPTIONAL, and the two cheap ones may not touch the world | **LOCKED** | step 12 — `owns-session`, `location-label`, `focus-session-argv`, `focus-session`, plus `commands-settings` where a tool has settings. The rule that shaped all of it was found by looking at who CALLS them: `picker/rows.nu` asks the first two for every record every two seconds, so a container answering either by running a program puts one subprocess per agent on a timer. Hence claim-optimistically-and-look-later, which is what let aerospace exist at all. Two of the three questions step 12 opened turned out not to be questions — nothing needs `discover-own-location` (aerospace stores nothing, so there is no coordinate to record), and the durable/volatile split needs no vocabulary because resolving at jump time is simply what an uncertain container does. The third is real and is DEFERRED: aerospace finds its window by the `zellij.session` an inner container wrote, and whether that should become a contract member is a question one caller cannot answer |
+| D80 | The flash is DERIVED from `state_since`, not remembered | **LOCKED** | step 13 — "has this just happened?" is a question the record already answers about itself, so an arrival needs no flag, no previous-paint comparison and no field. The window is `state_since + flash_seconds`, which makes the deadline a fact ABOUT THE RECORD rather than about the paint: an unrelated repaint two seconds later re-sends the same flash with the same end, and cannot push it away. It is also the one thing in the display that is not a pure function of its records, and it has to be — *recently* is a question about the clock. Harmless, because dispatch renders both halves of a diff in the same breath, so the two can never disagree about what time it is |
+| D81 | The bar TIMES ITS OWN FLASH OUT — one item, a baked deadline, and re-arming is the cancel | **LOCKED** | step 13 — nothing in this module outlives a hook (§10: `job spawn` dies with its process), so the only thing that can look again in six seconds is the bar. One hidden item holds `update_freq=1` and a script carrying the deadline; it compares `date +%s` against it, puts back exactly what was lit, and disarms itself. **There is ONE such item, and raising a flash rewrites its script** — so an older announcement's deadline cannot cut a newer one short and there is no generation counter anywhere to say so. Cancellation is structural rather than checked. This is not D39 coming back: liveness is a CORE guarantee and must not depend on an optional display, while a highlight that will not go out is a display's own problem and nobody else's |
+| D82 | The pointer ends a flash early, and never loses the drawer | **LOCKED** | step 13 — the only unforgivable failure mode is a drawer shutting under a pointer that came to read it, and a flash that opens one and closes it six seconds later will do exactly that. So every hover of ours `--trigger`s one event: the announcement has been read, the light goes out, the timer stands down, and the drawer is LEFT EXACTLY WHERE IT IS — from that moment it is the pointer's, and it closes the way every other drawer closes. One token on a message that was being sent anyway, and between flashes the item it wakes has an empty script, so it runs no shell at all |
 | D15 | Replace pandoc with a nu-native flattener | **LOCKED** (step 5b) | done: `integrations/sketchybar/text.nu` does it in nushell. 25.1ms off the event path and a dependency gone. v1 could afford pandoc because it converted where the preview was STORED, on a path already spawning processes; v2's whole paint is 6.5ms. Superseded in part by D60 — the flattener is a parser now, and still no subprocess |
 | D16 | Where the bench harness lives | **OPEN** | the only open row left. ~350 lines of documented nu; §8, and §9b.3 |
 | D17 | Promoted to `monomodules/agent-notify`, a module beside `ai` and the rest | **LOCKED** (2026-09-12) | step 7 — it was never `ai`-shaped: reflecting agent state on a status bar is not provider-agnostic content generation, and being a submodule is what made every hook parse the whole `ai` tree. The directory, the command, the session-store at `~/.local/share/agent-notify/` and the bar prefix `an_` all carry the one name |
@@ -1801,13 +1804,64 @@ in
    it the same day. This step probed first: four experiments, one of which
    killed the plan, before any interface was written down. The cost was an
    afternoon; the cost of not doing it was step 11.
+13. **The flash — a drawer that opens itself** — ✅ done. D80–D82, and D6
+    revised. The bar could always tell you how many agents were waiting; it
+    could never tell you that one had *just started*. A counter going from 2 to
+    3 is the same three pixels whether it happened now or twenty minutes ago,
+    and the drawer that would say which one is behind a hover nobody makes
+    while they are looking at something else. So an agent that reports anything
+    other than "still going" now lights its chip, opens its drawer on its own
+    words with its row lit inside, and takes all of that away again a few
+    seconds later.
+    **THE RAISE NEEDED NO NEW MACHINERY AT ALL**, which is the part worth
+    keeping. `state_since` is already the moment a state changed, so *has this
+    just happened?* is a question the record answers about itself (D80) — no
+    flag, no field, no comparison with a previous paint. `flash` is one more key
+    in the projection, so `core/dispatch.nu` raises it when it appears and undoes
+    it when it goes, exactly as it does for a row; and the ROW's own pill rides
+    in the row's value, because a flashing agent's slot moves when an older one
+    leaves the state and only the diff knows both slots. Two mechanisms, no
+    special cases, and the third way a flash can end came free.
+    **THE TAKING AWAY IS THE WHOLE OF THE PROBLEM.** Nothing here outlives a
+    hook — `job spawn` dies with its process, §10 — so the only thing that can
+    look again in six seconds is the bar. It gets ONE hidden item holding
+    `update_freq=1` and a script carrying the deadline, and re-arming rewrites
+    that script, so cancellation is structural rather than checked (D81). What
+    made `update_freq` affordable at all is that 0 is not a slow tick but no
+    tick (probed, §11), so the steady state is what it always was: zero.
+    **AND THE POINTER MUST WIN.** A drawer that shuts under someone who came to
+    read it is the one unforgivable version of this feature, so every hover of
+    ours triggers one event that ends the flash and LEAVES THE DRAWER (D82) —
+    one token on a message already being sent, and between flashes it wakes an
+    item with an empty script, which runs no shell.
+    **D6 IS REVISED RATHER THAN BROKEN.** The glyphs are still static; what was
+    added is a transition the bar animates itself, and `--animate` turned out to
+    reach forward only within a message (probed), which is what lets the fade be
+    scoped to the chip by putting the flash LAST instead of sending a second
+    message for it.
+    **Measured, because §3 asked every later step to watch the cone.** The
+    display parses +1.37ms, of which stripping every comment gives back 0.41 —
+    so ~1ms is genuine code and the prose is nearly free, as §4.4 predicted.
+    `render-items` is +0.07ms on eight agents (it parses a timestamp per
+    announced record). Building the flash's own arguments is 0.53ms, and it
+    costs **no extra subprocess at all**: the args ride the message the paint
+    was sending anyway. Call it ~1.5ms on an event and ~2ms on a transition,
+    against the 21–22ms of §3.
+    **One residue, known and accepted.** When the pointer ends a flash early,
+    the projection still says "lit" until the window is out; a paint landing in
+    that gap that also rewrites that exact row will re-light it, and the timer
+    it would have relied on has already stood down. It needs an awaiting agent's
+    row to change while it is awaiting, which is close to nothing, and it costs
+    a faint tint on one row inside a closed drawer until the next paint after
+    the window. The alternative was a script that rewrites itself with nested
+    quoting, which is a worse thing to own.
 
 ---
 
 ## 9b. Deferred — what is not built, and what each one waits on
 
 Every step in §9 is done, step 12 included — it is what step 11 produced by
-getting a model wrong, and it is the last of these to close. These are work set
+getting a model wrong, and it was the last of these to close. These are work set
 aside on purpose, each for a reason that has not changed. Written down because
 the alternative is rediscovering them — and because the first and the third were
 blocked on a DECISION rather than on effort, which is a different kind of
@@ -2107,6 +2161,21 @@ caller.
 either end — the same rule as booleans. `+ (…)` on its own line is read as a
 fresh pipeline and fails with "Command `+` not found".
 
+**IT IS ONE RULE, and it is worth stating as one: a line break ENDS the
+expression.** Four spellings of it have now been paid for separately —
+`and`/`or`, a flag, `+`, and `++` — and step 13 found the last two shapes:
+
+| written across two lines | what nushell says |
+|---|---|
+| `} \n else { … }` | ``Command `else` not found`` — with "Did you mean `if`?" |
+| `f $a \n $b` | `Missing required positional argument` |
+| `[…] \n ++ $more` | ``Command `++` not found`` |
+
+Each complaint names something *else*, which is why the same rule keeps costing
+time in a new disguise. The fix is always the same: bind the parts with `let`
+and put the expression on one line, or keep `} else {` together on the closing
+line — which is what every `if` in this repo already does.
+
 ---
 
 ## 11. Platform notes (hard-won)
@@ -2264,6 +2333,32 @@ on every one. The whole outer rung of a real click is ~71ms of aerospace.
 - 74 items with subscriptions and full styling cost **117ms in one `--add`
   message**, and a 70-property `--set` costs 18.6ms. Creating the pool once and
   setting into it forever is worth roughly an order of magnitude.
+
+Probed in step 13, for the flash — all four on the live bar, v2.24.0:
+
+- **`update_freq=0` is not a slow tick, it is NO tick.** An item with it never
+  runs its script on the routine; set it to 1 and the script starts firing every
+  second with `SENDER=routine`, with no subscription and while `drawing=off`.
+  Set it back to 0 and it stops on the next second. So a timer that costs
+  nothing when idle is one property, and **an item's script can set that
+  property on its own item** — which is the whole of how a flash disarms itself.
+- **`--animate <curve> <ticks>` reaches FORWARD only.** Everything `--set` after
+  it in the same message is interpolated and everything before it is applied at
+  once — probed both ways. Ticks are 60ths of a second. Colours interpolate
+  per channel, so a fade needs a value to come FROM: a background at
+  `drawing=off` has none, and one at `0x00000000` has.
+- **A custom event is one `--add event <name>`, and adding it twice is not an
+  error** (exit 0, nothing printed), so it can sit in an idempotent install
+  message. `--trigger <name>` reaches its subscribers from a plain client and
+  from inside another item's script alike, arriving as `SENDER=<name>`.
+- **`popup.drawing=on` works from outside any mouse event** — a popup is not
+  owned by the pointer that usually opens it, which is what lets a drawer open
+  itself.
+- A bar item's `background.height` and `corner_radius` are LEFT ALONE on
+  purpose. They come from the bar's own `--default`, which is already where the
+  bracket around the three counters gets its shape: a chip that lights up has to
+  be the same pill as the group it sits in, and only the user's config knows
+  what that is.
 
 **launchd**
 

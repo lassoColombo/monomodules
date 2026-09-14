@@ -30,6 +30,18 @@ def agents [...states: string]: nothing -> list<record> {
     }}
 }
 
+# An agent that arrived a given while ago. The flash is the one thing here that
+# asks the clock a question, so it is the one thing that cannot be tested
+# against a timestamp written into the file: `agents` above is all long past,
+# which is why none of it flashes.
+def stamped-ago [ago: duration]: nothing -> string {
+    ((date now) - $ago) | date to-timezone UTC | format date "%Y-%m-%dT%H:%M:%S%.6fZ"
+}
+def arrival [id: string, state: string, ago: duration]: nothing -> record {
+    {id: $id, agent: "claude", state: $state, name: $"agent-($id)", cwd: "/w",
+     message: "Ready for you.", state_since: (stamped-ago $ago)}
+}
+
 # Every generated shell command, pulled back out of a message.
 def scripts [msg: list<string>]: nothing -> list<string> {
     $msg | where {|x| ($x | str starts-with "script=") or ($x | str starts-with "click_script=") }
@@ -56,8 +68,9 @@ export def main [] {
     # ── settings ──────────────────────────────────────────────────────────────
     let a = [
         (check "there is a default for everything" ($settings | columns | sort)
-               ["background" "binary" "colors" "font" "line_height" "position" "prefix"
-                "preview_lines" "preview_width" "row_width" "rows"])
+               ["background" "binary" "colors" "flash_drawer" "flash_seconds" "font"
+                "line_height" "position" "prefix" "preview_lines" "preview_width"
+                "row_width" "rows"])
         (check "the program is resolved to an ABSOLUTE path, not left to PATH"
                ($settings.binary | str starts-with "/") true)
         (check-err "…and a path that is not there is a loud error, not a silent no-op"
@@ -85,6 +98,17 @@ export def main [] {
                    {|| sketchybar settings {rows: 0} })
         (check-err "…and so is one that is not a number" "must be a positive number"
                    {|| sketchybar settings {preview_lines: "lots"} })
+        # A SPAN is not a size: zero is a legal answer and means "never".
+        (check "an arrival stays lit for a few seconds by default" $settings.flash_seconds 6)
+        (check "…and takes its drawer with it" $settings.flash_drawer true)
+        (check "a flash can be switched off without touching anything else"
+               (sketchybar settings {flash_seconds: 0} | get flash_seconds) 0)
+        (check-err "…but not with a word" "number of seconds"
+                   {|| sketchybar settings {flash_seconds: "a while"} })
+        (check-err "…and not backwards" "number of seconds"
+                   {|| sketchybar settings {flash_seconds: -1} })
+        (check-err "a switch takes true or false, not a number" "must be true or false"
+                   {|| sketchybar settings {flash_drawer: 1} })
     ]
 
     # ── project: one key per slot ─────────────────────────────────────────────
@@ -317,21 +341,168 @@ export def main [] {
                ["click_script="])
     ]
 
+    # ── the flash: an arrival that lights itself, and puts itself out ─────────
+    # The ONE thing in this display that is not a pure function of its records,
+    # because "just arrived" is a question about the clock. So these records are
+    # stamped as the suite runs, and everything else in this file is long past
+    # on purpose — otherwise half the assertions above would be flashing.
+    let just_in = arrival "a" "awaiting" 1sec
+    let fresh = sketchybar render-items [$just_in] $settings
+    let stale = sketchybar render-items [(arrival "a" "awaiting" 1hr)] $settings
+    let busy = sketchybar render-items [(arrival "a" "working" 1sec)] $settings
+    let two = [(arrival "a" "awaiting" 4sec) (arrival "b" "awaiting" 1sec)]
+    let queue = sketchybar render-items $two $settings
+    let muted = sketchybar render-items [$just_in] (sketchybar settings {flash_seconds: 0})
+    let undated = sketchybar render-items [{id: "a", state: "awaiting", name: "x"}] $settings
+    let past_cap = sketchybar render-items $two (sketchybar settings {rows: 1})
+    let n = [
+        (check "an agent that has just arrived is announced, and the drawer knows where to look"
+               ($fresh | get flash | reject lines) {state: "awaiting", index: 0, until: ($fresh | get flash.until)})
+        (check "…carrying its own words, so the drawer opens saying what happened"
+               ($fresh | get flash.lines | last | get t) "Ready for you.")
+        (check "the moment it ends is WHEN IT ARRIVED plus the window, so a later repaint cannot push it away"
+               ($fresh | get flash.until)
+               ((($just_in.state_since | into datetime) + 6sec) | format date "%s" | into int))
+        (check "one that has been waiting an hour is not news" ($stale | get -o flash) null)
+        (check "and an agent getting on with its work is never news, however fresh"
+               ($busy | get -o flash) null)
+        # A newer notification supersedes an older one. Anything else and the
+        # bar would be announcing whatever happened to sort first.
+        (check "the most recent arrival wins" ($queue | get flash.index) 1)
+        (check "…and it is the one whose row is lit"
+               ($queue | columns | where {|k| $k | str starts-with "row|" }
+                | each {|k| $queue | get $k | get flash })
+               [false true])
+        (check "a chip lights even for an agent past the cap, because the NUMBER moving is the news"
+               ($past_cap | get flash | reject lines) {state: "awaiting", index: null, until: ($past_cap | get flash.until)})
+        (check "zero seconds is how you say never" ($muted | get -o flash) null)
+        (check "…and it leaves no lit row behind either"
+               ($muted | get "row|awaiting|0" | get flash) false)
+        (check "a record that never said when it changed cannot be new"
+               ($undated | get -o flash) null)
+    ]
+
+    # WHAT A RAISE SENDS. One message: the drawer, then the timer, then the chip
+    # behind the fade — and the fade LAST, because `--animate` colours every
+    # property set after it in the same message and none before it (probed).
+    let raise = sketchybar message {flash: ($fresh | get flash)} {} $settings
+    let quiet = sketchybar message {flash: ($fresh | get flash)} {} (sketchybar settings {flash_drawer: false})
+    let timer_script = $raise | where {|q| $q | str starts-with "script=[" } | first
+    let o = [
+        (check "the chip lights in its own state's hue"
+               ($"background.color=0x33($settings.colors.awaiting | str substring 4..)" in $raise) true)
+        (check "…with an edge, which is what actually catches the eye"
+               ("background.border_width=1" in $raise) true)
+        (check "…and it fades in rather than appearing"
+               ($raise | last 6 | first 3) ["--animate" "sin" "18"])
+        (check "the drawer opens itself" ("popup.drawing=on" in $raise) true)
+        (check "…and shuts the other two, exactly as a hover would"
+               ($raise | where {|q| $q == "popup.drawing=off" } | length) 2)
+        (check "…already filled with what the agent said, so there is nothing to hover for"
+               ("label=Ready for you." in $raise) true)
+        (check "a drawer that was told not to open does not, and its chip still lights"
+               [("popup.drawing=on" in $quiet) ("background.border_width=1" in $quiet)] [false true])
+        (check "the one timer on the bar is armed" ("update_freq=1" in $raise) true)
+        (check "…and nothing else in the message is"
+               ($raise | where {|q| $q | str starts-with "update_freq" } | length) 1)
+    ]
+
+    # THE TIMER'S SCRIPT is the whole of "temporarily". It is baked at the raise
+    # because that is the only moment that knows what got lit; it holds a
+    # deadline rather than a countdown, so an unrelated repaint cannot extend
+    # it; and re-arming REWRITES it, which is why cancellation needs no
+    # generation counter anywhere.
+    let p = [
+        (check "the timer knows the moment, not a countdown"
+               ($timer_script | str contains $"-ge ($fresh | get flash.until)") true)
+        (check "…asks the clock itself, because a tick it missed must not extend it"
+               ($timer_script | str contains '"$(date +%s)"') true)
+        (check "…and does nothing at all until then"
+               ($timer_script | str contains "|| exit 0") true)
+        (check "a tick that is not the routine one is not a deadline"
+               ($timer_script | str contains '[ "$SENDER" = routine ]') true)
+        (check "when it fires it puts the chip back, shuts the drawer it opened, and stands down"
+               (($timer_script | str contains "--set an_awaiting background.color=0x00000000")
+                and ($timer_script | str contains "--set an_awaiting popup.drawing=off")) true)
+        (check "…and only ITS drawer: it must not shut one you opened yourself in the meantime"
+               ($timer_script | str contains "an_working popup.drawing=off") false)
+        (check "…and unlights the row it lit, which is why the row index is in the projection"
+               ($timer_script | str contains "an_awaiting.row.0 background.color=") true)
+        (check "standing down means the timer stops AND forgets, so a hover afterwards runs nothing"
+               ($timer_script | str contains "--set an_flash update_freq=0 script=") true)
+        # The pointer arriving is the announcement being read. It ends the
+        # flash — but it must not shut the drawer, because from that moment the
+        # pointer owns it and that is the one thing that would be unforgivable.
+        (check "the pointer can end it early" ($timer_script | str contains '"$SENDER" = an_flash_seen') true)
+        (check "…and when it does, the drawer is left exactly where it is"
+               ($timer_script | split row "; " | first | str contains "popup.drawing") false)
+    ]
+
+    # WHO SAYS SEEN. Every hover of ours, which costs one token on a message
+    # that was being sent anyway.
+    let counter_hover = hover-scripts (sketchybar message {"count|working": 2} {} $settings) | first
+    let empty_hover = hover-scripts (sketchybar message {"count|working": 0} {} $settings) | first
+    let row_hover = hover-scripts (sketchybar message {"row|working|0": {id: "x", label: "one", lines: [{k: "text", t: "hi"}]}} {} $settings) | first
+    let q = [
+        (check "hovering a counter tells the flash it has been seen"
+               ($counter_hover | str contains "--trigger an_flash_seen") true)
+        (check "…an empty one too, because you are at the bar either way"
+               ($empty_hover | str contains "--trigger an_flash_seen") true)
+        (check "…and a row, because a pointer can reach one without crossing the counter above it"
+               ($row_hover | str contains "--trigger an_flash_seen") true)
+    ]
+
+    # WHAT A ROW LOOKS LIKE WHEN IT IS THE ONE. The pill is a diffed fact rather
+    # than something the flash reaches in and sets, because a flashing agent's
+    # row MOVES when an older one leaves the state — and only the diff knows
+    # both slots.
+    let lit_row = sketchybar message {"row|awaiting|0": {id: "x", label: "one", lines: [], flash: true}} {} $settings
+    let dim_row = sketchybar message {"row|awaiting|0": {id: "x", label: "one", lines: [], flash: false}} {} $settings
+    let void = sketchybar message {} {flash: {state: "awaiting", index: 0, until: 1789387358}} $settings
+    let r = [
+        (check "the lit row wears its state's hue" ($"background.color=0x33($settings.colors.awaiting | str substring 4..)" in $lit_row) true)
+        (check "…and every other row the drawer's own" ($"background.color=($settings.colors.row)" in $dim_row) true)
+        (check "…which is what unlights the one that stopped being it, with no flash involved"
+               ("background.border_width=0" in $dim_row) true)
+        # `removed` is the third way a flash can end: the agent went back to
+        # work before its window was out, so the announcement is void.
+        (check "an agent that leaves the state takes its announcement with it"
+               (("--set an_awaiting background.color=0x00000000" in ($void | str join " "))
+                and ("popup.drawing=off" in $void)) true)
+        (check "…and the timer with it, so nothing is left ticking for a flash that is gone"
+               ("update_freq=0" in $void) true)
+    ]
+
     # ── the item pool, created once ───────────────────────────────────────────
     let inst = sketchybar install-message $settings
     let small = sketchybar install-message (sketchybar settings {rows: 2, preview_lines: 3})
     let painted = sketchybar message (sketchybar render-items (agents "working") $settings) {} $settings
     let i = [
-        (check "three counters, three headers, their rows and previews, an exit and a bracket"
+        # Three counters, three headers, their rows and previews, an exit, a
+        # flash, a bracket — and the event the flash listens on, which `--add`
+        # also builds.
+        (check "the whole bar in one message"
                ($inst | where {|q| $q == "--add" } | length)
-               (3 + (3 * (1 + $settings.rows + $settings.preview_lines)) + 1 + 1))
+               (3 + (3 * (1 + $settings.rows + $settings.preview_lines)) + 4))
         (check "…and the pool follows the settings"
-               ($small | where {|q| $q == "--add" } | length) (3 + (3 * (1 + 2 + 3)) + 1 + 1))
+               ($small | where {|q| $q == "--add" } | length) (3 + (3 * (1 + 2 + 3)) + 4))
         (check "the counters are bracketed into one pill" ("bracket" in $inst) true)
         (check "a re-run wipes each drawer first, so changing `rows` leaves no orphans"
                ($inst | any {|q| $q == '/an_working\..*/' }) true)
-        (check "the bar owns NO timer — the prune-daemon is not a display's job"
-               ($inst | any {|q| $q | str contains "update_freq" }) false)
+        # v1 hung a hidden 30s item off this pool to prune dead agents, which
+        # made a core guarantee depend on one optional display being installed.
+        # The one timer here is the flash's own and expires nothing but a
+        # highlight — liveness is still the prune-daemon's, and still not a
+        # display's job.
+        (check "the only timer on the bar belongs to the flash, and arrives disarmed"
+               ($inst | where {|q| $q | str starts-with "update_freq" }) ["update_freq=0"])
+        (check "…with nothing in it, so a hover between flashes runs no shell at all"
+               (($inst | any {|q| $q == "an_flash" }) and ("script=" in $inst)) true)
+        (check "…listening for the pointer on an event of its own, declared before it subscribes"
+               (($inst | take until {|q| $q == "an_flash" } | any {|q| $q == "an_flash_seen" })) true)
+        (check "a chip carries its pill from the start, invisible, so a flash has something to fade in"
+               (($inst | any {|q| $q == "background.drawing=on" })
+                and ($inst | any {|q| $q == "background.color=0x00000000" })) true)
         (check "a counter listens for the pointer arriving" ("mouse.entered" in $inst) true)
         (check "leaving the bar shuts every drawer, from an item of its own"
                (($inst | any {|q| $q == "an_exit" }) and ("mouse.exited.global" in $inst)) true)

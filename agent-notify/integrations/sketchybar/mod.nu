@@ -41,9 +41,19 @@
 # bar, because the message it carries is a row's preview. That is one ~7ms
 # message per turn, and it is the price of the preview being right.
 #
+# AND SINCE STEP 13 A DRAWER CAN OPEN ITSELF. A counter going from 2 to 3 looks
+# the same whether it happened now or twenty minutes ago, so an agent that
+# reports anything other than "still going" lights its chip, opens its drawer on
+# its own words with its row lit inside, and a few seconds later takes all of
+# that back. It needed no new state anywhere: `state_since` already says when a
+# state changed, so `render-items` derives it and `flash` is one more key in the
+# map — raised when it appears, undone when it goes, by the same diff as every
+# row. The taking-away is the interesting half and it lives in `items.nu`.
+#
 #   mod.nu    the display contract — settings, project, apply
-#   items.nu  item names, the fixed pool, and the shell a hover runs — which is
-#             also where that shell's escaping lives, at the point of quoting
+#   items.nu  item names, the fixed pool, the shell a hover runs and the one the
+#             flash's timer runs — which is also where those shells' escaping
+#             lives, at the point of quoting
 #
 # The markdown a message is written in is flattened by `core/markdown.nu`, which
 # lived here until the picker's preview became its second reader.
@@ -72,6 +82,12 @@ const DEFAULTS = {
     # untouched drawer is mostly air. The rows' own `background.height` cannot
     # fix it: it sizes the pill, not the slot the pill sits in.
     line_height: 22         # px between popup rows, and the height of a row pill
+    # THE FLASH — how long an arrival stays lit, and whether its drawer opens
+    # itself with it. Seconds rather than a switch, because the only question
+    # anyone actually has about a notification is how long it sits there; 0 is
+    # how you say never. See `items.nu`, where the whole of it lives.
+    flash_seconds: 6
+    flash_drawer: true
     colors: {
         working: "0xff9ccfd8"          # foam
         awaiting: "0xfff6c177"         # gold
@@ -90,7 +106,11 @@ const DEFAULTS = {
 }
 
 const EXTRA_COLORS = ["dim" "text" "row" "popup" "border" "head" "code"]
+# Sizes a POOL is built from: a zero here is a drawer with no slots in it.
 const NUMBERS = ["rows" "preview_lines" "preview_width" "row_width" "line_height"]
+# A span of time, where zero is a legal answer and means "do not".
+const SPANS = ["flash_seconds"]
+const FLAGS = ["flash_drawer"]
 
 # An ABSOLUTE path to the program, because a hook's PATH is not your shell's
 # PATH and a LAUNCHD JOB's is smaller still: the prune-daemon runs with
@@ -144,6 +164,18 @@ export def settings [given: record]: nothing -> record {
         let value = $given | get $k
         if (($value | describe) != "int") or ($value < 1) {
             error make --unspanned {msg: $"sketchybar: `($k)` must be a positive number, got ($value | to nuon)"}
+        }
+    }
+    for k in ($SPANS | where {|k| $k in ($given | columns) }) {
+        let value = $given | get $k
+        if (($value | describe) != "int") or ($value < 0) {
+            error make --unspanned {msg: $"sketchybar: `($k)` must be a number of seconds, 0 for never, got ($value | to nuon)"}
+        }
+    }
+    for k in ($FLAGS | where {|k| $k in ($given | columns) }) {
+        let value = $given | get $k
+        if ($value | describe) != "bool" {
+            error make --unspanned {msg: $"sketchybar: `($k)` must be true or false, got ($value | to nuon)"}
         }
     }
     $DEFAULTS
@@ -215,35 +247,89 @@ def lines-of [record: record, settings: record]: nothing -> list<record> {
     [{k: "where", t: (where-of $record $settings)}] ++ $shown
 }
 
+# WHICH AGENT IS NEWS, and the reason the flash needs no memory anywhere.
+# `state_since` is already the moment the state changed, so *has this just
+# happened?* is a question the record answers about itself: nothing is stored,
+# nothing is compared against a previous paint, and an agent that has been
+# waiting all morning is not news however many times it is re-rendered.
+#
+# THE MOST RECENT ONE WINS, because a newer announcement supersedes an older
+# one — which is what a notification does everywhere else. And the deadline it
+# carries is `state_since` plus the window rather than `now` plus the window, so
+# an unrelated paint that re-sends the same flash cannot push its end away.
+#
+# This is the ONE thing in the whole display that is not a pure function of the
+# records. It has to be: "recently" is a question about the clock. Both halves
+# of a diff are rendered in the same breath, so it never makes the two disagree.
+def announcement [records: list<record>, settings: record]: nothing -> record {
+    if $settings.flash_seconds < 1 { return {} }
+    let now = date now
+    let window = $settings.flash_seconds * 1sec
+    $records
+    | where {|record| ($record.state? | default "idle") in $items.ANNOUNCED }
+    | each {|record|
+        let at = try { $record.state_since | into datetime } catch { null }
+        if ($at == null) or (($now - $at) >= $window) { null } else {
+            {id: ($record.id? | default ""), at: $at, until: (($at + $window) | format date "%s" | into int)}
+        } }
+    | compact
+    | sort-by at
+    | last 1
+    | get -o 0
+    | default {}
+}
+
+def is-lit [id: string, lit: string]: nothing -> bool { ($lit | is-not-empty) and ($id == $lit) }
+
 # One key per SLOT on the bar, which is what lets `core/dispatch.nu` do the
 # whole of the diffing: a row that did not move is not in `changed`, and a row
 # whose agent has gone arrives in `removed` with its old value.
 #
 #   count|working     2
-#   row|working|0     {id: "6923c0bc-…", label: "zz-picker-refactor", lines: [...]}
+#   row|working|0     {id: "6923c0bc-…", label: "zz-picker-refactor", lines: [...],
+#                      flash: false}
+#   flash             {state: "awaiting", index: 1, until: 1789386573, lines: [...]}
 #
 # Idle agents appear nowhere: an agent with nothing to say does not deserve a
 # number. Within a drawer the oldest is first — every row shares a state, so
 # "who has been waiting longest" is the only ordering that says anything.
+#
+# `flash` is there only while something is announcing itself, so it arrives in
+# `changed` when a flash is raised and in `removed` when the agent leaves the
+# state before the window is out — and the one display key that means "undo
+# this" gets its undo from the same machinery as every other.
 export def render-items [records: list<record>, settings: record]: nothing -> record {
+    let news = announcement $records $settings
+    let lit = $news.id? | default ""
+    let until = $news.until? | default 0
     mut out = {}
+    mut flash = {}
     for state in $items.COUNTED {
         let here = $records
             | where {|record| ($record.state? | default "idle") == $state }
             | sort-by {|record| $record.state_since? | default "" } {|record| $record.id? | default "" }
         $out = ($out | upsert $"count|($state)" ($here | length))
+        # The chip lights even when the agent it announces is past the cap and
+        # has no row to light — the number moving is itself the news.
+        if ($here | any {|record| is-lit ($record.id? | default "") $lit }) {
+            $flash = {state: $state, index: null, until: $until, lines: []}
+        }
         for e in ($here | first $settings.rows | enumerate) {
+            let id = $e.item.id? | default ""
+            let lines = lines-of $e.item $settings
             $out = ($out | upsert $"row|($state)|($e.index)" {
                 # The id is here so a click can be baked without a lookup, and
                 # so a row whose OCCUPANT changed repaints even when the two
                 # agents happen to look identical.
-                id: ($e.item.id? | default "")
+                id: $id
                 label: (label-of $e.item $settings)
-                lines: (lines-of $e.item $settings)
+                lines: $lines
+                flash: (is-lit $id $lit)
             })
+            if (is-lit $id $lit) { $flash = ($flash | merge {index: $e.index, lines: $lines}) }
         }
     }
-    $out
+    if ($flash | is-empty) { $out } else { $out | upsert flash $flash }
 }
 
 # ── writing ───────────────────────────────────────────────────────────────────
@@ -270,9 +356,24 @@ def erase-args [key: string, settings: record]: nothing -> list<string> {
 # what would be sent without a bar being installed — the same trick `project`
 # plays for the thinking.
 export def message [changed: record, removed: record, settings: record]: nothing -> list<string> {
-    let on = $changed | columns | each {|k| write-args $k ($changed | get $k) $settings } | flatten
-    let off = $removed | columns | each {|k| erase-args $k $settings } | flatten
-    $on ++ $off
+    let on = $changed | columns | where {|k| $k != "flash" }
+        | each {|k| write-args $k ($changed | get $k) $settings } | flatten
+    let off = $removed | columns | where {|k| $k != "flash" }
+        | each {|k| erase-args $k $settings } | flatten
+    # THE FLASH GOES LAST, because it is the only thing in a message that
+    # animates and `--animate` colours every property set AFTER it in the same
+    # message and none before (probed). Being last is what scopes the fade to
+    # the chip and keeps it off a row that merely changed its label in the same
+    # paint.
+    let flash = if ("flash" in ($changed | columns)) {
+        items flash-args $settings ($changed | get flash)
+    } else if ("flash" in ($removed | columns)) {
+        let was = $removed | get flash
+        # The agent left the state before its window was out, so the
+        # announcement is void: put it back and shut the drawer it opened.
+        items unlit-args $settings $was.state $was.index --shut
+    } else { [] }
+    $on ++ $off ++ $flash
 }
 
 export def push-items [changed: record, removed: record, settings: record]: nothing -> nothing {
@@ -299,6 +400,11 @@ export def help-setup []: nothing -> string {
        "then paints them from the session-store. No plugin script, no glyphs, no colours"
        "— they are all in agent-notify's own config file. Hovering a counter"
        "opens its drawer; hovering a row shows that agent's last message."
+       ""
+       "An agent that reports anything other than `working` also opens its own"
+       "drawer for a few seconds, with its row lit. `flash_seconds: 0` turns"
+       "that off; `flash_drawer: false` keeps the light and leaves the drawer"
+       "shut."
        ""
        "The periodic check that removes dead agents is NOT here: it is its own"
        "thing, so that turning the bar off cannot turn it off too."
