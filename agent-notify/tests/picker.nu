@@ -459,15 +459,27 @@ export def main [] {
     # NESTING ORDER (D78). The RECORD picks its own — not the config file, which
     # says what the store is pushed to and nothing else (D47).
     let m = [
-        (check "zellij ships as a session-container" (session-containers integration-registry-names) ["zellij"])
+        (check "the shipped containers are written OUTERMOST FIRST (D78)"
+               (session-containers integration-registry-names) ["aerospace" "zellij"])
         (check "a record naming a tool is claimed by it"
                (session-containers containers-of {fake: {where: "box/one"}} --table (fake session-container) | length) 1)
         (check "…and one naming none is claimed by nobody"
                (session-containers containers-of {id: "x"} --table (fake session-container)) [])
-        (check "a real zellij record is claimed only when it says where it is, completely"
-               [ (session-containers containers-of {zellij: {session: "home", pane_id: "3"}} | length)
-                 (session-containers containers-of {zellij: {session: "home"}} | length) ]
-               [1 0])
+        # zellij claims only a pane it can name. aerospace claims anything it
+        # can LOOK for — a session name is a window title to search — and finds
+        # out at jump time whether the window is really there, because
+        # `owns-session` may not run a program (step 12 phase 2).
+        (check "zellij claims a record only when it says where its pane is, completely"
+               [ (session-containers containers-of {zellij: {session: "home", pane_id: "3"}}
+                   | get info.name | any {|n| $n == "zellij" })
+                 (session-containers containers-of {zellij: {session: "home"}}
+                   | get info.name | any {|n| $n == "zellij" }) ]
+               [true false])
+        (check "…while aerospace claims either, because a session name is something to look for"
+               (session-containers containers-of {zellij: {session: "home"}}
+                 | get info.name) ["aerospace"])
+        (check "and neither claims a record that says nothing about where it is"
+               (session-containers containers-of {id: "x"}) [])
     ]
 
     summarise ($a ++ $b ++ $b2 ++ $b3 ++ $c ++ $d ++ $e ++ $f ++ $g ++ $h ++ $i ++ $j ++ $k ++ $l ++ $m) --title "picker"

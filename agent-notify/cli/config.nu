@@ -11,6 +11,7 @@
 
 use ../core/config.nu
 use ../core/dispatch.nu
+use ../integrations/session-containers.nu
 
 @search-terms agent notify config settings yaml where file path
 @example "where does it look?" { agent-notify config path }
@@ -41,7 +42,7 @@ export def "config show" []: nothing -> record {
 @example "is my config sane?" { agent-notify config check }
 export def "config check" [] {
     let f = config file
-    let found = config problems (dispatch integration-registry)
+    let found = config problems (dispatch integration-registry) (session-containers integration-registry)
 
     if ($found | is-empty) {
         if ($f | path exists) {

@@ -1588,8 +1588,9 @@ in
 
 ---
 
-12. **The container chain** — ⏳ in progress. PHASE 1 (probe aerospace) and
-   PHASE 2 (the walk, on fakes) done, 2026-09-14. An EXPLORATION, not a design.
+12. **The container chain** — ⏳ in progress. PHASES 1 (probe aerospace), 2
+   (the walk, on fakes) and 4 (the aerospace container) done, 2026-09-14.
+   An EXPLORATION, not a design.
    D77 and D78 settle
    the model; D79 is open on purpose, and this step is the probing that has to
    happen before an interface is worth writing down. It exists because step 11
@@ -1729,6 +1730,40 @@ in
    means making one of them wrong. D29 is about the HOT cone, where 2.5ms was
    every tool call forever; this is a picker a human opened and is waiting 37ms
    for anyway.
+   **PHASE 4 IS DONE, and the acceptance test is the thing this whole step
+   exists for**: focus on Firefox on workspace 2, run the jump, and the screen
+   lands on Ghostty on workspace 1 with the agent's pane active. Two rungs,
+   44.7ms to resolve both, 25.3ms of which is the nushell that runs it.
+   `integrations/aerospace/` is two files — `program.nu` and
+   `session-container.nu` — and it DISCOVERS NOTHING: it finds the window at
+   jump time from the `zellij.session` the record already holds, so there is no
+   namespace, no migration, and nothing that can go stale.
+   **"NOT INSTALLED" AND "TRIED AND FAILED" MUST NOT SPELL THE SAME WAY**, and
+   this is where that stopped being theory. zellij's `program resolve` RAISES
+   when it cannot find the program, which is right there — a record only carries
+   a `zellij` namespace because a zellij put it there. Aerospace claims a
+   session because of what the INNER container wrote, so it claims on machines
+   that have never had a window manager; raising would fail every jump on all of
+   them, and stop-at-the-first-failure would take the pane focus down with it.
+   So aerospace's resolver returns "" and the container turns that into no
+   commands, which the walk steps straight past. The asymmetry is deliberate and
+   it runs the other way for a human: `config check` is LOUD about the same
+   setting, because someone asking "is my config right" wants to be told.
+   **AND `config check` REFUSED THE CONFIG**, which was found by writing an
+   `aerospace:` block and watching it be rejected as "not a tool". `problems`
+   knew the DISPLAY registry only, so a container-only integration — aerospace
+   shows nothing, it just holds windows — had no legal place in the file. It now
+   takes both tables, which is D70 (capabilities, not kinds) arriving in the one
+   place that had not heard about it. `commands-settings` comes back with it,
+   this time for a reason that outlives the setting that first introduced it.
+   **The matching is one pure function and the suite owns it.**
+   `window-id-for` takes a list of windows and a title prefix, so
+   `tests/aerospace.nu` asserts the whole of the thinking against a hand-written
+   desktop with no window manager installed — including the case the separator
+   exists for, which is that `home` also matches `homework`. What aerospace
+   ITSELF does is not asserted there: that was probed once, on a real machine,
+   and lives in §11 and `bench/aerospace-windows.nu`. A suite that shells out to
+   a window manager is a suite that runs on one desktop.
    **What must NOT happen** is this being folded into another step. Step 11 is
    what folding it in looks like: a model invented to fit the one caller in
    front of it, built, and unwound the same day. Probe first, interface second.

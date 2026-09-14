@@ -74,22 +74,41 @@
 # discovers at jump time — where a subprocess is already being run and a human
 # is already waiting. `focus-session-argv` is the member allowed to look.
 
-# A HYPHEN IN A MODULE NAME BECOMES AN UNDERSCORE IN ITS CONSTANT (§10).
-# `use zellij/session-container.nu` makes the module addressable as
-# `session-container` in COMMAND position and as `$session_container` in
-# VARIABLE position — which is where `INFO` lives. Spelled the obvious way it is
-# a parse error about a variable name, some distance from the cause.
-use zellij/session-container.nu
+# ── TWO IMPORT GOTCHAS, BOTH §10, BOTH COSTING MINUTES THE FIRST TIME ─────────
+#
+# 1. EVERY CONTAINER'S FILE IS CALLED `session-container.nu`, because that is
+#    what it is, and `use` names a module after its BASENAME — so importing two
+#    of them collides, and `use <path> as <name>` DOES NOT EXIST. The mechanism
+#    that does is a `module` block re-exporting the file, which is what the two
+#    lines below are. Renaming the files to dodge it was considered and refused:
+#    the collision is a limitation of `use`, not a naming problem, and every
+#    container answering the same contract should say so in its filename.
+#
+# 2. A HYPHEN IN A MODULE NAME BECOMES AN UNDERSCORE IN ITS CONSTANT. So
+#    `aerospace-container` in COMMAND position is `$aerospace_container` in
+#    VARIABLE position — which is where `INFO` lives. Spelled the obvious way it
+#    is a parse error about an invalid variable name, reported at the `$` and
+#    some distance from the cause.
+module aerospace-container { export use aerospace/session-container.nu * }
+module zellij-container { export use zellij/session-container.nu * }
+use aerospace-container
+use zellij-container
 
 # One entry per integration that can answer them. `info` is here
 # for the same reason a display has one: something has to be able to say what
 # exists without running any of it.
 export def integration-registry []: nothing -> record {
-    { zellij: {info: $session_container.INFO
-               owns-session: {|rec| session-container owns-session $rec }
-               location-label: {|rec| session-container location-label $rec }
-               focus-session-argv: {|rec| session-container focus-session-argv $rec }
-               focus-session: {|rec| session-container focus-session $rec }} }
+    { aerospace: {info: $aerospace_container.INFO
+                  commands-settings: {|given| aerospace-container commands-settings $given }
+                  owns-session: {|rec| aerospace-container owns-session $rec }
+                  location-label: {|rec| aerospace-container location-label $rec }
+                  focus-session-argv: {|rec| aerospace-container focus-session-argv $rec }
+                  focus-session: {|rec| aerospace-container focus-session $rec }}
+      zellij: {info: $zellij_container.INFO
+               owns-session: {|rec| zellij-container owns-session $rec }
+               location-label: {|rec| zellij-container location-label $rec }
+               focus-session-argv: {|rec| zellij-container focus-session-argv $rec }
+               focus-session: {|rec| zellij-container focus-session $rec }} }
 }
 
 export def integration-registry-names []: nothing -> list<string> { integration-registry | columns }

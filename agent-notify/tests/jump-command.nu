@@ -38,12 +38,17 @@ export def main [] {
 
     # ── which agent you meant ─────────────────────────────────────────────────
     # An id is a uuid. Nobody types one, so neither should this command insist.
+    #
+    # The pane is the LAST command of the path, whatever is outside it: on this
+    # machine aerospace contributes a window rung and on a Linux box it would
+    # not, so the assertions reach for the innermost rung rather than the first.
     $env.ZELLIJ_SESSION_NAME = "home"
+    def pane-of [argv: list<list<string>>]: nothing -> string { $argv | last | last }
     let a = [
-        (check "an exact id finds it" (jump "1111aaaa-0000" --dry-run | get 0.5) "terminal_7")
-        (check "so does a unique prefix" (jump "1111" --dry-run | get 0.5) "terminal_7")
+        (check "an exact id finds it" (pane-of (jump "1111aaaa-0000" --dry-run)) "terminal_7")
+        (check "so does a unique prefix" (pane-of (jump "1111" --dry-run)) "terminal_7")
         (check "…and so does the name the agent gave itself"
-               (jump "alpha" --dry-run | get 0.5) "terminal_7")
+               (pane-of (jump "alpha" --dry-run)) "terminal_7")
         (check-err "a prefix matching nothing says so, and says where to look"
                    "no agent called 'zzz'" {|| jump "zzz" --dry-run })
         (check-err "…and an ambiguous one lists the candidates rather than guessing"
@@ -59,10 +64,14 @@ export def main [] {
     let b = [
         (check "the command hands back exactly what the registry would run"
                (jump "alpha" --dry-run) (session-containers focus-session-argv $alpha))
-        (check "…which is a LIST of commands, even when the path is one long"
-               (jump "alpha" --dry-run | length) 1)
-        (check "zellij is the only container shipped so far"
-               (session-containers containers-of $alpha | get info.name) ["zellij"])
+        (check "…which is a LIST of commands, one per rung of the path"
+               (jump "alpha" --dry-run | length)
+               (session-containers focus-session-argv $alpha | length))
+        (check "the shipped containers are written OUTERMOST FIRST (D78)"
+               (session-containers integration-registry-names) ["aerospace" "zellij"])
+        (check "zellij always claims a record that says where its pane is"
+               (session-containers containers-of $alpha | get info.name | any {|n| $n == "zellij" })
+               true)
     ]
 
     # ── and an agent nothing contains ─────────────────────────────────────────

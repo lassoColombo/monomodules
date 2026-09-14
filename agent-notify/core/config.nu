@@ -101,13 +101,25 @@ export def settings-for [cfg: record, tool: string, half: string]: nothing -> re
 # list means the file is good — or absent, which is also good: no file, no
 # displays.
 #
-# Takes the integration-registry table rather than a list of names, because the
-# last check needs each tool's own `settings`: only the tool knows what a key
+# Takes the integration-registry tables rather than lists of names, because the
+# last checks need each tool's own `settings`: only the tool knows what a key
 # MEANS, and a misspelled colour is the failure this command exists to explain.
-# That check runs for ENABLED tools only — settings for a tool you have switched
-# off are not a problem, and resolving them can require a program you have not
-# installed.
-export def problems [displays: record]: nothing -> list<string> {
+#
+# TWO TABLES, because an integration has CAPABILITIES and not a kind (D70). A
+# container-only integration — aerospace shows nothing, it just holds windows —
+# is in no display registry, so with one table its namespace reads as a typo and
+# `agent-notify config check` refuses a perfectly good file. That was found by
+# writing an `aerospace:` block and watching it be rejected.
+#
+# The two halves are checked on different terms. The DISPLAY half, for ENABLED
+# tools only — settings for a display you switched off are not a problem, and
+# resolving them can require a program you have not installed. The COMMANDS
+# half, WHETHER OR NOT the tool is in `displays:`, because nothing turns
+# commands on: you run a jump and it runs, so a typo there is always live.
+#
+# `containers` is optional so older callers are unaffected; an empty table means
+# the commands half is simply not checked.
+export def problems [displays: record, containers: record = {}]: nothing -> list<string> {
     let f = file
     if not ($f | path exists) { return [] }
 
@@ -119,7 +131,8 @@ export def problems [displays: record]: nothing -> list<string> {
         return [$"the file must be a map of settings, got ($cfg | describe)"]
     }
 
-    let known_tools = $displays | columns
+    # A tool is anything with a capability, not just anything that displays.
+    let known_tools = ($displays | columns) ++ ($containers | columns) | uniq
     let names = if ($known_tools | is-empty) { "none are installed yet" } else { $known_tools | str join ", " }
     let asked = $cfg.displays? | default []
     mut problems = []
@@ -173,6 +186,20 @@ export def problems [displays: record]: nothing -> list<string> {
         let owned = $why | str starts-with $"($k): "
         let msg = if $owned { $why | str substring (($k | str length) + 2).. } else { $why }
         $problems = $problems ++ [$"($k).display: ($msg)"]
+    }
+
+    # And the COMMANDS half, for every tool that has one — enabled or not.
+    for k in ($containers | columns | where {|k| $k in ($cfg | columns) }) {
+        let entry = $containers | get $k
+        if ($entry.commands-settings? == null) { continue }
+        let why = try {
+            do $entry.commands-settings (settings-for $cfg $k "commands")
+            null
+        } catch {|e| $e.msg }
+        if ($why == null) { continue }
+        let owned = $why | str starts-with $"($k): "
+        let msg = if $owned { $why | str substring (($k | str length) + 2).. } else { $why }
+        $problems = $problems ++ [$"($k).commands: ($msg)"]
     }
 
     $problems
