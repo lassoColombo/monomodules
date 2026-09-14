@@ -2,7 +2,7 @@
 # it.
 #
 # THE OTHER HALF OF THE OLD `tests/jump.nu`, split when the command stopped
-# being zellij's (D74). What is asserted here names no tool: a name or a prefix
+# being zellij's (D75). What is asserted here names no tool: a name or a prefix
 # becomes a record (`core/find-session.nu`), a record finds the container that
 # claims it (`integrations/session-containers.nu`), and the container is asked
 # (`cli/jump.nu`). What zellij does with the asking is `tests/jump.nu`.

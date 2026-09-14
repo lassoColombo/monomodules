@@ -1,6 +1,6 @@
 # What ZELLIJ is asked, when something wants to focus one of its panes.
 #
-# HALF A SUITE, because step 11 split the command from the integration (D74).
+# HALF A SUITE, because step 11 split the command from the integration (D75).
 # Which agent you meant, and which integration has it, is `tests/jump-command.nu`
 # — this file is one container's answer and nothing else. `find-session` appears
 # only to turn a name into the record `jump argv` now takes.
@@ -95,7 +95,7 @@ export def main [] {
     # Two levels: the terminal's WINDOW, then the SESSION inside it. Inside
     # zellij by any route the window is already in front, so the rung is skipped
     # — and with nothing configured it does not exist at all, which is the
-    # default and must stay byte-for-byte what it was (D72, D73).
+    # default and must stay byte-for-byte what it was (D73, D74).
     $env.AGENT_NOTIFY_CONFIG = ($TMP | path join "windowed.yaml")
     "zellij: {commands: {focus_terminal_window: [/bin/echo, up, Ghostty]}}\n"
         | save --force $env.AGENT_NOTIFY_CONFIG

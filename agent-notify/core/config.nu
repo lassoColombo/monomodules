@@ -107,7 +107,7 @@ export def settings-for [cfg: record, tool: string, half: string]: nothing -> re
 # MEANS, and a misspelled colour is the failure this command exists to explain.
 #
 # TWO TABLES, because a tool has two halves and they are validated on different
-# terms (D47, D71). The DISPLAY half is checked for ENABLED tools only —
+# terms (D47, D72). The DISPLAY half is checked for ENABLED tools only —
 # settings for a display you switched off are not a problem, and resolving them
 # can require a program you have not installed. The COMMANDS half is checked
 # WHETHER OR NOT the tool is in `displays:`, because nothing turns commands on:

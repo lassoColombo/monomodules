@@ -2,7 +2,7 @@
 #
 # THE PULL HALF'S OTHER CONTRACT. `mod.nu` is the display (push) and `jump.nu`
 # is a command (pull); this is what zellij answers about being the thing agents
-# RUN INSIDE (plan.md §4.8, D69). Three questions, none of which a caller can
+# RUN INSIDE (plan.md §4.8, D70). Three questions, none of which a caller can
 # answer for itself:
 #
 #   owns-session         is this session yours?  it has a `zellij` namespace
@@ -21,7 +21,7 @@
 # nothing in the bar does either — which is the whole reason this file exists
 # rather than each caller reaching for zellij directly.
 #
-# IT WAS `locate.nu`, AND IT WAS FILED UNDER `picker/` (D70). Not one of the
+# IT WAS `locate.nu`, AND IT WAS FILED UNDER `picker/` (D71). Not one of the
 # three questions was ever the picker's; what was the picker's is only that it
 # asked them first. The second caller — a click on a bar row — is what made that
 # visible, because it would have had to reach through the picker to find out

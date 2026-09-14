@@ -1,6 +1,6 @@
 # `agent-notify jump <who>` — go to an agent, wherever it lives.
 #
-# THE COMMAND IS THE FACADE'S, NOT ZELLIJ'S (plan.md D74). It was
+# THE COMMAND IS THE FACADE'S, NOT ZELLIJ'S (plan.md D75). It was
 # `integrations/zellij/jump.nu` for as long as zellij was the only integration
 # agents run inside, which made a general idea look like a zellij one. It is
 # three steps and none of them names a tool:
@@ -15,7 +15,7 @@
 # IT IS COLD. Nothing dispatches to it and `displays:` does not turn it on — it
 # runs because you ran it (D47). That is also why the registry it reaches can
 # afford to drag `core/session-store.nu` and `core/config.nu` behind it: no hook
-# is ever in this import cone (D71).
+# is ever in this import cone (D72).
 
 use ../core/find-session.nu
 use ../integrations/session-containers.nu

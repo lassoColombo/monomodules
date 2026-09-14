@@ -46,7 +46,7 @@
 # names one because it cannot know one: a jump from the BAR arrives from the
 # desktop, so the terminal's window has to come forward before its pane can be
 # focused, and which command does that is your terminal's and your window
-# manager's business (plan.md D50, D73). Empty by default; a jump from inside
+# manager's business (plan.md D50, D74). Empty by default; a jump from inside
 # the terminal never needs it.
 #
 # The commands, every one of them under `agent-notify`:
@@ -81,4 +81,4 @@ export use cli/jump.nu
 # A picker is not a zellij program and neither is a jump: both ask whichever
 # integration CONTAINS an agent where it lives and how to get there
 # (`integrations/session-containers.nu`), so a tmux integration adds one file
-# and one row in that table and touches neither command (plan.md §4.8, D74).
+# and one row in that table and touches neither command (plan.md §4.8, D75).

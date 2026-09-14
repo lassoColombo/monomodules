@@ -3,7 +3,7 @@
 # The PULL half of the zellij integration. Nothing dispatches to it and nothing
 # in `displays:` turns it on: it runs because you ran it (plan.md D47). It is no
 # longer the `agent-notify jump` COMMAND — that is `cli/jump.nu`, which asks the
-# registry which container has the agent (D74). This is one container's answer,
+# registry which container has the agent (D75). This is one container's answer,
 # and it is what both the picker and a click on a bar row end up in.
 #
 # IT TAKES A RECORD, NOT A NAME. Resolving a name is `core/find-session.nu`'s
@@ -12,7 +12,7 @@
 #
 # `argv` RETURNS A LIST OF COMMANDS, not one. Today it is always a single
 # focus — but a caller arriving from the desktop has a window to focus first
-# (D72), and a shape that can only hold one command would have to be broken to
+# (D73), and a shape that can only hold one command would have to be broken to
 # say so.
 #
 # THREE THINGS ZELLIJ DOES THAT THE CODE HAS TO KNOW. All three were probed
@@ -44,7 +44,7 @@
 # changes nothing on your screen if you are looking at another application. So
 # the ladder is: focus the terminal's WINDOW, then focus the SESSION inside it.
 #
-# WHO CLIMBS IT IS DECIDED HERE, not by the caller (D72). The question is only
+# WHO CLIMBS IT IS DECIDED HERE, not by the caller (D73). The question is only
 # "are we inside zellij right now", which `$env.ZELLIJ_SESSION_NAME` answers for
 # free and which this file was already branching on:
 #
@@ -60,7 +60,7 @@
 # caller work out something about itself that this file can simply look up, and
 # it would be wrong in the first place somebody copied it.
 #
-# WHAT THE WINDOW COMMAND IS, WE DO NOT KNOW AND WILL NOT GUESS (D50, D73). It
+# WHAT THE WINDOW COMMAND IS, WE DO NOT KNOW AND WILL NOT GUESS (D50, D74). It
 # is `zellij.commands.focus_terminal_window:` — argv the user writes, because
 # which program brings a terminal forward depends on their terminal and their
 # window manager. Empty by default, which is not a fallback but the honest

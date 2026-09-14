@@ -1,7 +1,7 @@
 # Which integration an agent RUNS INSIDE, and how to get to it.
 #
 # THE SAME IDEA AS `core/dispatch.nu`'s `integration-registry`, for the other
-# capability an integration can have (plan.md §4.8, D69). A hand-written table
+# capability an integration can have (plan.md §4.8, D70). A hand-written table
 # of closures, because nushell has no first-class modules and a name cannot be
 # turned into one at runtime (D26). Adding tmux is one file and one row here.
 #
@@ -17,14 +17,14 @@
 # shows is the stored message now, which every record has and no tool has to be
 # asked for. A container answers only what the multiplexer alone can answer.
 #
-# ── IT USED TO LIVE IN `picker/`, AND THAT WAS THE BUG (D70) ──────────────────
+# ── IT USED TO LIVE IN `picker/`, AND THAT WAS THE BUG (D71) ──────────────────
 # Not one of the three questions is the picker's. What was the picker's is only
 # that it asked them first — so this was a CONTRACT filed inside its first
 # consumer, which the second consumer makes untenable: a click on a bar row
 # would have had to reach through the picker to find out where an agent lives.
 # It is `integrations/` because that is where the tools answering it are.
 #
-# ── IT IS A SEPARATE TABLE FROM THE DISPLAYS, ON PURPOSE (D71) ────────────────
+# ── IT IS A SEPARATE TABLE FROM THE DISPLAYS, ON PURPOSE (D72) ────────────────
 # One table with optional members would make adding an integration one edit
 # instead of two, and it would be wrong: such a table `use`s both halves of
 # every tool, so `core/dispatch.nu` — which every hook imports — would reach

@@ -291,7 +291,7 @@ export def main [] {
     # A hover's answer is baked because the same paint wrote the text (D44). A
     # click's is not, because a jump is a decision about where an agent is NOW
     # and a pane can move with no state change at all — so the click runs the
-    # module and the module re-reads the store (D75). What IS baked is the
+    # module and the module re-reads the store (D76). What IS baked is the
     # invocation, and the only thing about the agent it carries is the id.
     let one_row = {"row|working|0": {id: "6923c0bc-1111", label: "one", lines: [{k: "text", t: "hi"}]}}
     let click = click-scripts (sketchybar message $one_row {} $settings) | first

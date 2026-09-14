@@ -162,7 +162,7 @@ export def hover-shell [settings: record, state: string, rows: list<record>]: no
 # directory is not ours and its PATH is launchd's.
 const JUMP_MODULE = (path self | path dirname | path dirname | path dirname | path join "cli" "jump.nu")
 
-# A CLICK RUNS THE MODULE; IT DOES NOT GET A BAKED ARGV (plan.md D75). That is
+# A CLICK RUNS THE MODULE; IT DOES NOT GET A BAKED ARGV (plan.md D76). That is
 # the one place D44 does not reach, and the reason is not the process — it is
 # WHEN THE DECISION IS MADE. A hover shows text the same paint wrote, so baking
 # it cannot be stale. A jump is a decision about where an agent is NOW, and a

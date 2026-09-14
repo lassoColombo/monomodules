@@ -6,7 +6,7 @@
 #
 # IN `core/` BECAUSE IT IS A QUESTION ABOUT THE SESSION-STORE, not about zellij.
 # It lived in `integrations/zellij/jump.nu` for as long as the jump was zellij's
-# command (D74), which made it look like a zellij idea; it never was. It is COLD
+# command (D75), which made it look like a zellij idea; it never was. It is COLD
 # — no display and no hook reaches it, only `cli/jump.nu` — so it costs the
 # event path nothing.
 

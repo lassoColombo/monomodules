@@ -28,7 +28,7 @@
 # The markdown a message is written in is flattened by `core/markdown.nu`, which
 # was `sketchybar/text.nu` until the picker's preview became its second reader.
 #
-# AN INTEGRATION HAS CAPABILITIES, NOT A KIND (plan.md §4.8, D69). PUSH and PULL
+# AN INTEGRATION HAS CAPABILITIES, NOT A KIND (plan.md §4.8, D70). PUSH and PULL
 # above describe how it is DRIVEN; what it can DO is a separate question, and
 # the answers are not the same set:
 #
@@ -101,20 +101,20 @@
 # it, the same split `render-items`/`push-items` make, for the same reason: see
 # rule 3 below.
 #
-# THE WINDOW IS THE CONTAINER'S PROBLEM, NOT THE CALLER'S (D72). A pane is
+# THE WINDOW IS THE CONTAINER'S PROBLEM, NOT THE CALLER'S (D73). A pane is
 # inside a terminal, the terminal is inside a window, and focusing a pane you
 # cannot see changes nothing. So `focus-session` climbs both rungs when it has
 # to — it knows whether we are inside it already — and no caller carries a flag
 # saying where it came from. What brings a window forward is the user's argv
 # (`commands.focus_terminal_window`), because it depends on their terminal and
-# their window manager, and this module names neither (D50, D73).
+# their window manager, and this module names neither (D50, D74).
 #
 # There was a `screen` — dump me this agent's live terminal — and step 8 took it
 # out with the preview that needed it (D58). The picker shows the stored message
 # now, which every record has, so a container asks only what the multiplexer
 # alone can answer.
 #
-# IT IS A SEPARATE TABLE FROM THE DISPLAYS, AND THAT IS LOAD BEARING (D71). One
+# IT IS A SEPARATE TABLE FROM THE DISPLAYS, AND THAT IS LOAD BEARING (D72). One
 # table with optional members would `use` both halves of every tool, putting
 # `core/session-store.nu` in the hook's import cone twice — see rule 2 below.
 # The rule: a registry lives where its consumers can reach it and no display
