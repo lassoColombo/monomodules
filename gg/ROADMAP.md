@@ -1,9 +1,13 @@
 # `gg` — implementation roadmap (meta-plan)
 
-`gg` is my **git superset**: it manages whole projects (a GitLab group / GitHub
-org as a *fleet* of repos) **and** authors changes to the current repo — under
-one roof. Fleet ops use `glab` / `gh`; generated content comes from the
-standalone `ai` module.
+`gg` is my **fleet manager**: a GitLab group / GitHub org as a *fleet* of repos
+mirrored on disk. Fleet ops use `glab` / `gh`.
+
+**2026-09-29:** the authoring half (`gg commit` / `mr` / `pr`, formerly
+`gg/forge/`) was moved out to `~/.config/nushell/scripts/ai-git.nu` as
+`ai-commit` / `ai-mr` / `ai-pr`. It shared nothing with the fleet code. The
+fleet half is slated for a rewrite outside nushell (see the discussion that
+led here); this roadmap describes the current nushell implementation.
 
 ## Structure (done)
 
@@ -12,15 +16,12 @@ source (provider, host, group/org, local `dir`; see README).
 
 | unit            | commands                                     | operates on          | needs        |
 |-----------------|----------------------------------------------|----------------------|--------------|
-| `ai` (sibling)  | `generate`, `review-loop`                    | a prompt → text      | Claude       |
-| `gg/forge/`     | `gg commit`, `gg mr`, `gg pr`                | the **current** repo | git, glab/gh, ai |
 | `gg/fleet/`     | `gg list`, `gg clone` (`status`/`each` next) | the **fleet**        | git, glab/gh |
 | `gg/providers/` | *(internal)* `enumerate` adapters            | one source's remote  | glab / gh    |
 | `gg/lib/`       | *(internal)* `config`, `discover`, `report`  | config + local repos | git          |
 
-`forge` and `fleet` commands are flattened to the gg top level (`export use … *`);
-`forge` imports the standalone `ai` via `use ../../ai`. `providers/` and `lib/`
-are internal (imported by path, not re-exported). **Only `enumerate` is
+`fleet` commands are flattened to the gg top level (`export use … *`).
+`providers/` and `lib/` are internal (imported by path, not re-exported). **Only `enumerate` is
 provider-specific** — clone / discover / status / each are pure git.
 
 ## Philosophy — few powerful functions

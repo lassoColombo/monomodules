@@ -1,24 +1,20 @@
-# gg — my git superset. Manages whole projects (a GitLab group / GitHub org as a
-# fleet of repos) AND authors changes to the current repo, under one roof.
+# gg — fleet manager: a GitLab group / GitHub org as a fleet of repos mirrored
+# on disk. Reads the declared desired state in `$env.gg_config` (see README)
+# and uses `glab` / `gh` for remote enumeration.
 #
-# Fleet ops read the declared desired state in `$env.gg_config` (see README) and
-# use `glab` / `gh`; authoring uses the standalone `ai` module.
+# Command surface (config-driven; omit --source to act on every configured source):
+#   gg list   [-s source]            — list a source's repos (remote enumeration)
+#   gg clone  [-s source]            — clone missing repos into the source's dir
+#   gg status [-s source] [--dirty]  — branch / ahead-behind / dirty / stash per repo
+#   gg each   [-s source] {closure}  — run a closure in every repo, in parallel
+#   gg sync   [-s source] [--force] [--dry-run] — reconcile remote/disk drift
 #
-# Command surface
-#   Fleet (config-driven; omit <source> to act on every configured source):
-#     gg list  [source]            — list a source's repos (remote enumeration)
-#     gg clone [source]            — clone missing repos into the source's dir
-#     gg status / each             — (later steps) operate on cloned repos
-#   Current-repo authoring (forge/, AI-assisted — flattened to top level):
-#     gg commit                    — commit staged changes (generated message)
-#     gg mr <src> <tgt>            — open a GitLab merge request
-#     gg pr <src> <tgt>            — open a GitHub pull request
+# AI-assisted authoring (commit / mr / pr) is NOT here any more: it lives in
+# ~/.config/nushell/scripts/ai-git.nu as ai-commit / ai-mr / ai-pr.
 #
 # Layout
 #   One command per file (`export def main`). `fleet/` = fleet verbs (flattened).
-#   `forge/` = authoring (flattened). `providers/` + `lib/` = internal helpers
-#   imported by relative path (not re-exported). Generation lives in the sibling
-#   `ai` module. See ROADMAP.md.
+#   `providers/` + `lib/` = internal helpers imported by relative path (not
+#   re-exported). See ROADMAP.md.
 
 export use fleet *
-export use forge *

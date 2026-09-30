@@ -1,11 +1,12 @@
 # gg
 
-My **git superset**: manage whole projects (a GitLab group / GitHub org as a
-*fleet* of repos) and author changes to the current repo, under one roof.
+My **fleet manager**: a GitLab group / GitHub org as a *fleet* of repos
+mirrored on disk. Commands are **config-driven** — they read the desired state
+from `$env.gg_config`.
 
-Fleet commands are **config-driven** — they read the desired state from
-`$env.gg_config`. Authoring commands (`commit` / `mr` / `pr`) act on the current
-repo and need no config. Content generation comes from the sibling `ai` module.
+AI-assisted authoring of the current repo (`ai-commit` / `ai-mr` / `ai-pr`) used
+to live here as `gg commit` / `mr` / `pr`; it is now a plain script at
+`~/.config/nushell/scripts/ai-git.nu`, importing the sibling `ai` module.
 
 ## Configuration
 
@@ -70,11 +71,5 @@ scopes to one:
 - `gg each [-s src] {closure}` — run a closure in every repo, in parallel
 - `gg sync [-s src] [--force] [--dry-run]` — reconcile drift between remotes and
   disk (interactive; `--force` applies the configured per-source defaults)
-
-Authoring — current repo:
-
-- `gg commit` — commit staged changes with an AI-generated message
-- `gg mr <src> <tgt>` — open a GitLab merge request (AI description)
-- `gg pr <src> <tgt>` — open a GitHub pull request (AI description)
 
 See `ROADMAP.md` for optional Phase 2 conveniences.
