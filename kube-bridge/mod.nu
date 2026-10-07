@@ -10,76 +10,25 @@
 # kept alive by `ControlPersist=yes`). State is persisted to JSON so `list`
 # and `kill` work from any shell.
 #
-# Configuration is taken from `$env.kubebridge_config`. See README for shape.
+# Clusters are configured in `~/.config/kube-bridge/clusters.yaml`
+# (`kube-bridge clusters edit`); only the completion and lifecycle CLOSURES still
+# live in `$env.kubebridge_config`. See README for both shapes.
+#
+# This file composes the module from:
+#   - ./clusters.nu  → `kube-bridge clusters show/defaults/resolve/file/dir/edit`
+#   - the bridge commands below
+# over the plumbing in ./lib/*, which is imported PRIVATELY here so `use
+# kube-bridge` exposes commands and never the plumbing.
 
-# ----------------------
-#  Config access
-# ----------------------
+use ./lib/paths.nu
+use ./lib/config.nu
+use ./lib/hooks.nu
+use ./lib/hosts.nu
 
-def kubebridge-config [] {
-  $env.kubebridge_config? | default {}
-}
-
-# Built-in cluster defaults. Used for any field the user hasn't set in a
-# matching cluster record (or when no cluster matches a host).
-const CLUSTER_DEFAULTS = {
-  remote_kubeconfig: "/etc/kubernetes/admin.conf"
-  remote_apiserver_port: 6443
-  sudo: false
-  kube_binary: "kubectl"
-}
-
-# Find the first cluster entry whose `hosts` matches the given host.
-# `hosts` is either a regex string or a closure (host) -> bool.
-# Returns the cluster record merged over CLUSTER_DEFAULTS. If none matches,
-# returns just the defaults.
-def cluster-for [host: string] {
-  let clusters = kubebridge-config | get -o clusters | default []
-  let matched = $clusters | where {|c|
-    let h = $c | get -o hosts
-    if ($h == null) { return false }
-    let t = $h | describe
-    if ($t | str starts-with "closure") {
-      try { do $h $host } catch { false }
-    } else if ($t == "string") {
-      $host =~ $h
-    } else {
-      false
-    }
-  } | first
-  $CLUSTER_DEFAULTS | merge ($matched | default {})
-}
+export use ./clusters.nu
 
 def kctl-prefix [cluster: record] {
   if $cluster.sudo { ["sudo" $cluster.kube_binary] } else { [$cluster.kube_binary] }
-}
-
-# ----------------------
-#  Path layer
-# ----------------------
-
-def xdg-data-home [] {
-  if ($env.XDG_DATA_HOME? | is-not-empty) { $env.XDG_DATA_HOME } else { [$env.HOME .local share] | path join }
-}
-
-def xdg-cache-home [] {
-  if ($env.XDG_CACHE_HOME? | is-not-empty) { $env.XDG_CACHE_HOME } else { [$env.HOME .cache] | path join }
-}
-
-def state-file [] { [(xdg-data-home) nu-kube-bridge bridges.json] | path join }
-def kubeconfigs-dir [] { [(xdg-cache-home) kube-bridge kubeconfigs] | path join }
-def completion-cache-dir [] { [(xdg-cache-home) kube-bridge completions] | path join }
-
-# SSH ControlMaster sockets must live under a *short* prefix: Unix-domain
-# socket paths max at ~104 chars on macOS, and openssh appends a ~17-char
-# atomic-create suffix while listening. So we keep these under /tmp instead
-# of the long XDG paths. The state file still records the canonical socket
-# path so cross-shell `kill`/`list` work.
-def masters-dir [] { "/tmp/kb-masters" }
-def completion-sockets-dir [] { "/tmp/kb-ssh-cm" }
-
-def ensure-dir [p: string] {
-  if not ($p | path exists) { mkdir $p }
 }
 
 # ----------------------
@@ -87,13 +36,13 @@ def ensure-dir [p: string] {
 # ----------------------
 
 def bridge-load [] {
-  let p = state-file
+  let p = paths state-file
   if ($p | path exists) { open $p } else { {} }
 }
 
 def bridge-save [state: record] {
-  let p = state-file
-  ensure-dir ($p | path dirname)
+  let p = paths state-file
+  paths ensure-dir ($p | path dirname)
   $state | to json | save --force $p
 }
 
@@ -112,7 +61,7 @@ def bridge-remove [name: string] {
 # ----------------------
 
 def master-socket [host: string] {
-  [(masters-dir) $"($host).sock"] | path join
+  [(paths masters-dir) $"($host).sock"] | path join
 }
 
 def master-alive [host: string] {
@@ -125,7 +74,7 @@ def master-alive [host: string] {
 def master-up [host: string] {
   if (master-alive $host) { return }
   let sock = master-socket $host
-  ensure-dir ($sock | path dirname)
+  paths ensure-dir ($sock | path dirname)
   if ($sock | path exists) { rm -f $sock }
   let r = (^ssh -fN -M -o ControlPersist=yes -S $sock $host | complete)
   if $r.exit_code != 0 {
@@ -169,7 +118,7 @@ def completion-ttl-sec [] { 30 }
 def completion-persist-sec [] { 60 }
 
 def cache-path [...segments: string] {
-  ([(completion-cache-dir) ...$segments] | path join)
+  ([(paths completion-cache-dir) ...$segments] | path join)
 }
 
 def cache-fresh [p: string] {
@@ -184,13 +133,13 @@ def cache-read [p: string] {
 }
 
 def cache-write [p: string, data: any] {
-  ensure-dir ($p | path dirname)
+  paths ensure-dir ($p | path dirname)
   $data | to json | save --force $p
 }
 
 def ssh-completion-args [] {
-  let sockdir = completion-sockets-dir
-  ensure-dir $sockdir
+  let sockdir = paths completion-sockets-dir
+  paths ensure-dir $sockdir
   let persist = completion-persist-sec
   let sockpath = [$sockdir "%C"] | path join
   [
@@ -219,45 +168,23 @@ def default-list-services [host: string, ns: string, cluster: record] {
 }
 
 def list-namespaces [host: string] {
-  let cluster = cluster-for $host
-  let custom = $cluster | get -o completion | default {} | get -o namespaces
+  let custom = hooks completion "namespaces"
   let p = cache-path $host "ns.json"
   let cached = cache-read $p
   if ($cached != null) { return $cached }
-  let names = if ($custom != null) { do $custom $host } else { default-list-namespaces $host $cluster }
+  let names = if ($custom != null) { do $custom $host } else { default-list-namespaces $host (config for-host $host) }
   cache-write $p $names
   $names
 }
 
 def list-services [host: string, ns: string] {
-  let cluster = cluster-for $host
-  let custom = $cluster | get -o completion | default {} | get -o services
+  let custom = hooks completion "services"
   let p = cache-path $host $ns "svc.json"
   let cached = cache-read $p
   if ($cached != null) { return $cached }
-  let names = if ($custom != null) { do $custom $host $ns } else { default-list-services $host $ns $cluster }
+  let names = if ($custom != null) { do $custom $host $ns } else { default-list-services $host $ns (config for-host $host) }
   cache-write $p $names
   $names
-}
-
-def default-host-list [] {
-  let p = [$env.HOME ".ssh/known_hosts"] | path join
-  if not ($p | path exists) { return [] }
-  open $p
-  | lines
-  | str trim
-  | where ($it | str length) > 0
-  | where not ($it | str starts-with "#")
-  | split column -r '\s+' host
-  | get host
-  | where ($it | str length) > 0
-  | uniq
-}
-
-def host-completer [] {
-  let cfg = kubebridge-config
-  let custom = $cfg | get -o completion | default {} | get -o hosts
-  if ($custom != null) { do $custom } else { default-host-list }
 }
 
 def active-name-completer [] { bridge-load | columns }
@@ -343,15 +270,6 @@ def kubeconfig-set-server [file: string, local_port: int] {
 }
 
 # ----------------------
-#  Hooks
-# ----------------------
-
-def run-hooks [key: string, entry: record] {
-  let hooks = kubebridge-config | get -o hooks | default {} | get -o $key | default []
-  $hooks | each {|h| try { do $h $entry } } | ignore
-}
-
-# ----------------------
 #  Public commands
 # ----------------------
 
@@ -399,7 +317,7 @@ export def --env kill [
     error make --unspanned {msg: $"no active bridge named '($name)'"}
   }
   let full_entry = $entry | insert name $name
-  run-hooks "on_close" $full_entry
+  hooks on-close $full_entry
   let bind = $entry | get -o bind_address | default "127.0.0.1"
   forward-cancel $entry.host $bind $entry.local_port $entry.target_host $entry.target_port
   bridge-remove $name
@@ -443,7 +361,8 @@ export def --env kill-all []: nothing -> table {
 # It then forwards `<bind-address>:<local-port>` to the remote apiserver, records
 # the bridge in the cross-shell state file, sets `$env.KUBECONFIG` in the calling
 # shell (hence `--env`), and runs any `on_open` hooks. Per-cluster paths, ports,
-# and sudo come from `$env.kubebridge_config`; the flags override them per call.
+# and sudo come from the matched cluster in `clusters.yaml`; the flags override
+# them per call.
 # Returns the new bridge entry.
 @category kubernetes
 @search-terms apiserver kubeconfig tunnel bridge forward ssh cluster kubectl
@@ -454,14 +373,14 @@ export def --env kill-all []: nothing -> table {
 @example "pin the local port and name the bridge" { kube-bridge apiserver k8s-01 --port 6443 --name prod }
 @example "share the tunnel with local VMs / containers" { kube-bridge apiserver k8s-01 --bind-address 0.0.0.0 }
 export def --env apiserver [
-  host: string@host-completer            # ssh target (tab-completes from config / known_hosts)
+  host: string@"hosts suggest"            # ssh target (tab-completes from config / known_hosts)
   --name: string                         # bridge name; defaults to "apiserver-<host>"
   --port: int                            # local port; defaults to a free port near 6443
   --remote-kubeconfig: string            # kubeconfig path on the remote; overrides the cluster's value
   --remote-port: int                     # remote apiserver port; overrides the cluster's value
   --bind-address: string = "127.0.0.1"   # local bind address for the forward (0.0.0.0 to share)
 ]: nothing -> record {
-  let cluster = cluster-for $host
+  let cluster = config for-host $host
   let remote_kc = $remote_kubeconfig | default $cluster.remote_kubeconfig
   let remote_p  = $remote_port       | default $cluster.remote_apiserver_port
 
@@ -470,8 +389,8 @@ export def --env apiserver [
 
   master-up $host
 
-  let kc_dir = kubeconfigs-dir
-  ensure-dir $kc_dir
+  let kc_dir = paths kubeconfigs-dir
+  paths ensure-dir $kc_dir
   let kc_path = [$kc_dir $"($bridge_name).yaml"] | path join
 
   fetch-remote-kubeconfig $host $remote_kc $kc_path $cluster.sudo
@@ -493,7 +412,7 @@ export def --env apiserver [
 
   $env.KUBECONFIG = $kc_path
   let full_entry = $entry | insert name $bridge_name
-  run-hooks "on_open" $full_entry
+  hooks on-open $full_entry
   $full_entry
 }
 
@@ -511,7 +430,7 @@ export def --env apiserver [
 @example "pick the port on a multi-port service" { kube-bridge service k8s-01 default/argocd-server --target-port 443 }
 @example "fixed local port and a custom name" { kube-bridge service k8s-01 media/jellyfin --port 8096 --name jelly }
 export def service [
-  host: string@host-completer            # ssh target (tab-completes from config / known_hosts)
+  host: string@"hosts suggest"            # ssh target (tab-completes from config / known_hosts)
   target: string@ns-svc-completer        # <namespace>/<service> (both parts tab-complete)
   --name: string                         # bridge name; defaults to "<svc>-<host>"
   --port: int                            # local port; defaults to a free port near the target port
@@ -528,7 +447,7 @@ export def service [
     error make --unspanned {msg: $"target must be in <namespace>/<service> form; got '($target)'"}
   }
 
-  let cluster = cluster-for $host
+  let cluster = config for-host $host
   master-up $host
 
   let resolved = resolve-service $host $ns $svc $target_port $cluster
@@ -551,6 +470,6 @@ export def service [
   bridge-add $bridge_name $entry
 
   let full_entry = $entry | insert name $bridge_name
-  run-hooks "on_open" $full_entry
+  hooks on-open $full_entry
   $full_entry
 }

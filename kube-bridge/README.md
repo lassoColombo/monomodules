@@ -26,6 +26,12 @@ data**, never a pre-formatted string.
   - [Paths](#paths)
 - [Commands](#commands)
   - [`kube-bridge apiserver`](#kube-bridge-apiserver)
+  - [`kube-bridge clusters defaults`](#kube-bridge-clusters-defaults)
+  - [`kube-bridge clusters dir`](#kube-bridge-clusters-dir)
+  - [`kube-bridge clusters edit`](#kube-bridge-clusters-edit)
+  - [`kube-bridge clusters file`](#kube-bridge-clusters-file)
+  - [`kube-bridge clusters resolve`](#kube-bridge-clusters-resolve)
+  - [`kube-bridge clusters show`](#kube-bridge-clusters-show)
   - [`kube-bridge kill`](#kube-bridge-kill)
   - [`kube-bridge kill-all`](#kube-bridge-kill-all)
   - [`kube-bridge list`](#kube-bridge-list)
@@ -150,90 +156,105 @@ master, and both are torn down the same way (`kill` / `kill-all`).
 
 ## Configuration
 
-Everything lives in `$env.kubebridge_config`. Nothing in the module is hardcoded
-for any specific cluster — an empty config is valid and every field falls back to
-a built-in default.
+Clusters live in a YAML file: `~/.config/kube-bridge/clusters.yaml`, or
+`$XDG_CONFIG_HOME/kube-bridge/clusters.yaml` when that variable is set. Nothing
+in the module is hardcoded for any particular cluster, and the file itself is
+optional — with no file at all, every field falls back to a built-in default that
+already describes a stock kubeadm cluster reachable as its own SSH host.
+
+```nu
+kube-bridge clusters edit             # open it in $EDITOR, seeded on first use
+kube-bridge clusters file             # where it is
+kube-bridge clusters show             # what it says
+kube-bridge clusters resolve my-host  # which entry a host actually gets
+```
+
+```yaml
+# ~/.config/kube-bridge/clusters.yaml
+clusters:
+  - name: homelab
+    hosts: '^k3s-'
+    remote_kubeconfig: /etc/rancher/k3s/k3s.yaml
+    kube_binary: k3s kubectl
+
+  - name: lab
+    hosts: ['^k8s-node-', '^k8s-cp-']
+    sudo: true                              # read admin.conf via `ssh sudo -n cat`
+```
+
+A closure cannot survive a round-trip through YAML, so the two parts of the
+configuration that *are* closures — the completion overrides and the open/close
+hooks — stay in the environment, and nothing else does:
 
 ```nu
 $env.kubebridge_config = {
   # Optional. Overrides for the argument completers. Each is a closure.
   completion: {
-    hosts: { || open ~/.ssh/known_hosts | lines | ... }   # <host> suggestions
+    hosts:      {|| open ~/.ssh/known_hosts | lines | ... }  # <host> suggestions
+    namespaces: {|host| ["default" "kube-system" "media"] }
+    services:   {|host, ns| ... }
   }
 
   # Optional. Closures run after open / before close; each gets the bridge entry.
   hooks: {
-    on_open:  [{ |entry| print $"opened ($entry.name) on ($entry.local_port)" }]
-    on_close: [{ |entry| ... }]
+    on_open:  [{|entry| print $"opened ($entry.name) on ($entry.local_port)" }]
+    on_close: [{|entry| ... }]
   }
-
-  # Clusters are matched in order; first match wins. Any omitted field falls back
-  # to the defaults: /etc/kubernetes/admin.conf, 6443, sudo:false, kubectl.
-  clusters: [
-    {
-      hosts: "dmilog"                                 # regex against the host arg
-      remote_kubeconfig: "/etc/rancher/k3s/k3s.yaml"
-      remote_apiserver_port: 6443
-    }
-    {
-      hosts: { |h| $h | str ends-with ".example.com" } # or a closure (host) -> bool
-      remote_kubeconfig: "/etc/kubernetes/admin.conf"
-      sudo: true                                       # fetch admin.conf via ssh sudo -n cat
-      kube_binary: "kubectl"                           # or "k3s kubectl", "microk8s kubectl", …
-      completion: {
-        namespaces: { |host| ["default" "kube-system" "media"] }
-        services:   { |host, ns| [] }
-      }
-    }
-  ]
 }
 ```
 
 ### Matching a host to a cluster
 
 When you run `apiserver <host>` or `service <host> …`, the host is matched
-against each entry in `clusters` **in order**, and the first match wins. A
-cluster's `hosts` field is either:
+against each entry of `clusters:` **in document order**, and the first match
+wins — which is why the configuration is a list and not a map. An entry's `hosts`
+field is either:
 
-- a **regex string** — matched with `=~` against the host argument, or
-- a **closure** `{ |host| … } -> bool` — for arbitrary logic (suffix, list
-  membership, a lookup).
+- a **regex string**, matched with `=~` against the host argument, or
+- a **list of regex strings**, where any one of them matching is enough.
 
-The matched cluster is merged over the defaults, so you only specify what
-differs. If nothing matches, the defaults are used as-is — which is exactly right
-for a stock kubeadm cluster reachable as its own SSH host.
+The matched entry is merged over the defaults, so you only write what differs.
+If nothing matches, the defaults are used as-is. To see which entry a given host
+lands on — and what the merge produced — ask:
+
+```nu
+kube-bridge clusters resolve k8s-node-3
+# => {remote_kubeconfig: /etc/kubernetes/admin.conf, remote_apiserver_port: 6443,
+#     sudo: true, kube_binary: kubectl, name: lab, hosts: [^k8s-node-, ^k8s-cp-]}
+```
 
 ### Cluster fields
 
 | Field | Default | Meaning |
 |---|---|---|
-| `hosts` | — | Regex string or `(host) -> bool` closure that selects this cluster. |
+| `name` | — | What to call this entry. Documentation only — matching never reads it. |
+| `hosts` | — | Regex string, or list of regex strings, selecting this cluster. |
 | `remote_kubeconfig` | `/etc/kubernetes/admin.conf` | Path to the kubeconfig **on the remote**, fetched by `apiserver`. |
 | `remote_apiserver_port` | `6443` | Port the apiserver listens on, on the remote. |
 | `sudo` | `false` | When `true`, read the kubeconfig via `ssh host sudo -n cat` and prefix remote `kubectl` with `sudo`. |
 | `kube_binary` | `"kubectl"` | The remote kubectl invocation, e.g. `"k3s kubectl"`, `"microk8s kubectl"`. |
-| `completion` | — | Per-cluster completer overrides — see below. |
 
 Per-call flags (`--remote-kubeconfig`, `--remote-port`) override the matched
-cluster's values for that one invocation.
+cluster's values for that one invocation. `kube-bridge clusters defaults` prints
+the right-hand column above.
 
 ### Completion overrides
 
 By default the `<namespace>/<service>` argument is completed by running
 `kubectl get ns` / `get svc` on the remote over a fast, cached SSH pool. Override
-either lookup per cluster when that's too slow, needs different flags, or you'd
-rather hardcode a short list:
+either lookup when that's too slow, needs different flags, or you'd rather
+hardcode a short list. Both closures receive the host they're completing for, so
+one closure covers every cluster — branch on the host when they differ:
 
 ```nu
-completion: {
-  namespaces: { |host| ["default" "kube-system" "media"] }
-  services:   { |host, ns| kubectl-somehow $host $ns }
+$env.kubebridge_config.completion = {
+  namespaces: {|host| if $host =~ '^k3s-' { ["default" "media"] } else { ... } }
+  services:   {|host, ns| ... }
 }
 ```
 
-The top-level `completion.hosts` closure (not per-cluster) supplies suggestions
-for the `<host>` argument itself; it defaults to the entries in
-`~/.ssh/known_hosts`.
+The `completion.hosts` closure supplies suggestions for the `<host>` argument
+itself; it defaults to the entries in `~/.ssh/known_hosts`.
 
 ### Hooks
 
@@ -244,8 +265,8 @@ warm a cache, etc.
 
 ```nu
 hooks: {
-  on_open:  [{ |e| $"($e.host) → 127.0.0.1:($e.local_port)" | save --append ~/bridges.log }]
-  on_close: [{ |e| print $"closing ($e.name)" }]
+  on_open:  [{|e| $"($e.host) → 127.0.0.1:($e.local_port)" | save --append ~/bridges.log }]
+  on_close: [{|e| print $"closing ($e.name)" }]
 }
 ```
 
@@ -282,11 +303,11 @@ master.
 
 ### Completion
 
-The `<host>` argument is completed from `completion.hosts` (closure) or
-`~/.ssh/known_hosts`. The `<namespace>/<service>` argument looks up the cluster
-for the typed host, then calls that cluster's `completion.namespaces` /
-`completion.services` closures or the built-in `ssh host kubectl get ns/svc`
-path. Results are cached on disk for 30s and the SSH connection is kept warm by a
+The `<host>` argument is completed from the `completion.hosts` closure, or from
+`~/.ssh/known_hosts`. The `<namespace>/<service>` argument calls the
+`completion.namespaces` / `completion.services` closures when they're set, and
+otherwise looks up the cluster for the typed host and runs `ssh host kubectl get
+ns/svc` under it. Results are cached on disk for 30s and the SSH connection is kept warm by a
 **separate** `ControlMaster=auto` pool with `ControlPersist=60s` — completion
 never touches the long-lived bridge masters, so it stays fast and can't disturb a
 live tunnel. When the host is unreachable, completion simply offers nothing.
@@ -295,6 +316,7 @@ live tunnel. When the host is unreachable, completion simply offers nothing.
 
 | Purpose | Path |
 |---|---|
+| Cluster config | `~/.config/kube-bridge/clusters.yaml` |
 | State file | `~/.local/share/nu-kube-bridge/bridges.json` |
 | Patched kubeconfigs | `~/.cache/kube-bridge/kubeconfigs/<name>.yaml` |
 | Bridge ControlMaster sockets | `/tmp/kb-masters/<host>.sock` |
@@ -305,16 +327,22 @@ Sockets live under `/tmp`, not the XDG dirs, on purpose: a Unix-domain socket
 path maxes out at ~104 chars on macOS and OpenSSH appends a ~17-char atomic-create
 suffix while listening, so the long XDG paths overflow on most usernames.
 
-<!-- BEGIN GENERATED COMMANDS -->
+<!-- commands-section:start -->
 ## Commands
 
-| Command                                           | Signature           | Description                                                                      |
-| ------------------------------------------------- | ------------------- | -------------------------------------------------------------------------------- |
-| [`kube-bridge apiserver`](#kube-bridge-apiserver) | `nothing -> record` | Open a tunnel to the kube-apiserver on a remote host and point KUBECONFIG at it. |
-| [`kube-bridge kill`](#kube-bridge-kill)           | `nothing -> record` | Kill a bridge by name.                                                           |
-| [`kube-bridge kill-all`](#kube-bridge-kill-all)   | `nothing -> table`  | Kill every active bridge.                                                        |
-| [`kube-bridge list`](#kube-bridge-list)           | `nothing -> table`  | List active bridges with their liveness status.                                  |
-| [`kube-bridge service`](#kube-bridge-service)     | `nothing -> record` | Open a tunnel to a k8s service on a remote host.                                 |
+| Command                                                           | Signature           | Description                                                                      |
+| ----------------------------------------------------------------- | ------------------- | -------------------------------------------------------------------------------- |
+| [`kube-bridge apiserver`](#kube-bridge-apiserver)                 | `nothing -> record` | Open a tunnel to the kube-apiserver on a remote host and point KUBECONFIG at it. |
+| [`kube-bridge clusters defaults`](#kube-bridge-clusters-defaults) | `nothing -> record` | The built-in cluster defaults — every field a cluster entry may leave out.     |
+| [`kube-bridge clusters dir`](#kube-bridge-clusters-dir)           | `nothing -> string` | Absolute path to the config directory (`~/.config/kube-bridge`).                 |
+| [`kube-bridge clusters edit`](#kube-bridge-clusters-edit)         | `any -> any`        | Open the clusters file in $EDITOR, seeding a commented skeleton on first use.    |
+| [`kube-bridge clusters file`](#kube-bridge-clusters-file)         | `nothing -> string` | Absolute path to the clusters file (`~/.config/kube-bridge/clusters.yaml`).      |
+| [`kube-bridge clusters resolve`](#kube-bridge-clusters-resolve)   | `nothing -> record` | Show the cluster record a host actually resolves to.                             |
+| [`kube-bridge clusters show`](#kube-bridge-clusters-show)         | `any -> any`        | Show the configured clusters, exactly as the file spells them.                   |
+| [`kube-bridge kill`](#kube-bridge-kill)                           | `nothing -> record` | Kill a bridge by name.                                                           |
+| [`kube-bridge kill-all`](#kube-bridge-kill-all)                   | `nothing -> table`  | Kill every active bridge.                                                        |
+| [`kube-bridge list`](#kube-bridge-list)                           | `nothing -> table`  | List active bridges with their liveness status.                                  |
+| [`kube-bridge service`](#kube-bridge-service)                     | `nothing -> record` | Open a tunnel to a k8s service on a remote host.                                 |
 
 ### `kube-bridge apiserver`
 
@@ -328,7 +356,8 @@ original hostname (so the apiserver's TLS SAN still verifies over loopback).
 It then forwards `<bind-address>:<local-port>` to the remote apiserver, records  
 the bridge in the cross-shell state file, sets `$env.KUBECONFIG` in the calling  
 shell (hence `--env`), and runs any `on_open` hooks. Per-cluster paths, ports,  
-and sudo come from `$env.kubebridge_config`; the flags override them per call.  
+and sudo come from the matched cluster in `clusters.yaml`; the flags override  
+them per call.  
 Returns the new bridge entry.
 
 **Signature:** `nothing -> record` · **Category:** `kubernetes`
@@ -363,6 +392,125 @@ kube-bridge apiserver k8s-01 --port 6443 --name prod
 
 # share the tunnel with local VMs / containers
 kube-bridge apiserver k8s-01 --bind-address 0.0.0.0
+```
+
+### `kube-bridge clusters defaults`
+
+The built-in cluster defaults — every field a cluster entry may leave out.
+
+**Signature:** `nothing -> record` · **Category:** `kubernetes`
+
+**Search terms:** `clusters`, `defaults`, `fallback`, `config`
+
+**Examples**
+
+```nu
+# what an omitted field falls back to
+kube-bridge clusters defaults
+# => {remote_kubeconfig: "/etc/kubernetes/admin.conf", remote_apiserver_port: 6443, sudo: false, kube_binary: kubectl}
+```
+
+### `kube-bridge clusters dir`
+
+Absolute path to the config directory (`~/.config/kube-bridge`).
+
+**Signature:** `nothing -> string` · **Category:** `kubernetes`
+
+**Search terms:** `clusters`, `dir`, `directory`, `config`, `path`
+
+**Examples**
+
+```nu
+# print the config directory path
+kube-bridge clusters dir
+```
+
+### `kube-bridge clusters edit`
+
+Open the clusters file in $EDITOR, seeding a commented skeleton on first use.
+
+**Signature:** `any -> any` · **Category:** `kubernetes`
+
+**Search terms:** `clusters`, `edit`, `config`, `open`, `editor`, `yaml`
+
+**Examples**
+
+```nu
+# edit the clusters file
+kube-bridge clusters edit
+```
+
+### `kube-bridge clusters file`
+
+Absolute path to the clusters file (`~/.config/kube-bridge/clusters.yaml`).
+
+**Signature:** `nothing -> string` · **Category:** `kubernetes`
+
+**Search terms:** `clusters`, `file`, `path`, `config`, `yaml`, `where`
+
+**Examples**
+
+```nu
+# print the clusters file path
+kube-bridge clusters file
+```
+
+### `kube-bridge clusters resolve`
+
+Show the cluster record a host actually resolves to.
+
+Runs the same match `apiserver` and `service` run — first entry whose `hosts`  
+pattern matches, merged over the defaults — and hands back the merged record.  
+The answer to "why is it reading the wrong kubeconfig": either a pattern is  
+catching the host earlier than you meant, or none is and you're seeing the  
+defaults.
+
+**Signature:** `nothing -> record` · **Category:** `kubernetes`
+
+**Parameters**
+
+| Parameter | Type     | Description                                      |
+| --------- | -------- | ------------------------------------------------ |
+| `host`    | `string` | ssh target to match against the cluster patterns |
+
+**Search terms:** `clusters`, `resolve`, `match`, `host`, `which`, `cluster`, `debug`
+
+**Examples**
+
+```nu
+# which cluster governs this host
+kube-bridge clusters resolve k3s-01
+# => {remote_kubeconfig: "/etc/rancher/k3s/k3s.yaml", remote_apiserver_port: 6443, sudo: false, kube_binary: kubectl, name: homelab, hosts: "^k3s-"}
+```
+
+### `kube-bridge clusters show`
+
+Show the configured clusters, exactly as the file spells them.
+
+Returns the `clusters:` list in match order — the order itself is meaningful,  
+since the first entry matching a host wins. With a name, returns that single  
+entry (or null). Fields an entry omits are not filled in here: see  
+`kube-bridge clusters defaults` for what they fall back to, or  
+`kube-bridge clusters resolve <host>` for the merged record a host actually gets.
+
+**Signature:** `any -> any` · **Category:** `kubernetes`
+
+**Parameters**
+
+| Parameter | Type     | Description                           |
+| --------- | -------- | ------------------------------------- |
+| `name?`   | `string` | cluster to show; omit for all of them |
+
+**Search terms:** `clusters`, `config`, `show`, `list`, `configuration`, `yaml`
+
+**Examples**
+
+```nu
+# every configured cluster, in match order
+kube-bridge clusters show
+
+# one cluster by name
+kube-bridge clusters show homelab
 ```
 
 ### `kube-bridge kill`
@@ -487,7 +635,7 @@ kube-bridge service k8s-01 default/argocd-server --target-port 443
 # fixed local port and a custom name
 kube-bridge service k8s-01 media/jellyfin --port 8096 --name jelly
 ```
-<!-- END GENERATED COMMANDS -->
+<!-- commands-section:end -->
 
 ## Recipes
 
