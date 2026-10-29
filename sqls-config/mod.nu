@@ -9,7 +9,8 @@
 # hand). Only the engines sqls implements AND usql speaks are mapped; the rest
 # are listed on stderr.
 #
-# The connections come normalised from the `usql` module's own reader.
+# The connections come from the `usql` module (`cfg connections`: the names and
+# urls usql itself loaded); the url is split here, for these three drivers only.
 
 use usql/cfg.nu
 
@@ -23,37 +24,43 @@ export def main [
 ]: nothing -> string {
   let conns = (cfg connections)
   let ordered = (if $first == null { $conns } else {
-    cfg connection $first | ignore   # error on unknown names
+    if $first not-in ($conns | get name) { error make --unspanned {msg: $"unknown connection '($first)' \(not in (cfg location))"} }
     ($conns | where name == $first) ++ ($conns | where name != $first)
   })
-  let mapped = ($ordered | each {|c| {name: $c.name, driver: (driver $c.protocol), conn: $c} })
-  let skipped = ($mapped | where driver == null | get name)
+  let mapped = ($ordered | each {|c| {name: $c.name, entry: (entry $c.name $c.url)} })
+  let skipped = ($mapped | where entry == null | get name)
   if ($skipped | is-not-empty) {
     print -e $"sqls: skipped \(no sqls driver\): ($skipped | str join ', ')"
   }
-  let entries = ($mapped | where driver != null | each {|m| entry $m.driver $m.conn })
-  {lowercaseKeywords: true, connections: $entries} | to yaml
+  {lowercaseKeywords: true, connections: ($mapped | where entry != null | get entry)} | to yaml
 }
 
-# usql protocol/alias → sqls driver name, null when sqls has no such driver.
-def driver [protocol: any]: nothing -> any {
-  match $protocol {
-    "postgres" | "postgresql" | "pg" | "pgx" | "pq" => "postgresql"
-    "mysql" | "my" | "mariadb" | "maria" => "mysql"
-    "sqlite3" | "sqlite" | "sq" | "file" | "moderncsqlite" | "modernsqlite" | "mq" => "sqlite3"
+# One usql url → one sqls entry, null when sqls has no driver for its scheme.
+# usql's own aliases for the three: see dburl's scheme table. A file-backed
+# driver's url is `sqlite3:/x.db`, `sqlite3:x.db` or `sqlite3://x.db` alike;
+# a network one is `scheme://user:pass@host:port/db?opts`. Absent fields are
+# dropped rather than null: sqls chokes on null.
+def entry [name: string, url: string]: nothing -> any {
+  let m = ($url | parse -r '^(?<scheme>[a-z0-9+.-]+):(?<rest>.*)$' | get -o 0)
+  if $m == null { return null }
+  let driver = (match ($m.scheme | str lowercase) {
+    "postgres" | "postgresql" | "pg" | "pgsql" | "pgx" | "px" => "postgresql"
+    "mysql" | "my" | "mariadb" | "maria" | "percona" | "aurora" => "mysql"
+    "sqlite3" | "sqlite" | "sq" | "moderncsqlite" | "modernsqlite" | "mq" => "sqlite3"
     _ => null
-  }
-}
-
-# One normalised connection → one sqls entry. Absent fields are dropped rather
-# than null: sqls chokes on null.
-def entry [driver: string, c: record]: nothing -> record {
+  })
+  if $driver == null { return null }
   if $driver == "sqlite3" {
-    return {alias: $c.name, driver: $driver, dataSourceName: $c.file}
+    let file = ($m.rest | str replace -r '^//' '' | split row -n 2 "?" | first)
+    return {alias: $name, driver: $driver, dataSourceName: $file}
   }
+  let u = (try { $url | url parse } catch { return null })
+  let opts = ($u.params | reduce -f {} {|r, acc| $acc | insert $r.key $r.value })
   {
-    alias: $c.name, driver: $driver, proto: "tcp",
-    user: $c.username, passwd: $c.password, host: $c.hostname, port: $c.port, dbName: $c.database,
-    params: (if ($c.opts | is-empty) { null } else { $c.opts })
-  } | transpose k v | where v != null | transpose -r -d
+    alias: $name, driver: $driver, proto: "tcp",
+    user: ($u.username | url decode), passwd: ($u.password | url decode), host: $u.host,
+    port: (if ($u.port | is-empty) { null } else { $u.port | into int }),
+    dbName: ($u.path | str trim --left --char "/" | url decode),
+    params: (if ($opts | is-empty) { null } else { $opts })
+  } | transpose k v | where v != null and v != "" | transpose -r -d
 }
