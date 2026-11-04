@@ -63,11 +63,6 @@ def assert-org []: nothing -> nothing {
   }
 }
 
-# The id belongs to the instance and the version to its history: neither travels with the file.
-def without-instance-fields []: record -> record {
-  $in | upsert id null | reject -o version
-}
-
 def dashboards []: nothing -> table<uid: string, title: string, folder: string> {
   fetch "/api/search?type=dash-db&limit=5000"
   | each {|it| {uid: $it.uid, title: $it.title, folder: ($it.folderTitle? | default "General")} }
@@ -87,7 +82,7 @@ def folder-completer [] {
   }
 }
 
-# Save a Grafana dashboard into a file, in a form that can be pushed back to any instance.
+# Save a Grafana dashboard into a file, with the version the next push of that file builds on.
 export def pull [
   uid: string@uid-completer  # the dashboard to download
   file: path                 # where to write its JSON, overwriting it
@@ -96,15 +91,35 @@ export def pull [
   let envelope = fetch $"/api/dashboards/uid/($uid)"
   if $envelope == null { error make --unspanned {msg: $"no dashboard with uid ($uid) in ((config).url)"} }
 
-  $"($envelope.dashboard | without-instance-fields | to json --indent 2)\n" | save --force $file
+  # the id is the instance's own key, and the uid already names the dashboard
+  let dashboard = $envelope.dashboard | upsert id null | upsert version $envelope.meta.version
+  $"($dashboard | to json --indent 2)\n" | save --force $file
   {uid: $uid, version: $envelope.meta.version, file: ($file | path expand)}
 }
 
-# Upload a dashboard file to Grafana, over the dashboard with the same uid if there is one.
+# Write the version Grafana saved into the file: only its line when the file has one at the top
+# level, otherwise the whole file, laid out as pull writes it.
+def save-version [file: path, version: int]: nothing -> nothing {
+  let text = open --raw $file
+  let expected = $text | from json | upsert version $version
+  # the first key's indent is every top-level key's indent
+  let indent = $text | parse --regex '^\{[ \t]*\r?\n(?<indent>[ \t]*)"' | get 0?.indent
+  let edited = if $indent != null {
+    $text | str replace --regex ('(?m)^' + $indent + '"version": *\d+') $'($indent)"version": ($version)'
+  }
+  if $edited != null and (try { $edited | from json } catch { null }) == $expected {
+    $edited | save --force $file
+  } else {
+    $"($expected | to json --indent 2)\n" | save --force $file
+  }
+}
+
+# Upload a dashboard file to Grafana as the next version of the one it was pulled from.
 export def push [
   file: path                          # the dashboard JSON to upload
   --folder: string@folder-completer  # folder uid: where a new dashboard goes, or where an existing one moves to
   --message: string                  # note for Grafana's version history
+  --force                            # overwrite the dashboard even if it has changed since the file was pulled
 ]: nothing -> record<uid: string, version: int, url: string, created: bool> {
   let dashboard = open --raw $file | from json
   if ($dashboard.uid? | is-empty) {
@@ -115,13 +130,15 @@ export def push [
   # without a folder Grafana moves the dashboard to General, so an existing one keeps its own
   let existing = fetch $"/api/dashboards/uid/($dashboard.uid)"
   let body = {
-    dashboard: ($dashboard | without-instance-fields)
+    dashboard: ($dashboard | upsert id null)
     folderUid: ($folder | default $existing.meta?.folderUid? | default "")
-    overwrite: true
+    overwrite: $force
     message: ($message | default $"pushed from ($file | path basename)")
   }
   let response = http post --full --allow-errors --headers (auth-headers) --content-type application/json (endpoint /api/dashboards/db) $body
   if $response.status != 200 { failure POST /api/dashboards/db $response }
+
+  save-version $file $response.body.version
 
   {uid: $dashboard.uid, version: $response.body.version, url: (endpoint $response.body.url), created: ($existing == null)}
 }

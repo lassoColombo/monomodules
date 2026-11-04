@@ -7,6 +7,7 @@ dashboard with the same uid.
 grafana-dashboard pull my-dashboard dashboards/my-dashboard.json   # Grafana -> file
 grafana-dashboard push dashboards/my-dashboard.json                # file -> Grafana
 grafana-dashboard push dashboards/new.json --folder ops            # a new one, into a folder
+grafana-dashboard push dashboards/my-dashboard.json --force        # over changes made since the pull
 grafana-dashboard ls                                               # what the token can see
 $query | grafana-dashboard format-query                            # a MetricsQL query, formatted
 ```
@@ -16,14 +17,21 @@ file and refuses a file without one, since Grafana would make one up and every p
 another copy behind. Tab completes the uid of `pull` with the dashboards the token can see, each
 described by its title and folder, and the `--folder` of `push` with the folders.
 
-`pull` writes the dashboard without `id` and `version`: the first belongs to the instance, the
-second to its history, so a file pulled from one Grafana pushes cleanly to another, and pulling
-the same dashboard twice gives the same file.
+A file belongs to one dashboard on one Grafana. `pull` writes it with the version it downloaded,
+the one the next push builds on, and without `id`, the instance's own key for what the uid
+already names.
 
-`push` overwrites whatever Grafana has under that uid, without asking. That is what Grafana's
-version history is for: every push is a version, `--message` writes its note, and the dashboard
-settings restore any earlier one. An existing dashboard stays in its folder unless `--folder`
-moves it; a new one goes to `--folder`, or to General.
+`push` sends the file's version and lets Grafana refuse it when the dashboard has a different
+one, which means someone saved it after the file was pulled or last pushed: the push fails with
+HTTP 412 and Grafana keeps what it has. Pull the dashboard into another file to see what changed,
+bring those changes into yours, then push it with `--force`, which overwrites whatever Grafana
+has.
+
+After a push the file carries the version Grafana saved. Only its `version` line changes when it
+has one at the top level; otherwise `push` rewrites the file the way `pull` lays it out. Every
+push is a version in Grafana's history, `--message` writes its note, and the dashboard settings
+restore any earlier one. An existing dashboard stays in its folder unless `--folder` moves it; a
+new one goes to `--folder`, or to General.
 
 Every command returns a record and prints nothing:
 
@@ -38,7 +46,7 @@ of key order, so it can tell whether anything really changed:
 
 ```nu
 grafana-dashboard pull my-dashboard /tmp/live.json
-(open dashboards/my-dashboard.json | reject -o version) == (open /tmp/live.json)
+(open dashboards/my-dashboard.json | reject version) == (open /tmp/live.json | reject version)
 ```
 
 ## Format a query
