@@ -8,6 +8,7 @@ grafana-dashboard pull my-dashboard dashboards/my-dashboard.json   # Grafana -> 
 grafana-dashboard push dashboards/my-dashboard.json                # file -> Grafana
 grafana-dashboard push dashboards/new.json --folder ops            # a new one, into a folder
 grafana-dashboard ls                                               # what the token can see
+$query | grafana-dashboard format-query                            # a MetricsQL query, formatted
 ```
 
 The uid is the dashboard's identity on both sides: `pull` asks for it, `push` reads it from the
@@ -40,6 +41,23 @@ grafana-dashboard pull my-dashboard /tmp/live.json
 (open dashboards/my-dashboard.json | reject -o version) == (open /tmp/live.json)
 ```
 
+## Format a query
+
+`format-query` formats a MetricsQL query with `metricsql.Prettify`, the printer VictoriaMetrics
+puts behind vmui's Prettify button. VictoriaMetrics ships it only as a Go function, so
+`metricsql-fmt/` wraps it in a program that reads stdin; the first call compiles it into
+nushell's cache dir, and every call after a change to its source compiles it again.
+
+```nu
+"max by (host) (disk_used_percent) > 90" | grafana-dashboard format-query
+# => max(disk_used_percent) by(host) > 90
+```
+
+It prints the query back from its parse tree instead of laying out the text you wrote: every
+binary operation gets its parentheses, `by` moves after the aggregation, `-86400` becomes
+`(0 - 86400)` and `WITH` templates are expanded. The meaning never changes, the text does.
+MetricsQL is backwards compatible with PromQL, so it formats PromQL as well.
+
 ## Configure
 
 ```nu
@@ -51,10 +69,32 @@ $env.grafana_dashboard_config = {
 ```
 
 `token` is a service account token: Viewer is enough for `pull` and `ls`, `push` needs Editor
-on the folders it writes to. A token belongs to one org and works there whatever url it is sent
-to, so with a token of the wrong org `pull` finds nothing and `push` creates the dashboard in
-the wrong place. Set `org` to the id you expect, and every command checks the token against it
-before doing anything; leave it out to skip the check.
+on the folders it writes to. Without one, `user` and `password` log in as you, with your own
+permissions, through basic auth: Grafana accepts the same credentials as its login form,
+LDAP ones included, unless basic auth is turned off.
+
+```nu
+$env.grafana_dashboard_config = {
+  url: "https://grafana.example.com"
+  user: "me"
+  password: "..."
+  org: 42
+}
+```
+
+`org` is the org to work in, sent with every request. A token can only work in its own org, a
+user in any org it belongs to; either way every command first checks that Grafana agrees, since
+in the wrong org `pull` finds nothing and `push` creates the dashboard in the wrong place.
+Leave it out to work in the token's org, or in the user's current one.
+
+`token` and `password` can also be closures that return them, called only when a request needs
+them. That keeps them out of the environment and out of a config file kept in git, for example
+in the macOS Keychain:
+
+```nu
+# once: security add-generic-password -s grafana-dashboard -a $env.USER -w
+$env.grafana_dashboard_config.token = {|| ^security find-generic-password -s grafana-dashboard -w }
+```
 
 ## Installation
 
@@ -62,3 +102,5 @@ before doing anything; leave it out to skip the check.
 # with this directory in one of your NU_LIB_DIRS
 use grafana-dashboard
 ```
+
+`format-query` needs Go 1.24 or later on the `PATH`.

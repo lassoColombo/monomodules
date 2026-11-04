@@ -1,9 +1,12 @@
+const formatter_source = path self metricsql-fmt
+
 def config []: nothing -> record {
   let config = $env.grafana_dashboard_config? | default {}
-  for field in [url token] {
-    if ($config | get -o $field | is-empty) {
-      error make --unspanned {msg: $"set $env.grafana_dashboard_config.($field), see the readme"}
-    }
+  if ($config.url? | is-empty) {
+    error make --unspanned {msg: "set $env.grafana_dashboard_config.url, see the readme"}
+  }
+  if ($config.token? | is-empty) and (($config.user? | is-empty) or ($config.password? | is-empty)) {
+    error make --unspanned {msg: "set $env.grafana_dashboard_config.token, or user and password, see the readme"}
   }
   $config
 }
@@ -12,8 +15,26 @@ def endpoint [path: string]: nothing -> string {
   $"((config).url | str trim --right --char '/')($path)"
 }
 
+# A closure keeps a secret out of the environment until a request needs it.
+def secret [field: string]: nothing -> string {
+  let value = config | get $field
+  let value = if ($value | describe) =~ '^closure' {
+    try { do $value } catch {|err| error make --unspanned {msg: $"the ($field) closure failed: ($err.msg)"} }
+  } else { $value }
+  $value | str trim
+}
+
 def auth-headers []: nothing -> record {
-  {Authorization: $"Bearer ((config).token)"}
+  let config = config
+  let authorization = if ($config.token? | is-not-empty) {
+    $"Bearer (secret token)"
+  } else {
+    let credentials = $"($config.user):(secret password)" | encode base64
+    $"Basic ($credentials)"
+  }
+  # a token works in its own org, a user in its current one unless the request names another
+  let org_header = if $config.org? != null { {"X-Grafana-Org-Id": ($config.org | into string)} } else { {} }
+  {Authorization: $authorization} | merge $org_header
 }
 
 # Grafana answers errors with {message}, proxies in front of it with text.
@@ -105,5 +126,30 @@ export def push [
   {uid: $dashboard.uid, version: $response.body.version, url: (endpoint $response.body.url), created: ($existing == null)}
 }
 
+# The formatter binary, rebuilt whenever its source is newer than it.
+def formatter []: nothing -> path {
+  let binary = $nu.cache-dir | path join grafana-dashboard metricsql-fmt
+  # %ls: the module's own ls shadows the builtin here
+  let source_modified = %ls $formatter_source | get modified | math max
+  if not ($binary | path exists) or (%ls $binary | get 0.modified) < $source_modified {
+    mkdir ($binary | path dirname)
+    let build = ^go -C $formatter_source build -o $binary . | complete
+    if $build.exit_code != 0 {
+      error make --unspanned {msg: $"could not build the formatter: ($build.stderr | str trim)"}
+    }
+  }
+  $binary
+}
+
+# Format a MetricsQL query with metricsql.Prettify, the printer behind vmui's Prettify button.
+export def format-query []: string -> string {
+  let formatted = $in | run-external (formatter) | complete
+  if $formatted.exit_code != 0 { error make --unspanned {msg: ($formatted.stderr | str trim)} }
+  $formatted.stdout | str trim --right
+}
+
 # List the dashboards the token can see: what pull completes on.
-export def ls []: nothing -> table<uid: string, title: string, folder: string> { dashboards }
+export def ls []: nothing -> table<uid: string, title: string, folder: string> {
+  assert-org
+  dashboards
+}
