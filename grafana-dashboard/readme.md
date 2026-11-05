@@ -5,6 +5,7 @@ dashboard with the same uid.
 
 ```nu
 grafana-dashboard pull my-dashboard dashboards/my-dashboard.json   # Grafana -> file
+grafana-dashboard pull --all dashboards                            # every dashboard -> a directory
 grafana-dashboard push dashboards/my-dashboard.json                # file -> Grafana
 grafana-dashboard push dashboards/new.json --folder ops            # a new one, into a folder
 grafana-dashboard push dashboards/my-dashboard.json --force        # over changes made since the pull
@@ -20,6 +21,14 @@ described by its title and folder, and the `--folder` of `push` with the folders
 A file belongs to one dashboard on one Grafana. `pull` writes it with the version it downloaded,
 the one the next push builds on, and without `id`, the instance's own key for what the uid
 already names.
+
+`pull --all` downloads every dashboard the token can see into a directory, and returns a table
+with a `status` per dashboard. A dashboard that already has a file anywhere under that directory,
+found by its uid, is written over that file, so a name chosen by hand stays; any other goes to
+`<folder>/<title>.json`, folder and title lower-cased with dashes, nested folders as nested
+directories, General as `general`, and the folder's name dropped from the front of the title
+(`Dumbo - Jobs` in Dumbo becomes `dumbo/jobs.json`). A dashboard moved to another folder in
+Grafana keeps its old file, and a file whose dashboard is gone is left alone.
 
 `push` sends the file's version and lets Grafana refuse it when the dashboard has a different
 one, which means someone saved it after the file was pulled or last pushed: the push fails with

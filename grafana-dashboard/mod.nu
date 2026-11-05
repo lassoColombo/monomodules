@@ -82,12 +82,7 @@ def folder-completer [] {
   }
 }
 
-# Save a Grafana dashboard into a file, with the version the next push of that file builds on.
-export def pull [
-  uid: string@uid-completer  # the dashboard to download
-  file: path                 # where to write its JSON, overwriting it
-]: nothing -> record<uid: string, version: int, file: path> {
-  assert-org
+def save-dashboard [uid: string, file: path]: nothing -> record<uid: string, version: int, file: path> {
   let envelope = fetch $"/api/dashboards/uid/($uid)"
   if $envelope == null { error make --unspanned {msg: $"no dashboard with uid ($uid) in ((config).url)"} }
 
@@ -95,6 +90,74 @@ export def pull [
   let dashboard = $envelope.dashboard | upsert id null | upsert version $envelope.meta.version
   $"($dashboard | to json --indent 2)\n" | save --force $file
   {uid: $uid, version: $envelope.meta.version, file: ($file | path expand)}
+}
+
+def slug []: string -> string {
+  $in | str lowercase | str replace --all --regex '[^a-z0-9.]+' '-' | str trim --char '-'
+}
+
+# The directory of each folder, by uid: its title under its parents' when folders nest.
+def folder-dirs []: nothing -> record {
+  fetch "/api/search?type=dash-folder&limit=5000"
+  | reduce --fold {} {|folder, dirs|
+    let parents = fetch $"/api/folders/($folder.uid)" | get -o parents | default [] | each {|parent| $parent.title }
+    $dirs | insert $folder.uid ($parents | append $folder.title | each { slug } | path join)
+  }
+}
+
+# The dashboard files already under a directory, by uid.
+def files-by-uid [dir: path]: nothing -> record {
+  glob ($dir | path join "**" "*.json")
+  | reduce --fold {} {|file, found|
+    let uid = try { open --raw $file | from json | get -o uid } catch { null }
+    if ($uid | describe) == string and ($uid | is-not-empty) { $found | upsert $uid $file } else { $found }
+  }
+}
+
+# A file for a dashboard that has none yet: its title, without the folder's name when it starts with it.
+def new-file [dir: path, title: string, uid: string, taken: list<path>]: nothing -> path {
+  let prefix = $"($dir | path basename)-"
+  let name = $title | slug
+  let name = if ($name | str starts-with $prefix) and ($name | str length) > ($prefix | str length) {
+    $name | str substring ($prefix | str length)..
+  } else { $name }
+  let name = if ($name | is-empty) { $uid } else { $name }
+  let file = $dir | path join $"($name).json"
+  if $file in $taken or ($file | path exists) { $dir | path join $"($name)-($uid).json" } else { $file }
+}
+
+# Every dashboard into `dir`: over the file that already has its uid, wherever it is, otherwise
+# into a new file under its folder's directory.
+def pull-all [dir: path]: nothing -> table<uid: string, version: int, file: path, status: string> {
+  let dir = $dir | path expand
+  let dirs = folder-dirs
+  let known = files-by-uid $dir
+  fetch "/api/search?type=dash-db&limit=5000"
+  | reduce --fold [] {|it, pulled|
+    let file = if $it.uid in $known { $known | get $it.uid } else {
+      let folder = $dir | path join ($dirs | get -o ($it.folderUid? | default "") | default "general")
+      new-file $folder $it.title $it.uid ($pulled | get -o file | default [] | append ($known | values))
+    }
+    mkdir ($file | path dirname)
+    let status = if $it.uid in $known { "updated" } else { "new" }
+    $pulled | append (save-dashboard $it.uid $file | insert status $status)
+  }
+}
+
+# Save a Grafana dashboard into a file, with the version the next push of that file builds on.
+export def pull [
+  uid?: string@uid-completer  # the dashboard to download
+  file?: path                 # where to write its JSON, overwriting it
+  --all: path                 # download every dashboard into this directory instead, a subdirectory per folder
+]: nothing -> any {
+  if $all != null {
+    if $uid != null { error make --unspanned {msg: "--all downloads every dashboard: give it a directory, not a uid"} }
+    assert-org
+    return (pull-all $all)
+  }
+  if $uid == null or $file == null { error make --unspanned {msg: "pull needs a uid and a file, or --all and a directory"} }
+  assert-org
+  save-dashboard $uid $file
 }
 
 # Write the version Grafana saved into the file: only its line when the file has one at the top
