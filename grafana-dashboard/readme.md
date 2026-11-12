@@ -10,6 +10,8 @@ grafana-dashboard push dashboards/my-dashboard.json                # file -> Gra
 grafana-dashboard push dashboards/new.json --folder ops            # a new one, into a folder
 grafana-dashboard push dashboards/my-dashboard.json --force        # over changes made since the pull
 grafana-dashboard ls                                               # what the token can see
+grafana-dashboard library pull header library/header.json          # a library panel -> file
+grafana-dashboard library push library/header.json                 # file -> library panel
 $query | grafana-dashboard format-query                            # a MetricsQL query, formatted
 ```
 
@@ -57,6 +59,34 @@ of key order, so it can tell whether anything really changed:
 grafana-dashboard pull my-dashboard /tmp/live.json
 (open dashboards/my-dashboard.json | reject version) == (open /tmp/live.json | reject version)
 ```
+
+## Library panels
+
+A library panel is a panel kept once in Grafana and used by many dashboards: a dashboard holds only
+a reference to it, `{"libraryPanel": {"uid": "header", "name": "Header"}}`, so pulling the
+dashboard brings down the reference and not the panel. `library pull` and `library push` keep the
+panel itself as a file, the same way `pull` and `push` keep a dashboard.
+
+```nu
+grafana-dashboard library pull header library/header.json
+grafana-dashboard library push library/header.json
+# => {uid: header, version: 4, created: false, dashboards: [hosts-volumi, lenny-flux]}
+grafana-dashboard library push library/new.json --folder ops      # a new one, into a folder
+grafana-dashboard library push library/header.json --force        # over changes made since the pull
+grafana-dashboard library ls                                      # what the token can see
+```
+
+The file holds `uid`, `name`, `version` and `model`, the panel as a dashboard would hold it; the
+rest of what Grafana returns is its own bookkeeping. A push changes every dashboard that uses the
+panel at once, and `dashboards` lists their uids.
+
+The version works as for dashboards: `library push` fails with HTTP 412 when someone saved the
+panel after the file was pulled or last pushed, and `--force` overwrites whatever Grafana has. The
+panel stays in its folder unless `--folder` moves it, and a new one goes to `--folder`, or to
+General. Library panels keep no version history in Grafana, and a push takes no `--message`.
+
+The variables a library panel uses are the dashboard's: `${host}` in its query reads the `host`
+variable of each dashboard that shows it, and stays literally `${host}` in one that has none.
 
 ## Format a query
 

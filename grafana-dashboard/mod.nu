@@ -233,3 +233,92 @@ export def ls []: nothing -> table<uid: string, title: string, folder: string> {
   assert-org
   dashboards
 }
+
+# Every library panel, a page of Grafana's at a time.
+def library-panels []: nothing -> table<uid: string, name: string, folder: string> {
+  generate {|page|
+    let result = (fetch $"/api/library-elements?kind=1&perPage=100&page=($page)").result
+    let found = {out: $result.elements}
+    if $page * $result.perPage < $result.totalCount { $found | insert next ($page + 1) } else { $found }
+  } 1
+  | flatten
+  | each {|it| {uid: $it.uid, name: $it.name, folder: ($it.meta.folderName? | default "General")} }
+}
+
+def library-uid-completer [] {
+  {
+    completions: (try { library-panels } catch { [] } | each {|it| {value: $it.uid, description: $"($it.name) \(($it.folder)\)"} })
+    options: {completion_algorithm: "fuzzy", match_description: true, sort: false}
+  }
+}
+
+# The library panel at uid, or null. Grafana calls the root folder "general" here and "" everywhere
+# else, writes included.
+def library-panel [uid: string]: nothing -> any {
+  let element = fetch $"/api/library-elements/($uid)" | get -o result
+  if $element == null { return null }
+  $element | update folderUid {|it| if $it.folderUid == "general" { "" } else { $it.folderUid } }
+}
+
+# Save a library panel into a file, with the version the next push of that file builds on.
+export def "library pull" [
+  uid: string@library-uid-completer  # the library panel to download
+  file: path                         # where to write its JSON, overwriting it
+]: nothing -> record<uid: string, version: int, file: path> {
+  assert-org
+  let element = library-panel $uid
+  if $element == null { error make --unspanned {msg: $"no library panel with uid ($uid) in ((config).url)"} }
+
+  # the rest is the instance's own bookkeeping, or repeats the model
+  $"($element | select uid name version model | to json --indent 2)\n" | save --force $file
+  {uid: $uid, version: $element.version, file: ($file | path expand)}
+}
+
+# Upload a library panel file to Grafana as the next version of the one it was pulled from. Every
+# dashboard that uses the panel shows the new version at once: `dashboards` lists them.
+export def "library push" [
+  file: path                          # the library panel JSON to upload
+  --folder: string@folder-completer  # folder uid: where a new library panel goes, or where an existing one moves to
+  --force                            # overwrite the library panel even if it has changed since the file was pulled
+]: nothing -> record<uid: string, version: int, created: bool, dashboards: list<string>> {
+  let panel = open --raw $file | from json
+  if ($panel.uid? | is-empty) {
+    error make --unspanned {msg: $"($file) has no uid: Grafana would make one up, and every push would create another library panel"}
+  }
+  if ($panel.name? | is-empty) or $panel.model? == null {
+    error make --unspanned {msg: $"($file) needs a name and a model, as library pull writes them"}
+  }
+  assert-org
+
+  # without a folder Grafana moves the panel to General, so an existing one keeps its own
+  let existing = library-panel $panel.uid
+  let body = {
+    uid: $panel.uid
+    name: $panel.name
+    kind: 1
+    model: $panel.model
+    folderUid: ($folder | default $existing.folderUid? | default "")
+  }
+  let response = if $existing == null {
+    http post --full --allow-errors --headers (auth-headers) --content-type application/json (endpoint /api/library-elements) $body
+  } else {
+    # a stale version makes Grafana answer 412, and keep what it has
+    let version = if $force { $existing.version } else { $panel.version? | default 0 }
+    let path = $"/api/library-elements/($panel.uid)"
+    http patch --full --allow-errors --headers (auth-headers) --content-type application/json (endpoint $path) ($body | insert version $version)
+  }
+  if $response.status != 200 {
+    failure (if $existing == null { "POST" } else { "PATCH" }) $"/api/library-elements/($panel.uid)" $response
+  }
+
+  save-version $file $response.body.result.version
+
+  let dashboards = fetch $"/api/library-elements/($panel.uid)/connections" | get result | each {|it| $it.connectionUid }
+  {uid: $panel.uid, version: $response.body.result.version, created: ($existing == null), dashboards: $dashboards}
+}
+
+# List the library panels the token can see: what library pull completes on.
+export def "library ls" []: nothing -> table<uid: string, name: string, folder: string> {
+  assert-org
+  library-panels
+}
