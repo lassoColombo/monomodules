@@ -18,8 +18,8 @@ export def main [
     return
   }
   if ($file | is-not-empty) {
+    zellij rename-pane ($file | path basename)
     ^$env.editor ($file | path expand)
-    zellij rename-pane $"($env.editor) ($file)"
     return
   }
   if $tab {
