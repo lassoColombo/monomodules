@@ -8,10 +8,10 @@
 #               preview pane read as.
 #   choose/     how choosing LOOKS — which picker, and the pane's geometry.
 #               Knows nothing about directories.
-#   host/       what gets DONE with a chosen path: zellij or tmux, nvim.
+#   host/       what gets DONE with a chosen path: zellij, nvim.
 use db.nu
 use pick
-use host/mux.nu
+use host/zellij.nu
 
 export use db.nu entries
 export use host/editor.nu
@@ -21,15 +21,15 @@ export def --env main [query?: string] {
   let dir = (pick "cd to" $query)
   if ($dir == null) { return }
   cd $dir
-  mux rename-pane ($dir | path basename)
+  zellij rename-pane ($dir | path basename)
 }
 
-# Open a zellij (or tmux) tab using a chosen layout, in a zoxide-picked dir.
+# Open a zellij tab using a chosen layout, in a zoxide-picked dir.
 # If no layout is given, prompt over available layouts.
-export def tab [layout?: string@"mux layouts", query?: string] {
-  let layout = if ($layout | is-empty) { mux choose-layout } else { $layout }
+export def tab [layout?: string@"zellij layouts", query?: string] {
+  let layout = if ($layout | is-empty) { zellij choose-layout } else { $layout }
   if ($layout | is-empty) { return }
-  mux tab $layout $"new ($layout) tab" $query
+  zellij tab $layout $"new ($layout) tab" $query
 }
 
 # Copy a zoxide-picked path to the system clipboard.

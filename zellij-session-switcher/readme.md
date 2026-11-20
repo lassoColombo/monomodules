@@ -4,10 +4,6 @@ Switch zellij session from the shell, with one command that does the right thing
 of the fence: inside a session it moves the current client with `zellij action switch-session`,
 outside it attaches with `zellij attach`.
 
-Inside tmux it does the same for tmux sessions instead: `switch-client` moves the current client,
-`ls` lists the tmux sessions (never exited - tmux keeps none), and sessions named `_…` are left
-out as tmux plumbing.
-
 ```nu
 zellij-session-switcher            # pick a session
 zellij-session-switcher home       # switch to `home`

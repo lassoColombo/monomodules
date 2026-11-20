@@ -22,29 +22,7 @@ def coarse [span: duration]: nothing -> string {
   $span | into string | split row " " | first 2 | str join " "
 }
 
-# Inside tmux the switcher works on tmux sessions instead; everywhere else on zellij's.
-def in-tmux []: nothing -> bool { $env.TMUX? | is-not-empty }
-
-def mux []: nothing -> string { if (in-tmux) { "tmux" } else { "zellij" } }
-
-# tmux keeps no exited sessions, and the ones named `_…` are its plumbing
-# (~/.config/tmux/floating.nu parks floating panes in `_floating`).
-def tmux-sessions []: nothing -> table<name: string, created: duration, current: bool, exited: bool> {
-  let current = ^tmux display-message -p "#{session_name}"
-  ^tmux list-sessions -F "#{session_name}\t#{session_created}"
-  | lines
-  | split column "\t" name created
-  | where not ($it.name | str starts-with "_")
-  | each {|it| {
-      name: $it.name
-      created: ((date now) - ($it.created | into int | into datetime --format '%s'))
-      current: ($it.name == $current)
-      exited: false
-    }}
-}
-
 def sessions []: nothing -> table<name: string, created: duration, current: bool, exited: bool> {
-  if (in-tmux) { return (tmux-sessions) }
   # zellij exits non zero only when it has nothing to list
   let listing = ^zellij list-sessions --no-formatting | complete
   if $listing.exit_code != 0 { return [] }
@@ -99,7 +77,7 @@ def pick []: table -> any {
 
 def choose [session?: string]: nothing -> any {
   let all = sessions
-  if ($all | is-empty) { error make --unspanned {msg: $"no (mux) session to switch to"} }
+  if ($all | is-empty) { error make --unspanned {msg: "no zellij session to switch to"} }
   if ($session | is-empty) { return ($all | pick) }
 
   let exact = $all | where name == $session
@@ -107,27 +85,25 @@ def choose [session?: string]: nothing -> any {
 
   let matches = $all | where name =~ $session
   match ($matches | length) {
-    0 => (error make --unspanned {msg: $"no (mux) session matches ($session)"})
+    0 => (error make --unspanned {msg: $"no zellij session matches ($session)"})
     1 => $matches.0
     _ => ($matches | pick)
   }
 }
 
-# Switch to another zellij session: inside zellij the current client moves to it, outside zellij it attaches to it. Inside tmux, the same for tmux sessions.
+# Switch to another zellij session: inside zellij the current client moves to it, outside zellij it attaches to it.
 export def main [
   session?: string@session-completer  # session name (regex against the session name)
 ] {
   let target = choose $session
   if ($target | is-empty) { return }
 
-  if (in-tmux) {
-    ^tmux switch-client -t $"=($target.name)"
-  } else if ($env.ZELLIJ? | is-not-empty) {
+  if ($env.ZELLIJ? | is-not-empty) {
     ^zellij action switch-session $target.name
   } else {
     ^zellij attach $target.name
   }
 }
 
-# List the zellij sessions (the tmux ones, inside tmux): what they are called, how long they have been around, how they stand.
+# List the zellij sessions: what they are called, how long they have been around, how they stand.
 export def ls []: nothing -> table<name: string, created: duration, current: bool, exited: bool> { sessions }

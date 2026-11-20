@@ -1,10 +1,10 @@
 # nvim, opened five ways.
 #
-# It sits in host/ for the same reason zellij.nu and tmux.nu do: it is something done WITH
+# It sits in host/ for the same reason zellij.nu does: it is something done WITH
 # a directory, not something zz knows about directories. Only the `--fuzzy` and
 # `--tab` branches go anywhere near a picker; the rest never touch zoxide at all.
 use ../pick
-use mux.nu
+use zellij.nu
 
 # Open nvim. With piped input, edit it. With `--fuzzy`, pick a dir first.
 export def main [
@@ -18,21 +18,21 @@ export def main [
     return
   }
   if ($file | is-not-empty) {
-    mux rename-pane ($file | path basename)
+    zellij rename-pane ($file | path basename)
     ^$env.editor ($file | path expand)
     return
   }
   if $tab {
-    mux tab nvim $"($env.editor) tab in"
+    zellij tab nvim $"($env.editor) tab in"
     return
   }
   if $fuzzy {
     let dir = (pick $"($env.editor) in")
     if ($dir == null) { return }
     commandline edit --replace $"cd ($dir); ($env.editor) ."
-    mux rename-pane ($dir | path basename)
+    zellij rename-pane ($dir | path basename)
     return
   }
-  mux rename-pane (pwd | path basename)
+  zellij rename-pane (pwd | path basename)
   ^$env.editor .
 }
