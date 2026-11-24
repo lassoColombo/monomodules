@@ -14,9 +14,9 @@
 # library, so it makes its own choice rather than reading it from a config hook.
 #
 # The plugin check is the same switch thrown on zz's behalf. `sk` parses fine
-# without the plugin registered and only fails when called, and the `-n`
-# launchers (zellij's Alt-a binding) start a Nushell with no plugin registry at
-# all — zz should quietly use the built-in there rather than break.
+# without the plugin registered and only fails when called, and a Nushell
+# started with `-n` has no plugin registry at all — zz should quietly use the
+# built-in there rather than break.
 use skim.nu
 use builtin.nu
 

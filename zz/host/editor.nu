@@ -1,16 +1,14 @@
-# nvim, opened five ways.
+# nvim, opened four ways.
 #
-# It sits in host/ for the same reason zellij.nu does: it is something done WITH
-# a directory, not something zz knows about directories. Only the `--fuzzy` and
-# `--tab` branches go anywhere near a picker; the rest never touch zoxide at all.
+# It sits in host/ because it is something done WITH a directory, not something
+# zz knows about directories. Only the `--fuzzy` branch goes anywhere near a
+# picker; the rest never touch zoxide at all.
 use ../pick
-use zellij.nu
 
 # Open nvim. With piped input, edit it. With `--fuzzy`, pick a dir first.
 export def main [
   file?: string = '',
   --fuzzy(-f)
-  --tab(-t)
 ] {
   let input = $in
   if ($input | is-not-empty) {
@@ -18,21 +16,14 @@ export def main [
     return
   }
   if ($file | is-not-empty) {
-    zellij rename-pane ($file | path basename)
     ^$env.editor ($file | path expand)
-    return
-  }
-  if $tab {
-    zellij tab nvim $"($env.editor) tab in"
     return
   }
   if $fuzzy {
     let dir = (pick $"($env.editor) in")
     if ($dir == null) { return }
     commandline edit --replace $"cd ($dir); ($env.editor) ."
-    zellij rename-pane ($dir | path basename)
     return
   }
-  zellij rename-pane (pwd | path basename)
   ^$env.editor .
 }

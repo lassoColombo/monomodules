@@ -37,8 +37,8 @@ def pane []: nothing -> record<window: string, width: int> {
 # is over — but nothing page-wise, which is what a listing longer than its pane
 # wants.
 #
-# CTRL, not alt: zellij owns alt-h/j/k/l for pane focus and never forwards them.
-# Its `normal` mode is `clear-defaults=true`, so every ctrl key does reach the
+# CTRL, not alt: tmux binds alt-h/j/k/l in its root table, for pane focus, and
+# never forwards them; it binds no ctrl key there, so every one reaches the
 # pane. ctrl-d / ctrl-u page it the way they do in nvim.
 #
 # `--bind` REPLACES a default rather than layering over it, and those two keys
